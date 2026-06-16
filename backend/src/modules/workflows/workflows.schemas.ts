@@ -27,8 +27,32 @@ export const createWorkflowStageSchema = z.object({
 
 export const updateWorkflowStageSchema = createWorkflowStageSchema.partial();
 
+export const workflowRunStatusSchema = z.enum([
+  "PENDING",
+  "RUNNING",
+  "WAITING",
+  "COMPLETED",
+  "FAILED",
+  "CANCELLED"
+]);
+
+export const createWorkflowRunSchema = z.object({
+  input: z.record(z.string(), z.unknown()).default({})
+});
+
+export const completeWorkflowStageRunSchema = z.object({
+  output: z.record(z.string(), z.unknown()).default({})
+});
+
+export const failWorkflowStageRunSchema = z.object({
+  errorMessage: z.string().min(1)
+});
+
 export type CreateWorkflowInput = z.infer<typeof createWorkflowSchema>;
 export type UpdateWorkflowInput = z.infer<typeof updateWorkflowSchema>;
 export type CreateWorkflowStageInput = z.infer<typeof createWorkflowStageSchema>;
 export type UpdateWorkflowStageInput = z.infer<typeof updateWorkflowStageSchema>;
-
+export type WorkflowRunStatus = z.infer<typeof workflowRunStatusSchema>;
+export type CreateWorkflowRunInput = z.infer<typeof createWorkflowRunSchema>;
+export type CompleteWorkflowStageRunInput = z.infer<typeof completeWorkflowStageRunSchema>;
+export type FailWorkflowStageRunInput = z.infer<typeof failWorkflowStageRunSchema>;

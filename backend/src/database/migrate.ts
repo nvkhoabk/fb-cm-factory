@@ -328,6 +328,9 @@ export function migrate() {
 
   addColumnIfMissing("prompt_templates", "category", "TEXT DEFAULT 'general'");
   addColumnIfMissing("prompt_templates", "status", "TEXT DEFAULT 'active'");
+  addColumnIfMissing("workflow_runs", "output_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("workflow_runs", "current_stage_no", "INTEGER DEFAULT 0");
+  addColumnIfMissing("workflow_runs", "updated_at", "TEXT");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS prompt_template_versions (
@@ -368,11 +371,101 @@ export function migrate() {
       FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS workflow_stage_runs (
+      id TEXT PRIMARY KEY,
+      workflow_run_id TEXT NOT NULL,
+      workflow_stage_id TEXT NOT NULL,
+      stage_no INTEGER NOT NULL,
+      stage_type TEXT NOT NULL,
+      status TEXT DEFAULT 'PENDING',
+      input_json TEXT DEFAULT '{}',
+      output_json TEXT DEFAULT '{}',
+      error_message TEXT,
+      started_at TEXT,
+      finished_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (workflow_run_id) REFERENCES workflow_runs(id) ON DELETE CASCADE,
+      FOREIGN KEY (workflow_stage_id) REFERENCES workflow_stages(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS production_batches (
+      id TEXT PRIMARY KEY,
+      batch_type TEXT NOT NULL,
+      source_group_id TEXT,
+      workflow_id TEXT,
+      workflow_run_id TEXT,
+      status TEXT DEFAULT 'NEW',
+      usage_status TEXT DEFAULT 'AVAILABLE',
+      attributes_json TEXT DEFAULT '{}',
+      metadata_json TEXT DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS production_batch_items (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL,
+      item_type TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      role TEXT,
+      sort_order INTEGER DEFAULT 0,
+      metadata_json TEXT DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (batch_id) REFERENCES production_batches(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS production_batch_usage (
+      id TEXT PRIMARY KEY,
+      source_batch_id TEXT NOT NULL,
+      target_batch_id TEXT NOT NULL,
+      usage_type TEXT NOT NULL,
+      workflow_run_id TEXT,
+      stage_run_id TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (source_batch_id) REFERENCES production_batches(id),
+      FOREIGN KEY (target_batch_id) REFERENCES production_batches(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS orchestrator_rules (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      trigger_batch_type TEXT NOT NULL,
+      trigger_status TEXT NOT NULL,
+      target_stage_type TEXT NOT NULL,
+      priority INTEGER DEFAULT 100,
+      is_active INTEGER DEFAULT 1,
+      config_json TEXT DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS orchestrator_jobs (
+      id TEXT PRIMARY KEY,
+      rule_id TEXT,
+      source_batch_id TEXT NOT NULL,
+      target_stage_type TEXT NOT NULL,
+      status TEXT DEFAULT 'PENDING',
+      payload_json TEXT DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (rule_id) REFERENCES orchestrator_rules(id),
+      FOREIGN KEY (source_batch_id) REFERENCES production_batches(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_group_attribute_values_attribute ON group_attribute_values(attribute_id);
     CREATE INDEX IF NOT EXISTS idx_character_group_attribute_values_group ON character_group_attribute_values(group_id, attribute_id);
     CREATE INDEX IF NOT EXISTS idx_prompt_template_versions_template ON prompt_template_versions(prompt_template_id, version_no);
     CREATE INDEX IF NOT EXISTS idx_instance_pool_members_pool ON instance_pool_members(pool_id, priority);
     CREATE INDEX IF NOT EXISTS idx_workflow_stages_workflow ON workflow_stages(workflow_id, stage_no);
+    CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow ON workflow_runs(workflow_id, status);
+    CREATE INDEX IF NOT EXISTS idx_workflow_stage_runs_run ON workflow_stage_runs(workflow_run_id, stage_no);
+    CREATE INDEX IF NOT EXISTS idx_production_batches_ready ON production_batches(batch_type, status, usage_status);
+    CREATE INDEX IF NOT EXISTS idx_production_batch_items_batch ON production_batch_items(batch_id, sort_order);
+    CREATE INDEX IF NOT EXISTS idx_production_batch_usage_source ON production_batch_usage(source_batch_id);
+    CREATE INDEX IF NOT EXISTS idx_production_batch_usage_target ON production_batch_usage(target_batch_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_orchestrator_jobs_unique_source_stage ON orchestrator_jobs(source_batch_id, target_stage_type);
+    CREATE INDEX IF NOT EXISTS idx_orchestrator_jobs_status ON orchestrator_jobs(status, target_stage_type);
   `);
 }
 
