@@ -1,42 +1,83 @@
 import { Router } from "express";
-import { createResourceRouter, sendError } from "../shared/resource";
+import { sendError } from "../shared/resource";
 import {
-  createWorkflowRunSchema,
   createWorkflowSchema,
-  createWorkflowVersionSchema
+  createWorkflowStageSchema,
+  updateWorkflowSchema,
+  updateWorkflowStageSchema
 } from "./workflows.schemas";
 import { workflowsService } from "./workflows.service";
 
 export const workflowsRouter = Router();
 export const workflowRunsRouter = Router();
+export const workflowStagesRouter = Router();
 
-workflowsRouter.use("/", createResourceRouter(createWorkflowSchema, workflowsService));
-
-workflowsRouter.get("/:workflowId/versions", (req, res) => {
-  res.json({ ok: true, data: workflowsService.listVersions(req.params.workflowId) });
+workflowsRouter.get("/", (_req, res) => {
+  res.json({ ok: true, data: workflowsService.list() });
 });
 
-workflowsRouter.post("/:workflowId/versions", (req, res) => {
+workflowsRouter.post("/", (req, res) => {
   try {
-    const payload = createWorkflowVersionSchema.parse(req.body);
-    res.status(201).json({
-      ok: true,
-      data: workflowsService.createVersion(req.params.workflowId, payload)
-    });
+    const input = createWorkflowSchema.parse(req.body);
+    res.status(201).json({ ok: true, data: workflowsService.create(input) });
   } catch (error) {
     sendError(res, error);
   }
 });
 
-workflowRunsRouter.get("/", (req, res) => {
-  res.json({ ok: true, data: workflowsService.listRuns(req.query) });
-});
-
-workflowRunsRouter.post("/", (req, res) => {
+workflowsRouter.get("/:id", (req, res) => {
   try {
-    const payload = createWorkflowRunSchema.parse(req.body);
-    res.status(201).json({ ok: true, data: workflowsService.createRun(payload) });
+    res.json({ ok: true, data: workflowsService.get(req.params.id) });
   } catch (error) {
     sendError(res, error);
   }
+});
+
+workflowsRouter.patch("/:id", (req, res) => {
+  try {
+    const input = updateWorkflowSchema.parse(req.body);
+    res.json({ ok: true, data: workflowsService.update(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowsRouter.delete("/:id", (req, res) => {
+  try {
+    workflowsService.delete(req.params.id);
+    res.json({ ok: true, data: { deleted: true } });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowsRouter.post("/:id/stages", (req, res) => {
+  try {
+    const input = createWorkflowStageSchema.parse(req.body);
+    res.status(201).json({ ok: true, data: workflowsService.createStage(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowStagesRouter.patch("/:id", (req, res) => {
+  try {
+    const input = updateWorkflowStageSchema.parse(req.body);
+    res.json({ ok: true, data: workflowsService.updateStage(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowStagesRouter.delete("/:id", (req, res) => {
+  try {
+    workflowsService.deleteStage(req.params.id);
+    res.json({ ok: true, data: { deleted: true } });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowRunsRouter.get("/", (_req, res) => {
+  res.json({ ok: true, data: [] });
 });

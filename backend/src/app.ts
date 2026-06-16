@@ -1,10 +1,11 @@
 import cors from "cors";
 import express from "express";
 import { healthRouter } from "./modules/health/health.routes";
-import { workflowRunsRouter, workflowsRouter } from "./modules/workflows/workflows.routes";
+import { workflowRunsRouter, workflowsRouter, workflowStagesRouter } from "./modules/workflows/workflows.routes";
 import { instancePoolsRouter } from "./modules/instance-pools/instance-pools.routes";
 import { characterGroupsRouter } from "./modules/character-groups/character-groups.routes";
-import { promptTemplatesRouter, promptsRouter } from "./modules/prompt-builder/prompt-builder.routes";
+import { groupAttributesRouter } from "./modules/group-attributes/group-attributes.routes";
+import { promptTemplateVersionsRouter, promptTemplatesRouter, promptsRouter } from "./modules/prompt-builder/prompt-builder.routes";
 import { assetsRouter } from "./modules/assets/assets.routes";
 
 export const app = express();
@@ -16,9 +17,12 @@ function mountRoutes(prefix = "") {
   app.use(`${prefix}/health`, healthRouter);
   app.use(`${prefix}/workflows`, workflowsRouter);
   app.use(`${prefix}/workflow-runs`, workflowRunsRouter);
+  app.use(`${prefix}/workflow-stages`, workflowStagesRouter);
   app.use(`${prefix}/instance-pools`, instancePoolsRouter);
   app.use(`${prefix}/character-groups`, characterGroupsRouter);
+  app.use(`${prefix}/group-attributes`, groupAttributesRouter);
   app.use(`${prefix}/prompt-templates`, promptTemplatesRouter);
+  app.use(`${prefix}/prompt-template-versions`, promptTemplateVersionsRouter);
   app.use(`${prefix}/prompts`, promptsRouter);
   app.use(`${prefix}/assets`, assetsRouter);
 }

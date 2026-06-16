@@ -1,28 +1,18 @@
 import { z } from "zod";
 
 export const createPromptTemplateSchema = z.object({
-  workspaceId: z.string().optional(),
   name: z.string().min(1),
-  scope: z.string().min(1),
+  category: z.string().default("general"),
   description: z.string().optional(),
-  variableSchema: z.record(z.string(), z.unknown()).default({}),
   status: z.string().default("active")
 });
 
-export const createPromptVersionSchema = z.object({
+export const createPromptTemplateVersionSchema = z.object({
   versionNo: z.number().int().positive().optional(),
-  status: z.string().default("draft"),
-  content: z.string().min(1),
-  negativeContent: z.string().optional(),
-  renderingEngine: z.string().default("template-v1"),
-  metadata: z.record(z.string(), z.unknown()).default({})
-});
-
-export const renderPromptPreviewSchema = z.object({
-  content: z.string().min(1),
-  context: z.record(z.string(), z.unknown()).default({})
+  templateText: z.string().min(1),
+  status: z.string().default("draft")
 });
 
 export type CreatePromptTemplateInput = z.infer<typeof createPromptTemplateSchema>;
-export type CreatePromptVersionInput = z.infer<typeof createPromptVersionSchema>;
+export type CreatePromptTemplateVersionInput = z.infer<typeof createPromptTemplateVersionSchema>;
 

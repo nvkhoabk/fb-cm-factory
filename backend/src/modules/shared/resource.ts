@@ -8,6 +8,17 @@ import { db } from "../../database/db";
 export type JsonMap = Record<string, unknown>;
 export type QueryMap = Record<string, unknown>;
 
+export class AppError extends Error {
+  statusCode: number;
+  code: string;
+
+  constructor(code: string, message: string, statusCode = 400) {
+    super(message);
+    this.code = code;
+    this.statusCode = statusCode;
+  }
+}
+
 export function now() {
   return new Date().toISOString();
 }
@@ -38,6 +49,16 @@ export function sendError(res: Response, error: unknown) {
         code: "VALIDATION_ERROR",
         message: "Request validation failed",
         detail: error.flatten()
+      }
+    });
+  }
+
+  if (error instanceof AppError) {
+    return res.status(error.statusCode).json({
+      ok: false,
+      error: {
+        code: error.code,
+        message: error.message
       }
     });
   }

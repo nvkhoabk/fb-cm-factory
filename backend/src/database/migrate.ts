@@ -1,5 +1,14 @@
 import { db } from "./db";
 
+function addColumnIfMissing(table: string, column: string, definition: string) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  const exists = columns.some((item) => item.name === column);
+
+  if (!exists) {
+    db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
+  }
+}
+
 export function migrate() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS workflows (
@@ -281,10 +290,93 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_assets_lookup ON assets(workspace_id, character_id, asset_type, quality_status);
     CREATE INDEX IF NOT EXISTS idx_prompt_templates_workspace ON prompt_templates(workspace_id, scope, status);
   `);
+
+  addColumnIfMissing("character_groups", "description", "TEXT");
+  addColumnIfMissing("character_groups", "status", "TEXT DEFAULT 'active'");
+  addColumnIfMissing("character_groups", "updated_at", "TEXT");
+  addColumnIfMissing("character_group_members", "role", "TEXT DEFAULT 'subject'");
+  addColumnIfMissing("character_group_members", "sort_order", "INTEGER DEFAULT 0");
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS group_attributes (
+      id TEXT PRIMARY KEY,
+      key TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      value_type TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS character_group_attribute_values (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL,
+      attribute_id TEXT NOT NULL,
+      value_id TEXT,
+      custom_value TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (group_id) REFERENCES character_groups(id) ON DELETE CASCADE,
+      FOREIGN KEY (attribute_id) REFERENCES group_attributes(id) ON DELETE CASCADE,
+      FOREIGN KEY (value_id) REFERENCES group_attribute_values(id) ON DELETE SET NULL
+    );
+  `);
+
+  addColumnIfMissing("group_attribute_values", "attribute_id", "TEXT");
+  addColumnIfMissing("group_attribute_values", "value", "TEXT");
+  addColumnIfMissing("group_attribute_values", "label", "TEXT");
+
+  addColumnIfMissing("prompt_templates", "category", "TEXT DEFAULT 'general'");
+  addColumnIfMissing("prompt_templates", "status", "TEXT DEFAULT 'active'");
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS prompt_template_versions (
+      id TEXT PRIMARY KEY,
+      prompt_template_id TEXT NOT NULL,
+      version_no INTEGER NOT NULL,
+      template_text TEXT NOT NULL,
+      status TEXT DEFAULT 'draft',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (prompt_template_id) REFERENCES prompt_templates(id) ON DELETE CASCADE,
+      UNIQUE(prompt_template_id, version_no)
+    );
+
+    CREATE TABLE IF NOT EXISTS instance_pool_members (
+      id TEXT PRIMARY KEY,
+      pool_id TEXT NOT NULL,
+      instance_id TEXT NOT NULL,
+      priority INTEGER DEFAULT 100,
+      status TEXT DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (pool_id) REFERENCES instance_pools(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS workflow_stages (
+      id TEXT PRIMARY KEY,
+      workflow_id TEXT NOT NULL,
+      stage_no INTEGER NOT NULL,
+      stage_type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      script_id TEXT,
+      pool_type TEXT,
+      prompt_template_id TEXT,
+      config_json TEXT DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_group_attribute_values_attribute ON group_attribute_values(attribute_id);
+    CREATE INDEX IF NOT EXISTS idx_character_group_attribute_values_group ON character_group_attribute_values(group_id, attribute_id);
+    CREATE INDEX IF NOT EXISTS idx_prompt_template_versions_template ON prompt_template_versions(prompt_template_id, version_no);
+    CREATE INDEX IF NOT EXISTS idx_instance_pool_members_pool ON instance_pool_members(pool_id, priority);
+    CREATE INDEX IF NOT EXISTS idx_workflow_stages_workflow ON workflow_stages(workflow_id, stage_no);
+  `);
 }
 
 if (require.main === module) {
   migrate();
   console.log(`V2 database migrated at ${db.name}`);
 }
-

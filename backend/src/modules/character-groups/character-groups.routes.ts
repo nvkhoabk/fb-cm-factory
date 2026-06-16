@@ -1,59 +1,77 @@
 import { Router } from "express";
-import { createResourceRouter, sendError } from "../shared/resource";
+import { sendError } from "../shared/resource";
 import {
-  createAttributeDefinitionSchema,
+  assignGroupAttributeSchema,
   createCharacterGroupSchema,
-  createCharacterSchema,
-  createGroupMemberSchema
+  createGroupMemberSchema,
+  updateCharacterGroupSchema
 } from "./character-groups.schemas";
-import { characterGroupsService, charactersService } from "./character-groups.service";
+import { characterGroupsService } from "./character-groups.service";
 
 export const characterGroupsRouter = Router();
 
-characterGroupsRouter.use("/", createResourceRouter(createCharacterGroupSchema, characterGroupsService));
-
-characterGroupsRouter.get("/:groupId/members", (req, res) => {
-  res.json({ ok: true, data: characterGroupsService.listMembers(req.params.groupId) });
+characterGroupsRouter.get("/", (_req, res) => {
+  res.json({ ok: true, data: characterGroupsService.list() });
 });
 
-characterGroupsRouter.post("/:groupId/members", (req, res) => {
+characterGroupsRouter.post("/", (req, res) => {
   try {
-    const payload = createGroupMemberSchema.parse(req.body);
-    res.status(201).json({
-      ok: true,
-      data: characterGroupsService.createMember(req.params.groupId, payload)
-    });
+    const input = createCharacterGroupSchema.parse(req.body);
+    res.status(201).json({ ok: true, data: characterGroupsService.create(input) });
   } catch (error) {
     sendError(res, error);
   }
 });
 
-characterGroupsRouter.get("/resources/characters", (req, res) => {
-  res.json({ ok: true, data: charactersService.list(req.query) });
-});
-
-characterGroupsRouter.post("/resources/characters", (req, res) => {
+characterGroupsRouter.get("/:id", (req, res) => {
   try {
-    const payload = createCharacterSchema.parse(req.body);
-    res.status(201).json({ ok: true, data: charactersService.create(payload) });
+    res.json({ ok: true, data: characterGroupsService.get(req.params.id) });
   } catch (error) {
     sendError(res, error);
   }
 });
 
-characterGroupsRouter.get("/attributes/definitions", (req, res) => {
-  res.json({ ok: true, data: characterGroupsService.listAttributeDefinitions(req.query) });
-});
-
-characterGroupsRouter.post("/attributes/definitions", (req, res) => {
+characterGroupsRouter.patch("/:id", (req, res) => {
   try {
-    const payload = createAttributeDefinitionSchema.parse(req.body);
-    res.status(201).json({
-      ok: true,
-      data: characterGroupsService.createAttributeDefinition(payload)
-    });
+    const input = updateCharacterGroupSchema.parse(req.body);
+    res.json({ ok: true, data: characterGroupsService.update(req.params.id, input) });
   } catch (error) {
     sendError(res, error);
   }
 });
 
+characterGroupsRouter.delete("/:id", (req, res) => {
+  try {
+    characterGroupsService.delete(req.params.id);
+    res.json({ ok: true, data: { deleted: true } });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+characterGroupsRouter.post("/:id/members", (req, res) => {
+  try {
+    const input = createGroupMemberSchema.parse(req.body);
+    res.status(201).json({ ok: true, data: characterGroupsService.createMember(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+characterGroupsRouter.delete("/:id/members/:memberId", (req, res) => {
+  try {
+    characterGroupsService.deleteMember(req.params.id, req.params.memberId);
+    res.json({ ok: true, data: { deleted: true } });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+characterGroupsRouter.post("/:id/attributes", (req, res) => {
+  try {
+    const input = assignGroupAttributeSchema.parse(req.body);
+    res.status(201).json({ ok: true, data: characterGroupsService.assignAttribute(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
