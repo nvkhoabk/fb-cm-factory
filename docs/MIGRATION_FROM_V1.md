@@ -210,6 +210,8 @@ V2 should rediscover slots through Host Agent V2 after migration, because ADB id
 
 The V1 bridge adapter is a temporary compatibility layer inside V2. It may read V1-style payloads, import V1 data, or translate V1 script concepts, but it should output V2 resources.
 
+If exposed through HTTP, bridge endpoints should live under `/v1-bridge/*` so the standalone FB-CM Factory API remains rooted at paths such as `/workflows`, `/workflow-runs`, and `/assets`.
+
 Bridge responsibilities:
 
 - Import characters and original assets.

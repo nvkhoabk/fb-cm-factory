@@ -12,6 +12,8 @@ V1 combines scripts, tasks, assets, characters, host discovery, LDPlayer control
 
 The backend is the source of truth for configuration, workflow definitions, run state, asset lineage, host state, instance pool membership, queue leases, and checkpoints.
 
+Because FB-CM Factory is a standalone project, backend routes are mounted at the repository root API surface, such as `/health`, `/workflows`, `/workflow-runs`, `/instance-pools`, `/character-groups`, `/prompt-templates`, and `/assets`.
+
 Responsibilities:
 
 - Manage workflows, workflow versions, stages, task templates, and run policies.

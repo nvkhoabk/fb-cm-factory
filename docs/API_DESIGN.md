@@ -14,7 +14,7 @@
 Base path:
 
 ```text
-/api/v2
+/
 ```
 
 Response envelope for mutations:
@@ -466,7 +466,7 @@ Realtime payloads should include IDs and status summaries. Clients fetch full de
 During migration, a V1 bridge can expose adapter endpoints under:
 
 ```text
-/api/v2/v1-bridge/*
+/v1-bridge/*
 ```
 
 Bridge APIs should be temporary and should translate V1 concepts into V2 resources rather than leaking V1 tables into new frontend features.

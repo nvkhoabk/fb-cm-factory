@@ -264,7 +264,7 @@ The backend decides which slots belong to which instance pools. The agent report
 
 1. Agent registers and receives or confirms `agentId`.
 2. Agent sends heartbeat and slot sync.
-3. Claim loop posts available slots to `/api/v2/agent/queue/claim`.
+3. Claim loop posts available slots to `/agent/queue/claim`.
 4. Backend grants one or more leases with execution plans.
 5. Lease runner starts and renews lease.
 6. Runner emits `attempt_started` event.
