@@ -1,4 +1,5 @@
 import { AppError } from "../shared/resource";
+import { instanceAllocationService } from "../instance-allocations/instance-allocation.service";
 import { orchestratorRepository } from "./orchestrator.repository";
 import type { FailOrchestratorJobInput } from "./orchestrator.schemas";
 
@@ -58,24 +59,38 @@ export const orchestratorService = {
     };
   },
 
+  allocateJob(id: string) {
+    return instanceAllocationService.allocateForJob(id);
+  },
+
   startJob(id: string) {
+    const current = orchestratorRepository.getJob(id);
+    if (!current) throw new AppError("ORCHESTRATOR_JOB_NOT_FOUND", "Orchestrator job not found", 404);
+    if (current.status !== "ALLOCATED") {
+      throw new AppError("ORCHESTRATOR_JOB_NOT_STARTABLE", "Only ALLOCATED jobs can be started");
+    }
+
     const job = orchestratorRepository.updateJobStatus(id, "RUNNING");
-    if (!job) throw new AppError("ORCHESTRATOR_JOB_NOT_FOUND", "Orchestrator job not found", 404);
     return job;
   },
 
   completeJob(id: string) {
+    const current = orchestratorRepository.getJob(id);
+    if (!current) throw new AppError("ORCHESTRATOR_JOB_NOT_FOUND", "Orchestrator job not found", 404);
+
     const job = orchestratorRepository.updateJobStatus(id, "COMPLETED");
-    if (!job) throw new AppError("ORCHESTRATOR_JOB_NOT_FOUND", "Orchestrator job not found", 404);
+    instanceAllocationService.releaseActiveForJob(id);
     return job;
   },
 
   failJob(id: string, input: FailOrchestratorJobInput) {
+    const current = orchestratorRepository.getJob(id);
+    if (!current) throw new AppError("ORCHESTRATOR_JOB_NOT_FOUND", "Orchestrator job not found", 404);
+
     const job = orchestratorRepository.updateJobStatus(id, "FAILED", {
       errorMessage: input.errorMessage ?? "Job failed"
     });
-    if (!job) throw new AppError("ORCHESTRATOR_JOB_NOT_FOUND", "Orchestrator job not found", 404);
+    instanceAllocationService.failActiveForJob(id);
     return job;
   }
 };
-

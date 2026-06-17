@@ -25,6 +25,14 @@ orchestratorRouter.post("/jobs/:id/start", (req, res) => {
   }
 });
 
+orchestratorRouter.post("/jobs/:id/allocate", (req, res) => {
+  try {
+    res.json({ ok: true, data: orchestratorService.allocateJob(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 orchestratorRouter.post("/jobs/:id/complete", (req, res) => {
   try {
     res.json({ ok: true, data: orchestratorService.completeJob(req.params.id) });
@@ -41,4 +49,3 @@ orchestratorRouter.post("/jobs/:id/fail", (req, res) => {
     sendError(res, error);
   }
 });
-

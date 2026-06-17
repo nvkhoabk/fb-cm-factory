@@ -8,6 +8,7 @@ import {
   workflowStagesRouter
 } from "./modules/workflows/workflows.routes";
 import { instancePoolsRouter } from "./modules/instance-pools/instance-pools.routes";
+import { instanceAllocationsRouter } from "./modules/instance-allocations/instance-allocation.routes";
 import { characterGroupsRouter } from "./modules/character-groups/character-groups.routes";
 import { groupAttributesRouter } from "./modules/group-attributes/group-attributes.routes";
 import { promptTemplateVersionsRouter, promptTemplatesRouter, promptsRouter } from "./modules/prompt-builder/prompt-builder.routes";
@@ -27,6 +28,7 @@ function mountRoutes(prefix = "") {
   app.use(`${prefix}/workflow-stages`, workflowStagesRouter);
   app.use(`${prefix}/workflow-stage-runs`, workflowStageRunsRouter);
   app.use(`${prefix}/instance-pools`, instancePoolsRouter);
+  app.use(`${prefix}/instance-allocations`, instanceAllocationsRouter);
   app.use(`${prefix}/character-groups`, characterGroupsRouter);
   app.use(`${prefix}/group-attributes`, groupAttributesRouter);
   app.use(`${prefix}/prompt-templates`, promptTemplatesRouter);

@@ -1,0 +1,125 @@
+import { db } from "../../database/db";
+import { createId, jsonParse, jsonString, now } from "../shared/resource";
+
+export type AllocationStatus = "ALLOCATED" | "RELEASED" | "FAILED";
+
+function mapAllocation(row: Record<string, unknown>) {
+  return {
+    id: row.id,
+    poolId: row.pool_id,
+    instanceId: row.instance_id,
+    orchestratorJobId: row.orchestrator_job_id ?? null,
+    workflowRunId: row.workflow_run_id ?? null,
+    workflowStageRunId: row.workflow_stage_run_id ?? null,
+    allocatedAt: row.allocated_at,
+    releasedAt: row.released_at ?? null,
+    status: row.status,
+    metadata: jsonParse(row.metadata_json, {})
+  };
+}
+
+export const instanceAllocationRepository = {
+  list() {
+    return db.prepare("SELECT * FROM instance_allocations ORDER BY allocated_at DESC")
+      .all()
+      .map((row) => mapAllocation(row as Record<string, unknown>));
+  },
+
+  listActive() {
+    return db.prepare(`
+      SELECT * FROM instance_allocations
+      WHERE status = 'ALLOCATED'
+      ORDER BY allocated_at DESC
+    `).all().map((row) => mapAllocation(row as Record<string, unknown>));
+  },
+
+  get(id: string) {
+    const row = db.prepare("SELECT * FROM instance_allocations WHERE id = ?").get(id);
+    return row ? mapAllocation(row as Record<string, unknown>) : null;
+  },
+
+  getActiveByJob(orchestratorJobId: string) {
+    const row = db.prepare(`
+      SELECT * FROM instance_allocations
+      WHERE orchestrator_job_id = ? AND status = 'ALLOCATED'
+      ORDER BY allocated_at DESC
+      LIMIT 1
+    `).get(orchestratorJobId);
+
+    return row ? mapAllocation(row as Record<string, unknown>) : null;
+  },
+
+  findCandidate(poolType: string) {
+    const row = db.prepare(`
+      SELECT
+        ip.id AS pool_id,
+        ipm.instance_id AS instance_id,
+        COUNT(ia.id) AS active_allocation_count
+      FROM instance_pools ip
+      JOIN instance_pool_members ipm ON ipm.pool_id = ip.id
+      LEFT JOIN instance_allocations ia
+        ON ia.instance_id = ipm.instance_id
+       AND ia.status = 'ALLOCATED'
+      WHERE ip.pool_type = ?
+        AND UPPER(ip.status) = 'ACTIVE'
+        AND UPPER(ipm.status) = 'ACTIVE'
+        AND UPPER(ipm.status) NOT IN ('ERROR', 'CAPTCHA', 'OFFLINE')
+      GROUP BY ip.id, ipm.instance_id, ipm.priority
+      ORDER BY active_allocation_count ASC, ipm.priority ASC, ipm.created_at ASC
+      LIMIT 1
+    `).get(poolType);
+
+    return row as { pool_id: string; instance_id: string; active_allocation_count: number } | undefined;
+  },
+
+  create(input: {
+    poolId: string;
+    instanceId: string;
+    orchestratorJobId?: string | null;
+    workflowRunId?: string | null;
+    workflowStageRunId?: string | null;
+    metadata?: Record<string, unknown>;
+  }) {
+    const id = createId("alloc");
+    const allocatedAt = now();
+
+    db.prepare(`
+      INSERT INTO instance_allocations (
+        id, pool_id, instance_id, orchestrator_job_id, workflow_run_id,
+        workflow_stage_run_id, allocated_at, status, metadata_json
+      ) VALUES (
+        @id, @poolId, @instanceId, @orchestratorJobId, @workflowRunId,
+        @workflowStageRunId, @allocatedAt, 'ALLOCATED', @metadataJson
+      )
+    `).run({
+      id,
+      poolId: input.poolId,
+      instanceId: input.instanceId,
+      orchestratorJobId: input.orchestratorJobId ?? null,
+      workflowRunId: input.workflowRunId ?? null,
+      workflowStageRunId: input.workflowStageRunId ?? null,
+      allocatedAt,
+      metadataJson: jsonString(input.metadata ?? {}, {})
+    });
+
+    return this.get(id);
+  },
+
+  close(id: string, status: AllocationStatus) {
+    const releasedAt = now();
+
+    db.prepare(`
+      UPDATE instance_allocations
+      SET status = @status,
+          released_at = @releasedAt
+      WHERE id = @id
+    `).run({
+      id,
+      status,
+      releasedAt
+    });
+
+    return this.get(id);
+  }
+};
+

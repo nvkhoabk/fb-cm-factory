@@ -453,6 +453,21 @@ export function migrate() {
       FOREIGN KEY (source_batch_id) REFERENCES production_batches(id)
     );
 
+    CREATE TABLE IF NOT EXISTS instance_allocations (
+      id TEXT PRIMARY KEY,
+      pool_id TEXT NOT NULL,
+      instance_id TEXT NOT NULL,
+      orchestrator_job_id TEXT,
+      workflow_run_id TEXT,
+      workflow_stage_run_id TEXT,
+      allocated_at TEXT NOT NULL,
+      released_at TEXT,
+      status TEXT DEFAULT 'ALLOCATED',
+      metadata_json TEXT DEFAULT '{}',
+      FOREIGN KEY (pool_id) REFERENCES instance_pools(id),
+      FOREIGN KEY (orchestrator_job_id) REFERENCES orchestrator_jobs(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_group_attribute_values_attribute ON group_attribute_values(attribute_id);
     CREATE INDEX IF NOT EXISTS idx_character_group_attribute_values_group ON character_group_attribute_values(group_id, attribute_id);
     CREATE INDEX IF NOT EXISTS idx_prompt_template_versions_template ON prompt_template_versions(prompt_template_id, version_no);
@@ -466,6 +481,8 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_production_batch_usage_target ON production_batch_usage(target_batch_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_orchestrator_jobs_unique_source_stage ON orchestrator_jobs(source_batch_id, target_stage_type);
     CREATE INDEX IF NOT EXISTS idx_orchestrator_jobs_status ON orchestrator_jobs(status, target_stage_type);
+    CREATE INDEX IF NOT EXISTS idx_instance_allocations_active ON instance_allocations(instance_id, status);
+    CREATE INDEX IF NOT EXISTS idx_instance_allocations_job ON instance_allocations(orchestrator_job_id, status);
   `);
 }
 
