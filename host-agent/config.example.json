@@ -1,0 +1,11 @@
+{
+  "port": 4100,
+  "hostId": "local-host-01",
+  "agentName": "FB-CM Factory Host Agent",
+  "apiKey": "change-me-local",
+  "adbPath": "adb",
+  "ldConsolePath": "ldconsole",
+  "publicBaseUrl": "http://localhost:4100",
+  "hostStorageRoot": "C:/Users/Khoa Nguyen/Documents/Du an Facebook CM/data/fb-cm-factory/host-agent-storage",
+  "mockMode": true
+}

@@ -16,6 +16,8 @@ import { productionBatchRouter } from "./modules/production-batches/production-b
 import { orchestratorRouter } from "./modules/orchestrator/orchestrator.routes";
 import { jobExecutorRouter } from "./modules/job-executor/job-executor.routes";
 import { managerBridgeRouter } from "./modules/manager-bridge/manager-bridge.routes";
+import { runtimeSessionsRouter } from "./modules/runtime-sessions/runtime-sessions.routes";
+import { hostAgentRouter } from "./modules/host-agent-adapter/host-agent.routes";
 import { assetsRouter } from "./modules/assets/assets.routes";
 
 export const app = express();
@@ -40,6 +42,8 @@ function mountRoutes(prefix = "") {
   app.use(`${prefix}/orchestrator`, orchestratorRouter);
   app.use(`${prefix}/job-executor`, jobExecutorRouter);
   app.use(`${prefix}/manager-bridge`, managerBridgeRouter);
+  app.use(`${prefix}/runtime-sessions`, runtimeSessionsRouter);
+  app.use(`${prefix}/hosts`, hostAgentRouter);
   app.use(`${prefix}/assets`, assetsRouter);
 }
 

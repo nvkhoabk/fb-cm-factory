@@ -486,6 +486,53 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_orchestrator_jobs_status ON orchestrator_jobs(status, target_stage_type);
     CREATE INDEX IF NOT EXISTS idx_instance_allocations_active ON instance_allocations(instance_id, status);
     CREATE INDEX IF NOT EXISTS idx_instance_allocations_job ON instance_allocations(orchestrator_job_id, status);
+
+    CREATE TABLE IF NOT EXISTS runtime_sessions (
+      id TEXT PRIMARY KEY,
+      job_id TEXT,
+      instance_id TEXT,
+      host_id TEXT,
+      script_id TEXT,
+      status TEXT DEFAULT 'PENDING',
+      current_step_no INTEGER DEFAULT 0,
+      context_json TEXT DEFAULT '{}',
+      checkpoint_json TEXT DEFAULT '{}',
+      started_at TEXT,
+      updated_at TEXT NOT NULL,
+      finished_at TEXT,
+      FOREIGN KEY (job_id) REFERENCES orchestrator_jobs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS runtime_session_steps (
+      id TEXT PRIMARY KEY,
+      runtime_session_id TEXT NOT NULL,
+      step_no INTEGER NOT NULL,
+      step_type TEXT NOT NULL,
+      status TEXT DEFAULT 'PENDING',
+      input_json TEXT DEFAULT '{}',
+      output_json TEXT DEFAULT '{}',
+      error_message TEXT,
+      started_at TEXT,
+      finished_at TEXT,
+      FOREIGN KEY (runtime_session_id) REFERENCES runtime_sessions(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_runtime_sessions_job ON runtime_sessions(job_id, status);
+    CREATE INDEX IF NOT EXISTS idx_runtime_session_steps_session ON runtime_session_steps(runtime_session_id, step_no);
+
+    CREATE TABLE IF NOT EXISTS hosts (
+      id TEXT PRIMARY KEY,
+      host_id TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      base_url TEXT NOT NULL,
+      api_key TEXT,
+      status TEXT DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_hosts_host_id ON hosts(host_id);
+    CREATE INDEX IF NOT EXISTS idx_hosts_status ON hosts(status);
   `);
 
   addColumnIfMissing("instance_allocations", "created_at", "TEXT");

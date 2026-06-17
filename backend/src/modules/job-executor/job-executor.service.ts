@@ -2,6 +2,7 @@ import { orchestratorRepository } from "../orchestrator/orchestrator.repository"
 import { orchestratorService } from "../orchestrator/orchestrator.service";
 import { managerBridgeService } from "../manager-bridge/manager-bridge.service";
 import { productionBatchRepository } from "../production-batches/production-batch.repository";
+import { runtimeSessionsService } from "../runtime-sessions/runtime-sessions.service";
 import { AppError } from "../shared/resource";
 import type { BatchType, BatchUsageStatus } from "../production-batches/production-batch.schemas";
 
@@ -43,10 +44,48 @@ export const jobExecutorService = {
       throw new AppError("JOB_NOT_EXECUTABLE", "Only ALLOCATED jobs can be mock executed");
     }
 
+    const runtimeSession = runtimeSessionsService.createForJob(jobId);
+    if (!runtimeSession) {
+      throw new AppError("RUNTIME_SESSION_CREATE_FAILED", "Could not create runtime session");
+    }
+
     orchestratorService.startJob(jobId);
+    runtimeSessionsService.updateRuntimeSession(String(runtimeSession.id), {
+      status: "RUNNING",
+      currentStepNo: 1
+    });
+    const runtimeStep = runtimeSessionsService.createRuntimeStep(String(runtimeSession.id), {
+      stepNo: 1,
+      stepType: String(job.targetStageType),
+      status: "RUNNING",
+      input: {
+        jobId,
+        sourceBatchId: job.sourceBatchId,
+        targetStageType: job.targetStageType
+      },
+      output: {}
+    });
+
     await delay(25);
 
     const output = this.createOutputBatch(job, { mock: true });
+    runtimeSessionsService.updateRuntimeStep(String(runtimeStep.id), {
+      status: "COMPLETED",
+      output
+    });
+    runtimeSessionsService.saveCheckpoint(String(runtimeSession.id), {
+      currentStepNo: 1,
+      context: {
+        output
+      },
+      checkpoint: {
+        result: output
+      }
+    });
+    runtimeSessionsService.updateRuntimeSession(String(runtimeSession.id), {
+      status: "COMPLETED",
+      currentStepNo: 1
+    });
     return orchestratorService.completeJob(jobId, output);
   },
 
