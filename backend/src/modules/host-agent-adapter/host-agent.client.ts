@@ -66,22 +66,23 @@ export const hostAgentClient = {
     return requestAgent(target, "/health", { method: "GET" });
   },
 
-  takeScreenshot(target: HostAgentTarget, instanceId: string) {
+  takeScreenshot(target: HostAgentTarget, instanceId: string, adbId: string) {
     return requestAgent(target, `/instances/${encodeURIComponent(instanceId)}/screenshot`, {
       method: "POST",
-      body: body({ adbId: instanceId })
+      body: body({ instanceId, adbId })
     });
   },
 
-  tap(target: HostAgentTarget, instanceId: string, x: number, y: number) {
+  tap(target: HostAgentTarget, instanceId: string, adbId: string, x: number, y: number) {
     return requestAgent(target, `/instances/${encodeURIComponent(instanceId)}/tap`, {
       method: "POST",
-      body: body({ adbId: instanceId, x, y })
+      body: body({ instanceId, adbId, x, y })
     });
   },
 
   swipe(target: HostAgentTarget, input: {
     instanceId: string;
+    adbId: string;
     x1: number;
     y1: number;
     x2: number;
@@ -91,7 +92,8 @@ export const hostAgentClient = {
     return requestAgent(target, `/instances/${encodeURIComponent(input.instanceId)}/swipe`, {
       method: "POST",
       body: body({
-        adbId: input.instanceId,
+        instanceId: input.instanceId,
+        adbId: input.adbId,
         x1: input.x1,
         y1: input.y1,
         x2: input.x2,
@@ -101,22 +103,23 @@ export const hostAgentClient = {
     });
   },
 
-  sendText(target: HostAgentTarget, instanceId: string, text: string) {
+  sendText(target: HostAgentTarget, instanceId: string, adbId: string, text: string) {
     return requestAgent(target, `/instances/${encodeURIComponent(instanceId)}/send-text`, {
       method: "POST",
-      body: body({ adbId: instanceId, text })
+      body: body({ instanceId, adbId, text })
     });
   },
 
-  sendKey(target: HostAgentTarget, instanceId: string, key: string | number) {
+  sendKey(target: HostAgentTarget, instanceId: string, adbId: string, key: string | number) {
     return requestAgent(target, `/instances/${encodeURIComponent(instanceId)}/send-key`, {
       method: "POST",
-      body: body({ adbId: instanceId, keyCode: key })
+      body: body({ instanceId, adbId, keyCode: key })
     });
   },
 
   downloadLatest(target: HostAgentTarget, input: {
     instanceId: string;
+    adbId: string;
     sourceDir?: string;
     extensions?: string[];
     targetFolder?: string;
@@ -124,7 +127,8 @@ export const hostAgentClient = {
     return requestAgent(target, `/instances/${encodeURIComponent(input.instanceId)}/download-latest`, {
       method: "POST",
       body: body({
-        adbId: input.instanceId,
+        instanceId: input.instanceId,
+        adbId: input.adbId,
         sourceDir: input.sourceDir,
         extensions: input.extensions,
         targetFolder: input.targetFolder

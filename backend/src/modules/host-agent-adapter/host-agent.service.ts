@@ -109,11 +109,11 @@ export const hostAgentService = {
     };
   },
 
-  async takeScreenshot(hostId: string, instanceId: string) {
+  async takeScreenshot(hostId: string, input: { instanceId: string; adbId: string }) {
     const { host, target } = this.targetForHost(hostId);
     return {
       host: publicHost(host),
-      result: await hostAgentClient.takeScreenshot(target, instanceId)
+      result: await hostAgentClient.takeScreenshot(target, input.instanceId, input.adbId)
     };
   },
 
@@ -121,7 +121,7 @@ export const hostAgentService = {
     const { host, target } = this.targetForHost(hostId);
     return {
       host: publicHost(host),
-      result: await hostAgentClient.tap(target, input.instanceId, input.x, input.y)
+      result: await hostAgentClient.tap(target, input.instanceId, input.adbId, input.x, input.y)
     };
   },
 
@@ -137,7 +137,7 @@ export const hostAgentService = {
     const { host, target } = this.targetForHost(hostId);
     return {
       host: publicHost(host),
-      result: await hostAgentClient.sendText(target, input.instanceId, input.text)
+      result: await hostAgentClient.sendText(target, input.instanceId, input.adbId, input.text)
     };
   },
 
@@ -145,7 +145,7 @@ export const hostAgentService = {
     const { host, target } = this.targetForHost(hostId);
     return {
       host: publicHost(host),
-      result: await hostAgentClient.sendKey(target, input.instanceId, input.key)
+      result: await hostAgentClient.sendKey(target, input.instanceId, input.adbId, input.key)
     };
   },
 
@@ -181,7 +181,26 @@ export const hostAgentService = {
     });
 
     try {
-      const output = await this.takeScreenshot(session.hostId, session.instanceId);
+      const checkpoint = session.checkpoint && typeof session.checkpoint === "object"
+        ? session.checkpoint as Record<string, unknown>
+        : {};
+      const context = session.context && typeof session.context === "object"
+        ? session.context as Record<string, unknown>
+        : {};
+      const adbId = typeof checkpoint.adbId === "string"
+        ? checkpoint.adbId
+        : typeof context.adbId === "string"
+          ? context.adbId
+          : "";
+
+      if (!adbId) {
+        throw new AppError("ADB_ID_REQUIRED", "adbId is required", 400);
+      }
+
+      const output = await this.takeScreenshot(session.hostId, {
+        instanceId: session.instanceId,
+        adbId
+      });
       const completedStep = runtimeSessionsService.updateRuntimeStep(String(step.id), {
         status: "COMPLETED",
         output

@@ -54,6 +54,28 @@ function renderInputTemplates(value: unknown, context: Record<string, unknown>):
   return value;
 }
 
+function resolveAdbId(input: Record<string, unknown>, context: Record<string, unknown>) {
+  const direct = input.adbId;
+  if (typeof direct === "string" && direct) return direct;
+
+  const contextAdbId = context.adbId;
+  if (typeof contextAdbId === "string" && contextAdbId) return contextAdbId;
+
+  const allocation = context.allocation;
+  if (allocation && typeof allocation === "object") {
+    const allocationAdbId = (allocation as Record<string, unknown>).adbId;
+    if (typeof allocationAdbId === "string" && allocationAdbId) return allocationAdbId;
+  }
+
+  const checkpoint = context.checkpoint;
+  if (checkpoint && typeof checkpoint === "object") {
+    const checkpointAdbId = (checkpoint as Record<string, unknown>).adbId;
+    if (typeof checkpointAdbId === "string" && checkpointAdbId) return checkpointAdbId;
+  }
+
+  throw new AppError("ADB_ID_REQUIRED", "adbId is required", 400);
+}
+
 function orderedSteps(definition: unknown): NormalizedScriptStep[] {
   const steps = definition && typeof definition === "object"
     ? (definition as { steps?: unknown }).steps
@@ -275,12 +297,16 @@ export const scriptRuntimeService = {
     }
 
     if (stepType === "screenshot") {
-      return hostAgentService.takeScreenshot(session.hostId, session.instanceId);
+      return hostAgentService.takeScreenshot(session.hostId, {
+        instanceId: session.instanceId,
+        adbId: resolveAdbId(input, _context)
+      });
     }
 
     if (stepType === "tap") {
       return hostAgentService.tap(session.hostId, {
         instanceId: session.instanceId,
+        adbId: resolveAdbId(input, _context),
         x: Number(input.x),
         y: Number(input.y)
       });
@@ -289,6 +315,7 @@ export const scriptRuntimeService = {
     if (stepType === "swipe") {
       return hostAgentService.swipe(session.hostId, {
         instanceId: session.instanceId,
+        adbId: resolveAdbId(input, _context),
         x1: Number(input.x1),
         y1: Number(input.y1),
         x2: Number(input.x2),
@@ -300,6 +327,7 @@ export const scriptRuntimeService = {
     if (stepType === "send-text") {
       return hostAgentService.sendText(session.hostId, {
         instanceId: session.instanceId,
+        adbId: resolveAdbId(input, _context),
         text: String(input.text ?? "")
       });
     }
@@ -307,12 +335,16 @@ export const scriptRuntimeService = {
     if (stepType === "send-key") {
       return hostAgentService.sendKey(session.hostId, {
         instanceId: session.instanceId,
+        adbId: resolveAdbId(input, _context),
         key: typeof input.key === "number" ? input.key : String(input.key ?? "")
       });
     }
 
     if (stepType === "check-screen") {
-      const screenshot = await hostAgentService.takeScreenshot(session.hostId, session.instanceId);
+      const screenshot = await hostAgentService.takeScreenshot(session.hostId, {
+        instanceId: session.instanceId,
+        adbId: resolveAdbId(input, _context)
+      });
       return {
         screenshotExists: Boolean(screenshot),
         screenshot
@@ -322,6 +354,7 @@ export const scriptRuntimeService = {
     if (stepType === "download-result") {
       return hostAgentService.downloadLatest(session.hostId, {
         instanceId: session.instanceId,
+        adbId: resolveAdbId(input, _context),
         sourceDir: typeof input.sourceDir === "string" ? input.sourceDir : undefined,
         extensions: Array.isArray(input.extensions) ? input.extensions.map(String) : undefined,
         targetFolder: typeof input.targetFolder === "string" ? input.targetFolder : undefined

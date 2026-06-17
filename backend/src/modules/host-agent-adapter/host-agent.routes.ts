@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { ZodError, type z } from "zod";
 import { sendError } from "../shared/resource";
 import {
   createHostSchema,
@@ -12,6 +13,33 @@ import {
 import { hostAgentService } from "./host-agent.service";
 
 export const hostAgentRouter = Router();
+
+function parseCommand<T>(schema: z.ZodType<T>, body: unknown) {
+  try {
+    return schema.parse(body ?? {});
+  } catch (error) {
+    if (error instanceof ZodError && error.issues.some((issue) => issue.path.includes("adbId"))) {
+      const adbIdError = new Error("adbId is required");
+      adbIdError.name = "ADB_ID_REQUIRED";
+      throw adbIdError;
+    }
+    throw error;
+  }
+}
+
+function sendHostAgentError(res: import("express").Response, error: unknown) {
+  if (error instanceof Error && error.name === "ADB_ID_REQUIRED") {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: "ADB_ID_REQUIRED",
+        message: "adbId is required"
+      }
+    });
+  }
+
+  return sendError(res, error);
+}
 
 hostAgentRouter.get("/", (_req, res) => {
   res.json({ ok: true, data: hostAgentService.listHosts() });
@@ -36,54 +64,54 @@ hostAgentRouter.get("/:id/health", async (req, res) => {
 
 hostAgentRouter.post("/:id/screenshot", async (req, res) => {
   try {
-    const input = instanceCommandSchema.parse(req.body ?? {});
-    res.json({ ok: true, data: await hostAgentService.takeScreenshot(req.params.id, input.instanceId) });
+    const input = parseCommand(instanceCommandSchema, req.body);
+    res.json({ ok: true, data: await hostAgentService.takeScreenshot(req.params.id, input) });
   } catch (error) {
-    sendError(res, error);
+    sendHostAgentError(res, error);
   }
 });
 
 hostAgentRouter.post("/:id/tap", async (req, res) => {
   try {
-    const input = tapCommandSchema.parse(req.body ?? {});
+    const input = parseCommand(tapCommandSchema, req.body);
     res.json({ ok: true, data: await hostAgentService.tap(req.params.id, input) });
   } catch (error) {
-    sendError(res, error);
+    sendHostAgentError(res, error);
   }
 });
 
 hostAgentRouter.post("/:id/swipe", async (req, res) => {
   try {
-    const input = swipeCommandSchema.parse(req.body ?? {});
+    const input = parseCommand(swipeCommandSchema, req.body);
     res.json({ ok: true, data: await hostAgentService.swipe(req.params.id, input) });
   } catch (error) {
-    sendError(res, error);
+    sendHostAgentError(res, error);
   }
 });
 
 hostAgentRouter.post("/:id/send-text", async (req, res) => {
   try {
-    const input = sendTextCommandSchema.parse(req.body ?? {});
+    const input = parseCommand(sendTextCommandSchema, req.body);
     res.json({ ok: true, data: await hostAgentService.sendText(req.params.id, input) });
   } catch (error) {
-    sendError(res, error);
+    sendHostAgentError(res, error);
   }
 });
 
 hostAgentRouter.post("/:id/send-key", async (req, res) => {
   try {
-    const input = sendKeyCommandSchema.parse(req.body ?? {});
+    const input = parseCommand(sendKeyCommandSchema, req.body);
     res.json({ ok: true, data: await hostAgentService.sendKey(req.params.id, input) });
   } catch (error) {
-    sendError(res, error);
+    sendHostAgentError(res, error);
   }
 });
 
 hostAgentRouter.post("/:id/download-latest", async (req, res) => {
   try {
-    const input = downloadLatestCommandSchema.parse(req.body ?? {});
+    const input = parseCommand(downloadLatestCommandSchema, req.body);
     res.json({ ok: true, data: await hostAgentService.downloadLatest(req.params.id, input) });
   } catch (error) {
-    sendError(res, error);
+    sendHostAgentError(res, error);
   }
 });

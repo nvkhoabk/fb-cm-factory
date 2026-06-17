@@ -9,7 +9,8 @@ export const createHostSchema = z.object({
 });
 
 export const instanceCommandSchema = z.object({
-  instanceId: z.string().min(1)
+  instanceId: z.string().min(1),
+  adbId: z.string().min(1, "adbId is required")
 });
 
 export const tapCommandSchema = instanceCommandSchema.extend({
