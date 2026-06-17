@@ -1,10 +1,56 @@
 import { Router } from "express";
 import { jobExecutorService } from "../job-executor/job-executor.service";
 import { sendError } from "../shared/resource";
-import { failOrchestratorJobSchema } from "./orchestrator.schemas";
+import {
+  createOrchestratorRuleSchema,
+  failOrchestratorJobSchema,
+  updateOrchestratorRuleSchema
+} from "./orchestrator.schemas";
 import { orchestratorService } from "./orchestrator.service";
 
 export const orchestratorRouter = Router();
+
+orchestratorRouter.get("/rules", (_req, res) => {
+  try {
+    res.json({ ok: true, data: orchestratorService.listRules() });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+orchestratorRouter.post("/rules", (req, res) => {
+  try {
+    const input = createOrchestratorRuleSchema.parse(req.body ?? {});
+    res.status(201).json({ ok: true, data: orchestratorService.createRule(input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+orchestratorRouter.patch("/rules/:id", (req, res) => {
+  try {
+    const input = updateOrchestratorRuleSchema.parse(req.body ?? {});
+    res.json({ ok: true, data: orchestratorService.updateRule(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+orchestratorRouter.post("/rules/:id/enable", (req, res) => {
+  try {
+    res.json({ ok: true, data: orchestratorService.enableRule(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+orchestratorRouter.post("/rules/:id/disable", (req, res) => {
+  try {
+    res.json({ ok: true, data: orchestratorService.disableRule(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
 
 orchestratorRouter.get("/jobs", (_req, res) => {
   res.json({ ok: true, data: orchestratorService.listJobs() });

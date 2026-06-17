@@ -6,7 +6,9 @@ const configSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3200),
   DB_PATH: z.string().min(1),
   STORAGE_ROOT: z.string().min(1).default("./storage"),
-  HOST_AGENT_API_KEY: z.string().min(1).default("change-me")
+  HOST_AGENT_API_KEY: z.string().min(1).default("change-me"),
+  MANAGER_V1_BASE_URL: z.string().url().default("http://localhost:3000"),
+  MANAGER_V1_API_KEY: z.string().default("")
 });
 
 const parsed = configSchema.safeParse(process.env);
@@ -21,6 +23,7 @@ export const config = {
   port: parsed.data.PORT,
   dbPath: parsed.data.DB_PATH,
   storageRoot: parsed.data.STORAGE_ROOT,
-  hostAgentApiKey: parsed.data.HOST_AGENT_API_KEY
+  hostAgentApiKey: parsed.data.HOST_AGENT_API_KEY,
+  managerV1BaseUrl: parsed.data.MANAGER_V1_BASE_URL,
+  managerV1ApiKey: parsed.data.MANAGER_V1_API_KEY
 };
-

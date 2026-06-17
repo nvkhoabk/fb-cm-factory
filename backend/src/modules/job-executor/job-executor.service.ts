@@ -1,5 +1,6 @@
 import { orchestratorRepository } from "../orchestrator/orchestrator.repository";
 import { orchestratorService } from "../orchestrator/orchestrator.service";
+import { managerBridgeService } from "../manager-bridge/manager-bridge.service";
 import { productionBatchRepository } from "../production-batches/production-batch.repository";
 import { AppError } from "../shared/resource";
 import type { BatchType, BatchUsageStatus } from "../production-batches/production-batch.schemas";
@@ -45,7 +46,51 @@ export const jobExecutorService = {
     orchestratorService.startJob(jobId);
     await delay(25);
 
-    const output = this.createMockOutputBatch(job);
+    const output = this.createOutputBatch(job, { mock: true });
+    return orchestratorService.completeJob(jobId, output);
+  },
+
+  async executeV1Job(jobId: string) {
+    const job = orchestratorRepository.getJob(jobId);
+    if (!job) throw new AppError("ORCHESTRATOR_JOB_NOT_FOUND", "Orchestrator job not found", 404);
+    if (job.status !== "ALLOCATED") {
+      throw new AppError("JOB_NOT_EXECUTABLE", "Only ALLOCATED jobs can be executed through Manager V1");
+    }
+
+    const payload = job.payload as Record<string, unknown>;
+    const instanceId = payload.instanceId;
+    if (typeof instanceId !== "string" || !instanceId) {
+      throw new AppError("JOB_ALLOCATION_NOT_FOUND", "Allocated job payload is missing instanceId");
+    }
+
+    let managerTask: { taskId: string };
+    if (job.targetStageType === "IMAGE_EDIT") {
+      managerTask = await managerBridgeService.createImageEditTaskFromBatch(String(job.sourceBatchId));
+    } else if (job.targetStageType === "VIDEO_GENERATE") {
+      managerTask = await managerBridgeService.createVideoGenerateTaskFromBatch(String(job.sourceBatchId));
+    } else {
+      throw new AppError(
+        "MANAGER_V1_STAGE_UNSUPPORTED",
+        `Manager V1 bridge does not support ${String(job.targetStageType)} jobs`
+      );
+    }
+
+    orchestratorRepository.updateJobStatus(jobId, "ALLOCATED", {
+      managerTaskId: managerTask.taskId
+    });
+
+    await managerBridgeService.runManagerTask(managerTask.taskId, instanceId);
+
+    const runnableJob = orchestratorRepository.getJob(jobId);
+    if (!runnableJob) throw new AppError("ORCHESTRATOR_JOB_NOT_FOUND", "Orchestrator job not found", 404);
+
+    orchestratorService.startJob(jobId);
+
+    const output = this.createOutputBatch(runnableJob, {
+      mock: false,
+      managerTaskId: managerTask.taskId
+    });
+
     return orchestratorService.completeJob(jobId, output);
   },
 
@@ -63,18 +108,22 @@ export const jobExecutorService = {
     };
   },
 
-  createMockOutputBatch(job: {
+  createOutputBatch(job: {
     id: unknown;
     sourceBatchId: unknown;
     targetStageType: unknown;
     payload: Record<string, unknown>;
+  }, options: {
+    mock: boolean;
+    managerTaskId?: string;
   }) {
     const outputBatchType = outputBatchTypeForStage(job.targetStageType);
     if (!outputBatchType) {
       return {
         outputBatchId: null,
         outputBatchType: null,
-        mock: true
+        mock: options.mock,
+        ...(options.managerTaskId ? { managerTaskId: options.managerTaskId } : {})
       };
     }
 
@@ -96,7 +145,8 @@ export const jobExecutorService = {
         producedByJobId: job.id,
         sourceBatchId: job.sourceBatchId,
         targetStageType: job.targetStageType,
-        mock: true
+        mock: options.mock,
+        ...(options.managerTaskId ? { managerTaskId: options.managerTaskId } : {})
       }
     });
 
@@ -127,7 +177,17 @@ export const jobExecutorService = {
       outputBatchId: outputBatch.id,
       outputBatchType,
       producedBatchType: outputBatchType,
-      mock: true
+      mock: options.mock,
+      ...(options.managerTaskId ? { managerTaskId: options.managerTaskId } : {})
     };
+  },
+
+  createMockOutputBatch(job: {
+    id: unknown;
+    sourceBatchId: unknown;
+    targetStageType: unknown;
+    payload: Record<string, unknown>;
+  }) {
+    return this.createOutputBatch(job, { mock: true });
   }
 };

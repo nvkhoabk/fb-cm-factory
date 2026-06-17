@@ -6,3 +6,6 @@ export const executeMockJobParamsSchema = z.object({
 
 export type ExecuteMockJobParams = z.infer<typeof executeMockJobParamsSchema>;
 
+export const executeV1JobParamsSchema = executeMockJobParamsSchema;
+
+export type ExecuteV1JobParams = z.infer<typeof executeV1JobParamsSchema>;

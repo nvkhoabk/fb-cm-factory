@@ -1,6 +1,10 @@
 import { db } from "../../database/db";
 import { createId, jsonParse, jsonString, now } from "../shared/resource";
-import type { OrchestratorJobStatus } from "./orchestrator.schemas";
+import type {
+  CreateOrchestratorRuleInput,
+  OrchestratorJobStatus,
+  UpdateOrchestratorRuleInput
+} from "./orchestrator.schemas";
 
 function mapJob(row: Record<string, unknown>) {
   return {
@@ -25,7 +29,151 @@ function mapBatch(row: Record<string, unknown>) {
   };
 }
 
+function mapRule(row: Record<string, unknown>) {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    triggerBatchType: String(row.trigger_batch_type),
+    triggerStatus: String(row.trigger_status),
+    targetStageType: String(row.target_stage_type),
+    priority: Number(row.priority ?? 100),
+    isActive: Number(row.is_active ?? 1) === 1,
+    config: jsonParse<Record<string, unknown>>(row.config_json, {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
 export const orchestratorRepository = {
+  countRules() {
+    const row = db.prepare("SELECT COUNT(*) AS count FROM orchestrator_rules").get() as { count: number };
+    return row.count;
+  },
+
+  createRule(input: CreateOrchestratorRuleInput) {
+    const createdAt = now();
+    const id = createId("orule");
+
+    db.prepare(`
+      INSERT INTO orchestrator_rules (
+        id, name, trigger_batch_type, trigger_status, target_stage_type,
+        priority, is_active, config_json, created_at, updated_at
+      ) VALUES (
+        @id, @name, @triggerBatchType, @triggerStatus, @targetStageType,
+        @priority, @isActive, @configJson, @createdAt, @updatedAt
+      )
+    `).run({
+      id,
+      name: input.name,
+      triggerBatchType: input.triggerBatchType,
+      triggerStatus: input.triggerStatus,
+      targetStageType: input.targetStageType,
+      priority: input.priority,
+      isActive: input.isActive === false ? 0 : 1,
+      configJson: jsonString(input.config ?? {}, {}),
+      createdAt,
+      updatedAt: createdAt
+    });
+
+    const row = db.prepare("SELECT * FROM orchestrator_rules WHERE id = ?").get(id);
+    return mapRule(row as Record<string, unknown>);
+  },
+
+  seedDefaultRulesIfEmpty() {
+    if (this.countRules() > 0) return [];
+
+    return [
+      this.createRule({
+        name: "Default image batch to video generate",
+        triggerBatchType: "IMAGE_BATCH",
+        triggerStatus: "READY",
+        targetStageType: "VIDEO_GENERATE",
+        priority: 100,
+        isActive: true,
+        config: {}
+      }),
+      this.createRule({
+        name: "Default video batch to video compose",
+        triggerBatchType: "VIDEO_BATCH",
+        triggerStatus: "READY",
+        targetStageType: "VIDEO_COMPOSE",
+        priority: 200,
+        isActive: true,
+        config: {
+          requiresMusic: true
+        }
+      })
+    ];
+  },
+
+  listActiveRules() {
+    return db.prepare(`
+      SELECT * FROM orchestrator_rules
+      WHERE is_active = 1
+      ORDER BY priority ASC, created_at ASC
+    `).all().map((row) => mapRule(row as Record<string, unknown>));
+  },
+
+  listRules() {
+    return db.prepare(`
+      SELECT * FROM orchestrator_rules
+      ORDER BY priority ASC, created_at ASC
+    `).all().map((row) => mapRule(row as Record<string, unknown>));
+  },
+
+  getRule(id: string) {
+    const row = db.prepare("SELECT * FROM orchestrator_rules WHERE id = ?").get(id);
+    return row ? mapRule(row as Record<string, unknown>) : null;
+  },
+
+  updateRule(id: string, input: UpdateOrchestratorRuleInput) {
+    const current = this.getRule(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE orchestrator_rules
+      SET name = @name,
+          trigger_batch_type = @triggerBatchType,
+          trigger_status = @triggerStatus,
+          target_stage_type = @targetStageType,
+          priority = @priority,
+          is_active = @isActive,
+          config_json = @configJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      name: input.name ?? current.name,
+      triggerBatchType: input.triggerBatchType ?? current.triggerBatchType,
+      triggerStatus: input.triggerStatus ?? current.triggerStatus,
+      targetStageType: input.targetStageType ?? current.targetStageType,
+      priority: input.priority ?? current.priority,
+      isActive: (input.isActive ?? current.isActive) ? 1 : 0,
+      configJson: jsonString(input.config ?? current.config, {}),
+      updatedAt: now()
+    });
+
+    return this.getRule(id);
+  },
+
+  setRuleActive(id: string, isActive: boolean) {
+    const current = this.getRule(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE orchestrator_rules
+      SET is_active = @isActive,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      isActive: isActive ? 1 : 0,
+      updatedAt: now()
+    });
+
+    return this.getRule(id);
+  },
+
   listJobs() {
     return db.prepare("SELECT * FROM orchestrator_jobs ORDER BY created_at DESC")
       .all()
@@ -121,14 +269,14 @@ export const orchestratorRepository = {
     return this.getJob(id);
   },
 
-  listReadyAvailableBatches(batchType: string) {
+  listTriggerBatches(batchType: string, status: string) {
     return db.prepare(`
       SELECT * FROM production_batches
       WHERE batch_type = ?
-        AND status = 'READY'
+        AND status = ?
         AND usage_status = 'AVAILABLE'
       ORDER BY created_at ASC
-    `).all(batchType).map((row) => mapBatch(row as Record<string, unknown>));
+    `).all(batchType, status).map((row) => mapBatch(row as Record<string, unknown>));
   },
 
   getReusableOrAvailableMusic() {
