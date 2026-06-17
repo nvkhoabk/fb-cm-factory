@@ -2,7 +2,8 @@ import { Router } from "express";
 import { sendError } from "../shared/resource";
 import {
   createInstancePoolMemberSchema,
-  createInstancePoolSchema
+  createInstancePoolSchema,
+  updateInstancePoolMemberSchema
 } from "./instance-pools.schemas";
 import { instancePoolsService } from "./instance-pools.service";
 
@@ -33,6 +34,15 @@ instancePoolsRouter.post("/:id/members", (req, res) => {
   try {
     const input = createInstancePoolMemberSchema.parse(req.body);
     res.status(201).json({ ok: true, data: instancePoolsService.createMember(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+instancePoolsRouter.patch("/:id/members/:memberId", (req, res) => {
+  try {
+    const input = updateInstancePoolMemberSchema.parse(req.body ?? {});
+    res.json({ ok: true, data: instancePoolsService.updateMember(req.params.id, req.params.memberId, input) });
   } catch (error) {
     sendError(res, error);
   }

@@ -63,6 +63,16 @@ export const hostAgentService = {
     return publicHost(this.getHostRequired(id));
   },
 
+  deleteHost(idOrHostId: string) {
+    const host = this.getHostRequired(idOrHostId);
+    const deleted = db.prepare("DELETE FROM hosts WHERE id = ?").run(host.id).changes > 0;
+    if (!deleted) throw new AppError("HOST_NOT_FOUND", "Host not found", 404);
+    return {
+      deleted: true,
+      host: publicHost(host)
+    };
+  },
+
   getHost(idOrHostId: string) {
     const row = db.prepare(`
       SELECT * FROM hosts

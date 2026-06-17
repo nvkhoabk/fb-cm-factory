@@ -332,6 +332,7 @@ export function migrate() {
   addColumnIfMissing("workflow_runs", "current_stage_no", "INTEGER DEFAULT 0");
   addColumnIfMissing("workflow_runs", "updated_at", "TEXT");
   addColumnIfMissing("orchestrator_jobs", "output_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("instance_pool_members", "metadata_json", "TEXT DEFAULT '{}'");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS prompt_template_versions (

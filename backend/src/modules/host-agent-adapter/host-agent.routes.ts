@@ -54,6 +54,14 @@ hostAgentRouter.post("/", (req, res) => {
   }
 });
 
+hostAgentRouter.delete("/:id", (req, res) => {
+  try {
+    res.json({ ok: true, data: hostAgentService.deleteHost(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 hostAgentRouter.get("/:id/health", async (req, res) => {
   try {
     res.json({ ok: true, data: await hostAgentService.healthCheckAgent(req.params.id) });

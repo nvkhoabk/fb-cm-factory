@@ -337,6 +337,486 @@ h2 {
   opacity: 0.55;
 }
 
+.controlCenter {
+  display: grid;
+  gap: 14px;
+}
+
+.controlToolbar {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.controlToolbar strong {
+  display: block;
+  font-size: 14px;
+}
+
+.controlToolbar small,
+.toggleControl {
+  color: #6c7380;
+  font-size: 12px;
+}
+
+.toggleControl {
+  align-items: center;
+  display: inline-flex;
+  gap: 7px;
+}
+
+.kpiBar {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.kpiCard {
+  background: #ffffff;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  min-height: 74px;
+  padding: 10px;
+}
+
+.kpiCard span {
+  color: #6c7380;
+  display: block;
+  font-size: 12px;
+  min-height: 30px;
+}
+
+.kpiCard strong {
+  display: block;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.pipelineBoard {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(7, minmax(155px, 1fr));
+  overflow-x: auto;
+}
+
+.pipelineColumn {
+  background: #ffffff;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  min-height: 260px;
+  padding: 10px;
+}
+
+.pipelineColumn h2 {
+  border-bottom: 1px solid #e4e8ee;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+}
+
+.pipelineCards {
+  display: grid;
+  gap: 7px;
+}
+
+.pipelineCards p {
+  color: #6c7380;
+  font-size: 12px;
+}
+
+.pipelineCard {
+  background: #f8f9fb;
+  border: 1px solid #e1e6ed;
+  border-radius: 8px;
+  color: inherit;
+  display: grid;
+  gap: 3px;
+  min-height: 96px;
+  padding: 8px;
+  text-align: left;
+}
+
+.pipelineCard:hover {
+  border-color: #7d8da1;
+}
+
+.pipelineCard strong,
+.pipelineCard span,
+.pipelineCard small,
+.pipelineCard em {
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pipelineCard span {
+  font-weight: 700;
+}
+
+.pipelineCard small,
+.pipelineCard em {
+  color: #6c7380;
+  font-style: normal;
+}
+
+.controlDetails {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.controlPanel {
+  min-height: 260px;
+}
+
+.timelinePanel {
+  grid-column: 1 / -1;
+}
+
+.jsonBlock {
+  background: #f4f6f8;
+  border: 1px solid #e1e6ed;
+  border-radius: 7px;
+  color: #2d3440;
+  font-size: 11px;
+  line-height: 1.4;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  white-space: pre-wrap;
+}
+
+.controlActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.controlActions button {
+  background: #f7f8fa;
+  border: 1px solid #d8dee6;
+  border-radius: 7px;
+  color: #2d3440;
+  font-size: 12px;
+  min-height: 30px;
+  padding: 5px 9px;
+  text-transform: capitalize;
+}
+
+.controlActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.timelineList {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.timelineStep {
+  border: 1px solid #e1e6ed;
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  padding: 8px;
+}
+
+.timelineStep span,
+.timelineStep b,
+.timelineStep small,
+.timelineStep em {
+  font-size: 12px;
+}
+
+.timelineStep em {
+  color: #8b2b22;
+  font-style: normal;
+}
+
+.timelineStep img {
+  border: 1px solid #d8dee6;
+  border-radius: 7px;
+  max-height: 180px;
+  max-width: 260px;
+  object-fit: contain;
+}
+
+.timelineStep pre {
+  background: #f4f6f8;
+  border-radius: 7px;
+  font-size: 11px;
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 8px;
+}
+
+.hostForm {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 10px;
+}
+
+.hostForm label span {
+  color: #6c7380;
+  display: block;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.hostForm input,
+.hostForm select {
+  background: #ffffff;
+  border: 1px solid #ccd4df;
+  border-radius: 7px;
+  color: #1b2028;
+  min-height: 34px;
+  padding: 5px 8px;
+  width: 100%;
+}
+
+.deviceList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.deviceList button {
+  background: #eef7f3;
+  border: 1px solid #bed8cd;
+  border-radius: 7px;
+  color: #174f40;
+  font-size: 12px;
+  padding: 5px 8px;
+}
+
+.relationshipPanel,
+.debugPanel {
+  padding: 12px;
+}
+
+.relationshipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.relationshipList span {
+  background: #f4f8ff;
+  border: 1px solid #d4deef;
+  border-radius: 999px;
+  color: #334664;
+  font-size: 12px;
+  padding: 5px 8px;
+}
+
+.debugGrid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.debugGrid pre {
+  background: #f4f6f8;
+  border: 1px solid #e1e6ed;
+  border-radius: 7px;
+  font-size: 11px;
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 8px;
+}
+
+.managementPage {
+  align-items: start;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 230px minmax(0, 1fr);
+}
+
+.managementMenu {
+  display: grid;
+  gap: 7px;
+  position: sticky;
+  top: 14px;
+}
+
+.managementMenu strong {
+  font-size: 14px;
+  margin-bottom: 5px;
+}
+
+.managementMenu button {
+  background: #f7f8fa;
+  border: 1px solid #d8dee6;
+  border-radius: 7px;
+  color: #2d3440;
+  min-height: 32px;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.managementMenu button.active {
+  background: #e9f2ef;
+  border-color: #4f9d7a;
+  color: #174f40;
+  font-weight: 700;
+}
+
+.managementHeader {
+  align-items: center;
+  border-bottom: 1px solid #e4e8ee;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr minmax(180px, 0.4fr) auto;
+  margin: -2px -2px 14px;
+  padding-bottom: 12px;
+}
+
+.managementHeader small {
+  color: #6c7380;
+  display: block;
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.managementHeader input,
+.adminForm input,
+.adminForm select,
+.adminForm textarea {
+  background: #ffffff;
+  border: 1px solid #ccd4df;
+  border-radius: 7px;
+  color: #1b2028;
+  min-height: 34px;
+  padding: 5px 8px;
+  width: 100%;
+}
+
+.adminGrid {
+  align-items: start;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(260px, 0.32fr) minmax(0, 1fr);
+}
+
+.adminForm {
+  background: #f8f9fb;
+  border: 1px solid #e1e6ed;
+  border-radius: 8px;
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+}
+
+.adminForm label {
+  color: #5c6674;
+  display: grid;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 4px;
+}
+
+.adminForm textarea {
+  font-family: Consolas, "Courier New", monospace;
+  min-height: 100px;
+}
+
+.adminForm button,
+.adminRow button {
+  background: #f7f8fa;
+  border: 1px solid #d8dee6;
+  border-radius: 7px;
+  color: #2d3440;
+  font-size: 12px;
+  min-height: 30px;
+  padding: 5px 8px;
+}
+
+.adminForm button:disabled,
+.adminRow button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.adminRow .dangerButton {
+  background: #fff2f1;
+  border-color: #e6b8b2;
+  color: #8b2b22;
+}
+
+.adminTable {
+  display: grid;
+  gap: 8px;
+}
+
+.adminRow {
+  align-items: center;
+  border: 1px solid #e1e6ed;
+  border-radius: 8px;
+  display: grid;
+  gap: 7px;
+  grid-template-columns: minmax(120px, 0.7fr) repeat(3, minmax(80px, 0.45fr)) repeat(4, auto);
+  padding: 8px;
+}
+
+.adminRow b,
+.adminRow span,
+.adminRow small {
+  font-size: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.adminRow span,
+.adminRow small {
+  color: #6c7380;
+}
+
+.adminRow pre,
+.adminResult pre {
+  background: #f4f6f8;
+  border: 1px solid #e1e6ed;
+  border-radius: 7px;
+  font-size: 11px;
+  grid-column: 1 / -1;
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px;
+}
+
+.nestedRow {
+  align-items: center;
+  background: #fbfcfd;
+  border: 1px solid #e8ecf1;
+  border-radius: 7px;
+  display: grid;
+  gap: 6px;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(110px, 1fr) 80px 60px minmax(120px, 1fr) auto auto;
+  padding: 7px;
+}
+
+.adminResult {
+  border-top: 1px solid #e4e8ee;
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+.adminResult strong {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
 .jobsWorkspace {
   align-items: start;
   display: grid;
@@ -899,8 +1379,21 @@ h2 {
   }
 
   .jobsToolbar,
-  .jobsWorkspace {
+  .jobsWorkspace,
+  .controlDetails,
+  .debugGrid,
+  .managementPage,
+  .adminGrid,
+  .managementHeader {
     grid-template-columns: 1fr;
+  }
+
+  .managementMenu {
+    position: static;
+  }
+
+  .kpiBar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .jobDrawer {

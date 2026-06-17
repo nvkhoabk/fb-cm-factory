@@ -50,11 +50,52 @@ type PromptTemplate = {
   status?: string;
 };
 
+type HostRecord = {
+  id: string;
+  hostId: string;
+  name: string;
+  baseUrl: string;
+  status: string;
+};
+
+type AdbDevice = {
+  adbId: string;
+  state: string;
+};
+
 type InstancePool = {
   id: string;
   name: string;
   poolType: string;
   status: string;
+  members?: InstancePoolMember[];
+};
+
+type InstancePoolMember = {
+  id: string;
+  poolId: string;
+  instanceId: string;
+  priority: number;
+  status: string;
+  metadata?: Record<string, unknown>;
+};
+
+type ScriptRecord = {
+  id: string;
+  name: string;
+  status: string;
+  createdAt?: string;
+};
+
+type OrchestratorRule = {
+  id: string;
+  name: string;
+  triggerBatchType: string;
+  triggerStatus: string;
+  targetStageType: string;
+  priority: number;
+  isActive: boolean;
+  config?: Record<string, unknown>;
 };
 
 type ProductionBatch = {
@@ -84,7 +125,10 @@ type RuntimeStep = {
   stepNo: number;
   stepType: string;
   status: string;
+  output?: Record<string, unknown>;
   errorMessage?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
 };
 
 type RuntimeSession = {
@@ -107,7 +151,10 @@ type ScriptRunStep = {
   stepNo: number;
   stepType: string;
   status: string;
+  output?: Record<string, unknown>;
   errorMessage?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
 };
 
 type ScriptRun = {
@@ -124,7 +171,17 @@ type ScriptRun = {
 };
 
 type PromptKind = "image" | "video" | "music";
-type AppPage = "studio" | "production-jobs";
+type ManagementSection =
+  | "hosts"
+  | "instance-pools"
+  | "scripts"
+  | "prompt-templates"
+  | "character-groups"
+  | "production-resources"
+  | "orchestrator-rules"
+  | "jobs"
+  | "runtime-sessions";
+type AppPage = "control-center" | "studio" | "production-jobs" | "management";
 
 type PromptPreviews = Record<PromptKind, string>;
 type PromptSelections = Record<PromptKind, string>;
@@ -162,6 +219,21 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const payload = (await response.json()) as ApiResponse<T>;
   if (!response.ok || payload.ok === false) {
     throw new Error(payload.error?.message ?? `Request failed: ${path}`);
+  }
+  return payload.data;
+}
+
+async function hostApi<T>(baseUrl: string, path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${baseUrl.replace(/\/+$/, "")}${path}`, {
+    ...init,
+    headers: {
+      accept: "application/json",
+      ...(init?.headers ?? {})
+    }
+  });
+  const payload = (await response.json()) as ApiResponse<T>;
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.error?.message ?? `Host Agent request failed: ${path}`);
   }
   return payload.data;
 }
@@ -259,6 +331,32 @@ function batchMatchesJob(batch: ProductionBatch, job?: OrchestratorJob | null) {
     || Boolean(workflowRunId && getString(metadata.sourceWorkflowRunId) === workflowRunId);
 }
 
+function compactJson(value: unknown) {
+  return JSON.stringify(value ?? {}, null, 2);
+}
+
+function findUrl(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  for (const key of ["screenshotUrl", "publicUrl", "url"]) {
+    const candidate = record[key];
+    if (typeof candidate === "string" && candidate) return candidate;
+  }
+  for (const item of Object.values(record)) {
+    const nested = findUrl(item);
+    if (nested) return nested;
+  }
+  return "";
+}
+
+function parseJsonText(value: string, fallback: Record<string, unknown> = {}) {
+  try {
+    return JSON.parse(value || "{}") as Record<string, unknown>;
+  } catch {
+    return fallback;
+  }
+}
+
 function findJobError(job?: OrchestratorJob | null, runtimeSession?: RuntimeSession | null, scriptRun?: ScriptRun | null) {
   const jobOutput = getRecord(job?.output);
   const jobPayload = getRecord(job?.payload);
@@ -272,11 +370,95 @@ function findJobError(job?: OrchestratorJob | null, runtimeSession?: RuntimeSess
     || "";
 }
 
+function AdminSimpleList({ items, search }: { items: Array<Record<string, unknown>>; search: string }) {
+  const lower = search.toLowerCase();
+  return (
+    <div className="adminTable">
+      {items
+        .filter((item) => compactJson(item).toLowerCase().includes(lower))
+        .slice(0, 20)
+        .map((item) => (
+          <div className="adminRow" key={String(item.id ?? compactJson(item))}>
+            <b>{String(item.name ?? item.id ?? "item")}</b>
+            <span>{String(item.status ?? item.category ?? item.batchType ?? "")}</span>
+            <small>{displayShortId(String(item.id ?? ""))}</small>
+            <pre>{compactJson(item)}</pre>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+function AdminJobsPanel({
+  jobs,
+  pools,
+  busy,
+  runJobAction,
+  search
+}: {
+  jobs: OrchestratorJob[];
+  pools: InstancePool[];
+  busy: boolean;
+  runJobAction: (job: OrchestratorJob, action: "allocate" | "execute-mock" | "execute-image-edit" | "start" | "complete" | "fail") => void;
+  search: string;
+}) {
+  return (
+    <div className="adminTable">
+      {jobs.filter((job) => compactJson(job).toLowerCase().includes(search.toLowerCase())).slice(0, 20).map((job) => (
+        <div className="adminRow" key={job.id}>
+          <b>{job.targetStageType}</b><span>{job.status}</span><span>{displayJobPool(job, pools)}</span><small>{job.id}</small>
+          <pre>{compactJson(job.payload)}</pre>
+          <div className="controlActions">
+            {(["allocate", "execute-mock", "execute-image-edit", "start", "complete", "fail"] as const).map((action) => (
+              <button key={action} disabled={busy} onClick={() => runJobAction(job, action)}>{action}</button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AdminRuntimePanel({
+  sessions,
+  scriptRuns,
+  busy,
+  selectRuntimeSession,
+  runtimeAction,
+  search
+}: {
+  sessions: RuntimeSession[];
+  scriptRuns: ScriptRun[];
+  busy: boolean;
+  selectRuntimeSession: (session: RuntimeSession) => void;
+  runtimeAction: (action: "test-screenshot" | "recover" | "mark-unrecoverable") => void;
+  search: string;
+}) {
+  return (
+    <div className="adminTable">
+      {sessions.filter((session) => compactJson(session).toLowerCase().includes(search.toLowerCase())).slice(0, 20).map((session) => (
+        <div className="adminRow" key={session.id}>
+          <b>{session.status}</b><span>{session.hostId ?? "-"}</span><span>{session.instanceId ?? "-"}</span><small>{session.id}</small>
+          <pre>{compactJson(session.checkpoint)}</pre>
+          <div className="controlActions">
+            <button disabled={busy} onClick={() => selectRuntimeSession(session)}>View Timeline</button>
+            <button disabled={busy} onClick={() => runtimeAction("test-screenshot")}>Test Screenshot</button>
+            <button disabled={busy || session.status !== "FAILED_RECOVERABLE"} onClick={() => runtimeAction("recover")}>Recover</button>
+            <button disabled={busy} onClick={() => runtimeAction("mark-unrecoverable")}>Mark Unrecoverable</button>
+          </div>
+          {scriptRuns.filter((run) => run.runtimeSessionId === session.id).map((run) => <small key={run.id}>Script run {run.id} / {run.status}</small>)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function App() {
-  const [page, setPage] = useState<AppPage>("production-jobs");
+  const [page, setPage] = useState<AppPage>("control-center");
   const [groups, setGroups] = useState<CharacterGroup[]>([]);
   const [attributes, setAttributes] = useState<GroupAttribute[]>([]);
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
+  const [hosts, setHosts] = useState<HostRecord[]>([]);
   const [pools, setPools] = useState<InstancePool[]>([]);
   const [batches, setBatches] = useState<ProductionBatch[]>([]);
   const [jobs, setJobs] = useState<OrchestratorJob[]>([]);
@@ -311,6 +493,34 @@ export function App() {
   const [poolFilter, setPoolFilter] = useState("");
   const [jobsPage, setJobsPage] = useState(1);
   const [jobsPageSize, setJobsPageSize] = useState(10);
+  const [selectedBatchId, setSelectedBatchId] = useState("");
+  const [selectedRuntimeId, setSelectedRuntimeId] = useState("");
+  const [selectedHostId, setSelectedHostId] = useState("");
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [debugOpen, setDebugOpen] = useState(true);
+  const [hostAdbId, setHostAdbId] = useState("");
+  const [hostInstanceId, setHostInstanceId] = useState("");
+  const [hostSendText, setHostSendText] = useState("hello");
+  const [hostResult, setHostResult] = useState<unknown>(null);
+  const [adbDevices, setAdbDevices] = useState<AdbDevice[]>([]);
+  const [managementSection, setManagementSection] = useState<ManagementSection>("hosts");
+  const [scripts, setScripts] = useState<ScriptRecord[]>([]);
+  const [orchestratorRules, setOrchestratorRules] = useState<OrchestratorRule[]>([]);
+  const [selectedPoolId, setSelectedPoolId] = useState("");
+  const [selectedScriptId, setSelectedScriptId] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [selectedGroupId, setSelectedGroupId] = useState("");
+  const [selectedResourceId, setSelectedResourceId] = useState("");
+  const [adminSearch, setAdminSearch] = useState("");
+  const [adminJson, setAdminJson] = useState("{}");
+  const [hostForm, setHostForm] = useState({ hostId: "", name: "", baseUrl: "http://localhost:3300", apiKey: "", status: "active" });
+  const [poolForm, setPoolForm] = useState({ name: "", poolType: "IMAGE_EDIT", status: "active" });
+  const [memberForm, setMemberForm] = useState({ instanceId: "", priority: "100", status: "ACTIVE", metadata: "{\n  \"hostId\": \"\",\n  \"localId\": \"\",\n  \"adbId\": \"\"\n}" });
+  const [scriptForm, setScriptForm] = useState({ name: "", status: "active", steps: "{\n  \"steps\": [\n    { \"type\": \"wait\", \"config\": { \"ms\": 500 } }\n  ]\n}" });
+  const [templateForm, setTemplateForm] = useState({ name: "", category: "image", status: "active", templateText: "Transform into a {scene} scene." });
+  const [groupForm, setGroupForm] = useState({ name: "", description: "", status: "active", characterId: "", role: "member", attributeId: "", customValue: "" });
+  const [batchForm, setBatchForm] = useState({ batchType: "IMAGE_BATCH", status: "NEW", usageStatus: "AVAILABLE", metadata: "{}" });
+  const [ruleForm, setRuleForm] = useState({ name: "", triggerBatchType: "IMAGE_BATCH", triggerStatus: "READY", targetStageType: "VIDEO_GENERATE", priority: "100", config: "{}" });
   const [status, setStatus] = useState("Loading studio data");
   const [busy, setBusy] = useState(false);
 
@@ -343,29 +553,87 @@ export function App() {
     () => batches.filter((batch) => batchMatchesJob(batch, selectedJob)),
     [batches, selectedJob]
   );
+  const selectedBatch = useMemo(
+    () => batches.find((batch) => batch.id === selectedBatchId) ?? null,
+    [batches, selectedBatchId]
+  );
+  const selectedRuntime = useMemo(
+    () => (runtimeSession?.id === selectedRuntimeId ? runtimeSession : null)
+      ?? runtimeSessions.find((session) => session.id === selectedRuntimeId)
+      ?? null,
+    [runtimeSession, runtimeSessions, selectedRuntimeId]
+  );
+  const selectedScriptRun = useMemo(
+    () => scriptRun ?? scriptRuns.find((run) => run.runtimeSessionId === selectedRuntime?.id) ?? null,
+    [scriptRun, scriptRuns, selectedRuntime]
+  );
+  const selectedHost = useMemo(
+    () => hosts.find((host) => host.id === selectedHostId || host.hostId === selectedHostId) ?? hosts[0] ?? null,
+    [hosts, selectedHostId]
+  );
+  const kpis = useMemo(() => ({
+    readyBatches: batches.filter((batch) => batch.status === "READY" && ["AVAILABLE", "REUSABLE"].includes(batch.usageStatus)).length,
+    pendingJobs: jobs.filter((job) => job.status === "PENDING").length,
+    allocatedJobs: jobs.filter((job) => job.status === "ALLOCATED").length,
+    runningRuntimeSessions: runtimeSessions.filter((session) => session.status === "RUNNING").length,
+    failedRecoverableSessions: runtimeSessions.filter((session) => session.status === "FAILED_RECOVERABLE").length,
+    finalOutputs: batches.filter((batch) => batch.batchType === "FINAL_VIDEO" && batch.status === "READY").length
+  }), [batches, jobs, runtimeSessions]);
+  const board = useMemo(() => ({
+    inputGroups: batches.filter((batch) => batch.batchType === "CHARACTER_GROUP"),
+    imageBatches: batches.filter((batch) => batch.batchType === "IMAGE_BATCH"),
+    videoBatches: batches.filter((batch) => batch.batchType === "VIDEO_BATCH"),
+    musicTracks: batches.filter((batch) => batch.batchType === "MUSIC_TRACK"),
+    finalVideos: batches.filter((batch) => batch.batchType === "FINAL_VIDEO"),
+    jobs,
+    runtimeSessions
+  }), [batches, jobs, runtimeSessions]);
 
   const loadData = useCallback(async () => {
     setStatus("Loading studio data");
-    const [groupData, attributeData, templateData, poolData, batchData, jobData, sessionData, scriptRunData] = await Promise.all([
+    const [
+      groupData,
+      attributeData,
+      templateData,
+      hostData,
+      poolData,
+      batchData,
+      jobData,
+      sessionData,
+      scriptRunData,
+      scriptData,
+      ruleData
+    ] = await Promise.all([
       api<CharacterGroup[]>("/character-groups"),
       api<GroupAttribute[]>("/group-attributes"),
       api<PromptTemplate[]>("/prompt-templates"),
+      api<HostRecord[]>("/hosts"),
       api<InstancePool[]>("/instance-pools"),
       api<ProductionBatch[]>("/production-batches"),
       api<OrchestratorJob[]>("/orchestrator/jobs"),
       api<RuntimeSession[]>("/runtime-sessions"),
-      api<ScriptRun[]>("/script-runs")
+      api<ScriptRun[]>("/script-runs"),
+      api<ScriptRecord[]>("/scripts"),
+      api<OrchestratorRule[]>("/orchestrator/rules")
     ]);
 
     setGroups(groupData);
     setAttributes(attributeData);
     setTemplates(templateData);
+    setHosts(hostData);
     setPools(poolData);
     setBatches(batchData);
     setJobs(jobData);
     setRuntimeSessions(sessionData);
     setScriptRuns(scriptRunData);
+    setScripts(scriptData);
+    setOrchestratorRules(ruleData);
     setSelectedGroups((current) => current.length ? current : groupData[0] ? [groupData[0].id] : []);
+    setSelectedHostId((current) => current || hostData[0]?.id || "");
+    setSelectedPoolId((current) => current || poolData[0]?.id || "");
+    setSelectedScriptId((current) => current || scriptData[0]?.id || "");
+    setSelectedTemplateId((current) => current || templateData[0]?.id || "");
+    setSelectedGroupId((current) => current || groupData[0]?.id || "");
 
     const nextSelections = { image: "", video: "", music: "" };
     for (const template of templateData) {
@@ -383,6 +651,14 @@ export function App() {
   useEffect(() => {
     loadData().catch((error) => setStatus(error instanceof Error ? error.message : "Could not load studio"));
   }, [loadData]);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const id = window.setInterval(() => {
+      refreshQueue().catch((error) => setStatus(error instanceof Error ? error.message : "Auto refresh failed"));
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, [autoRefresh]);
 
   useEffect(() => {
     if (!selectedJobId && jobs[0]) {
@@ -513,21 +789,28 @@ export function App() {
   }
 
   async function refreshQueue() {
-    const [latestPools, latestBatches, latestJobs, latestSessions, latestScriptRuns] = await Promise.all([
+    const [latestHosts, latestPools, latestBatches, latestJobs, latestSessions, latestScriptRuns, latestScripts, latestRules] = await Promise.all([
+      api<HostRecord[]>("/hosts"),
       api<InstancePool[]>("/instance-pools"),
       api<ProductionBatch[]>("/production-batches"),
       api<OrchestratorJob[]>("/orchestrator/jobs"),
       api<RuntimeSession[]>("/runtime-sessions"),
-      api<ScriptRun[]>("/script-runs")
+      api<ScriptRun[]>("/script-runs"),
+      api<ScriptRecord[]>("/scripts"),
+      api<OrchestratorRule[]>("/orchestrator/rules")
     ]);
+    setHosts(latestHosts);
     setPools(latestPools);
     setBatches(latestBatches);
     setJobs(latestJobs);
     setRuntimeSessions(latestSessions);
     setScriptRuns(latestScriptRuns);
+    setScripts(latestScripts);
+    setOrchestratorRules(latestRules);
     return {
       batches: latestBatches,
       jobs: latestJobs,
+      hosts: latestHosts,
       runtimeSessions: latestSessions,
       scriptRuns: latestScriptRuns
     };
@@ -606,7 +889,22 @@ export function App() {
     }
   }
 
-  async function runJobAction(job: OrchestratorJob, action: "allocate" | "execute-mock" | "execute-image-edit") {
+  async function selectRuntimeSession(session: RuntimeSession) {
+    setSelectedRuntimeId(session.id);
+    setRuntimeSession(session);
+    const related = scriptRuns.find((run) => run.runtimeSessionId === session.id);
+    if (related) {
+      const detail = await api<ScriptRun>(`/script-runs/${related.id}`);
+      setScriptRun(detail);
+    } else {
+      setScriptRun(null);
+    }
+  }
+
+  async function runJobAction(
+    job: OrchestratorJob,
+    action: "allocate" | "execute-mock" | "execute-image-edit" | "start" | "complete" | "fail"
+  ) {
     setBusy(true);
     setStatus(`${action} ${job.targetStageType}`);
     try {
@@ -614,9 +912,11 @@ export function App() {
         ? `/job-executor/jobs/${job.id}/execute-mock`
         : action === "execute-image-edit"
           ? `/job-executor/jobs/${job.id}/execute-image-edit`
-          : `/orchestrator/jobs/${job.id}/allocate`;
+          : `/orchestrator/jobs/${job.id}/${action}`;
+      const body = action === "fail" ? { errorMessage: "Failed from Factory Control Center" } : undefined;
       await api(path, {
-        method: "POST"
+        method: "POST",
+        body: body ? JSON.stringify(body) : undefined
       });
       const latest = await refreshQueue();
       const updatedJob = latest.jobs.find((item) => item.id === job.id);
@@ -649,12 +949,111 @@ export function App() {
     }
   }
 
+  async function runtimeAction(action: "test-screenshot" | "recover" | "mark-unrecoverable") {
+    const session = selectedRuntime;
+    if (!session) return;
+
+    setBusy(true);
+    setStatus(`${action} runtime`);
+    try {
+      await api(`/runtime-sessions/${session.id}/${action}`, { method: "POST" });
+      await refreshQueue();
+      const detail = await api<RuntimeSession>(`/runtime-sessions/${session.id}`);
+      await selectRuntimeSession(detail);
+      setStatus("Runtime updated");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Runtime action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runHostAction(action: "health" | "devices" | "screenshot" | "tap" | "send-text" | "download-latest") {
+    if (!selectedHost) {
+      setStatus("Select a host");
+      return;
+    }
+
+    setBusy(true);
+    setStatus(`${action} host test`);
+    try {
+      let result: unknown;
+      if (action === "health") {
+        result = await api(`/hosts/${selectedHost.id}/health`);
+      } else if (action === "devices") {
+        const data = await hostApi<{ devices: AdbDevice[] }>(selectedHost.baseUrl, "/adb/devices");
+        setAdbDevices(data.devices ?? []);
+        result = data;
+      } else if (action === "screenshot") {
+        result = await api(`/hosts/${selectedHost.id}/screenshot`, {
+          method: "POST",
+          body: JSON.stringify({ instanceId: hostInstanceId, adbId: hostAdbId })
+        });
+      } else if (action === "tap") {
+        result = await api(`/hosts/${selectedHost.id}/tap`, {
+          method: "POST",
+          body: JSON.stringify({ instanceId: hostInstanceId, adbId: hostAdbId, x: 100, y: 100 })
+        });
+      } else if (action === "send-text") {
+        result = await api(`/hosts/${selectedHost.id}/send-text`, {
+          method: "POST",
+          body: JSON.stringify({ instanceId: hostInstanceId, adbId: hostAdbId, text: hostSendText })
+        });
+      } else {
+        result = await api(`/hosts/${selectedHost.id}/download-latest`, {
+          method: "POST",
+          body: JSON.stringify({ instanceId: hostInstanceId, adbId: hostAdbId })
+        });
+      }
+      setHostResult(result);
+      setStatus("Host test complete");
+    } catch (error) {
+      setHostResult({ error: error instanceof Error ? error.message : "Host test failed" });
+      setStatus(error instanceof Error ? error.message : "Host test failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function adminAction(label: string, task: () => Promise<unknown>) {
+    setBusy(true);
+    setStatus(label);
+    try {
+      const result = await task();
+      setAdminJson(compactJson(result));
+      await refreshQueue();
+      setStatus("Management updated");
+    } catch (error) {
+      setAdminJson(compactJson({ error: error instanceof Error ? error.message : "Action failed" }));
+      setStatus(error instanceof Error ? error.message : "Management action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function selectedPool() {
+    return pools.find((pool) => pool.id === selectedPoolId) ?? null;
+  }
+
+  async function loadPoolDetail(poolId = selectedPoolId) {
+    if (!poolId) return null;
+    const detail = await api<InstancePool>(`/instance-pools/${poolId}`);
+    setPools((current) => current.map((pool) => pool.id === poolId ? detail : pool));
+    return detail;
+  }
+
   return (
     <main className="studio">
       <header className="topbar">
         <div>
           <p className="eyebrow">FB-CM Factory</p>
-          <h1>{page === "production-jobs" ? "Production Jobs" : "Production Studio"}</h1>
+          <h1>
+            {page === "control-center"
+              ? "Factory Control Center"
+              : page === "production-jobs"
+                ? "Production Jobs"
+                : "Production Studio"}
+          </h1>
         </div>
         <div className="statusLine">
           {busy ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
@@ -666,6 +1065,10 @@ export function App() {
       </header>
 
       <nav className="appNav" aria-label="Main navigation">
+        <button className={page === "control-center" ? "active" : ""} onClick={() => setPage("control-center")}>
+          <Boxes size={16} />
+          Control Center
+        </button>
         <button className={page === "production-jobs" ? "active" : ""} onClick={() => setPage("production-jobs")}>
           <ClipboardList size={16} />
           Production Jobs
@@ -674,9 +1077,443 @@ export function App() {
           <Sparkles size={16} />
           Production Studio
         </button>
+        <button className={page === "management" ? "active" : ""} onClick={() => setPage("management")}>
+          <Users size={16} />
+          Management
+        </button>
       </nav>
 
-      {page === "studio" ? (
+      {page === "management" ? (
+      <section className="managementPage">
+        <aside className="managementMenu panel">
+          <strong>Management</strong>
+          {[
+            ["hosts", "Hosts"],
+            ["instance-pools", "Instance Pools"],
+            ["scripts", "Scripts"],
+            ["prompt-templates", "Prompt Templates"],
+            ["character-groups", "Character Groups"],
+            ["production-resources", "Production Resources"],
+            ["orchestrator-rules", "Orchestrator Rules"],
+            ["jobs", "Jobs"],
+            ["runtime-sessions", "Runtime Sessions"]
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              className={managementSection === id ? "active" : ""}
+              onClick={() => setManagementSection(id as ManagementSection)}
+            >
+              {label}
+            </button>
+          ))}
+        </aside>
+        <section className="managementContent panel">
+          <div className="managementHeader">
+            <div>
+              <h2>{managementSection.split("-").map((part) => part[0].toUpperCase() + part.slice(1)).join(" ")}</h2>
+              <small>Simple CRUD tools for operators</small>
+            </div>
+            <input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder="Search/filter" />
+            <button className="secondaryButton" onClick={() => refreshQueue()} disabled={busy}>
+              <RefreshCcw size={15} />
+              Refresh
+            </button>
+          </div>
+
+          {managementSection === "hosts" ? (
+            <div className="adminGrid">
+              <div className="adminForm">
+                <label>Host ID<input value={hostForm.hostId} onChange={(event) => setHostForm({ ...hostForm, hostId: event.target.value })} /></label>
+                <label>Name<input value={hostForm.name} onChange={(event) => setHostForm({ ...hostForm, name: event.target.value })} /></label>
+                <label>Base URL<input value={hostForm.baseUrl} onChange={(event) => setHostForm({ ...hostForm, baseUrl: event.target.value })} /></label>
+                <label>API Key<input value={hostForm.apiKey} onChange={(event) => setHostForm({ ...hostForm, apiKey: event.target.value })} /></label>
+                <label>Status<input value={hostForm.status} onChange={(event) => setHostForm({ ...hostForm, status: event.target.value })} /></label>
+                <button onClick={() => adminAction("Creating host", () => api("/hosts", { method: "POST", body: JSON.stringify(hostForm) }))}>Add Host</button>
+              </div>
+              <div className="adminTable">
+                {hosts.filter((host) => compactJson(host).toLowerCase().includes(adminSearch.toLowerCase())).slice(0, 20).map((host) => (
+                  <div className="adminRow" key={host.id}>
+                    <b>{host.name}</b><span>{host.hostId}</span><span>{host.baseUrl}</span><span>{host.status}</span>
+                    <button onClick={() => adminAction("Testing host health", () => api(`/hosts/${host.id}/health`))}>Health</button>
+                    <button onClick={() => adminAction("Testing ADB devices", () => hostApi(host.baseUrl, "/adb/devices"))}>ADB Devices</button>
+                    <button onClick={() => adminAction("Testing screenshot", () => api(`/hosts/${host.id}/screenshot`, { method: "POST", body: JSON.stringify({ instanceId: hostInstanceId, adbId: hostAdbId }) }))}>Screenshot</button>
+                    <button
+                      className="dangerButton"
+                      onClick={() => {
+                        if (window.confirm(`Delete host ${host.name}?`)) {
+                          adminAction("Deleting host", () => api(`/hosts/${host.id}`, { method: "DELETE" }));
+                        }
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {managementSection === "instance-pools" ? (
+            <div className="adminGrid">
+              <div className="adminForm">
+                <label>Name<input value={poolForm.name} onChange={(event) => setPoolForm({ ...poolForm, name: event.target.value })} /></label>
+                <label>Pool Type<select value={poolForm.poolType} onChange={(event) => setPoolForm({ ...poolForm, poolType: event.target.value })}>{Object.keys(stageTypeToPoolType).map((type) => <option key={type}>{type}</option>)}</select></label>
+                <label>Status<input value={poolForm.status} onChange={(event) => setPoolForm({ ...poolForm, status: event.target.value })} /></label>
+                <button onClick={() => adminAction("Creating pool", () => api("/instance-pools", { method: "POST", body: JSON.stringify(poolForm) }))}>Create Pool</button>
+                <hr />
+                <label>Selected Pool<select value={selectedPoolId} onChange={(event) => { setSelectedPoolId(event.target.value); loadPoolDetail(event.target.value); }}>{pools.map((pool) => <option key={pool.id} value={pool.id}>{pool.name}</option>)}</select></label>
+                <label>Instance ID<input value={memberForm.instanceId} onChange={(event) => setMemberForm({ ...memberForm, instanceId: event.target.value })} /></label>
+                <label>Priority<input value={memberForm.priority} onChange={(event) => setMemberForm({ ...memberForm, priority: event.target.value })} /></label>
+                <label>Status<input value={memberForm.status} onChange={(event) => setMemberForm({ ...memberForm, status: event.target.value })} /></label>
+                <label>Metadata JSON<textarea value={memberForm.metadata} onChange={(event) => setMemberForm({ ...memberForm, metadata: event.target.value })} /></label>
+                <button disabled={!selectedPoolId} onClick={() => adminAction("Adding pool member", () => api(`/instance-pools/${selectedPoolId}/members`, { method: "POST", body: JSON.stringify({ instanceId: memberForm.instanceId, priority: Number(memberForm.priority), status: memberForm.status, metadata: parseJsonText(memberForm.metadata) }) }).then(() => loadPoolDetail()))}>Add Member</button>
+              </div>
+              <div className="adminTable">
+                {pools.slice(0, 20).map((pool) => (
+                  <div className="adminRow" key={pool.id} onClick={() => { setSelectedPoolId(pool.id); loadPoolDetail(pool.id); }}>
+                    <b>{pool.name}</b><span>{pool.poolType}</span><span>{pool.status}</span>
+                    {(pool.members ?? []).map((member) => (
+                      <div className="nestedRow" key={member.id}>
+                        <span>{member.instanceId}</span><span>{member.status}</span><span>{member.priority}</span><small>{compactJson(member.metadata)}</small>
+                        <button onClick={(event) => { event.stopPropagation(); adminAction("Updating member", () => api(`/instance-pools/${pool.id}/members/${member.id}`, { method: "PATCH", body: JSON.stringify({ status: member.status === "ACTIVE" ? "OFFLINE" : "ACTIVE", metadata: member.metadata ?? {} }) }).then(() => loadPoolDetail(pool.id))); }}>Toggle Status</button>
+                        <button onClick={(event) => { event.stopPropagation(); adminAction("Removing member", () => api(`/instance-pools/${pool.id}/members/${member.id}`, { method: "DELETE" }).then(() => loadPoolDetail(pool.id))); }}>Remove</button>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {managementSection === "scripts" ? (
+            <div className="adminGrid">
+              <div className="adminForm">
+                <label>Name<input value={scriptForm.name} onChange={(event) => setScriptForm({ ...scriptForm, name: event.target.value })} /></label>
+                <label>Status<input value={scriptForm.status} onChange={(event) => setScriptForm({ ...scriptForm, status: event.target.value })} /></label>
+                <button onClick={() => adminAction("Creating script", () => api("/scripts", { method: "POST", body: JSON.stringify({ name: scriptForm.name, status: scriptForm.status }) }))}>Create Script</button>
+                <label>Script<select value={selectedScriptId} onChange={(event) => setSelectedScriptId(event.target.value)}>{scripts.map((script) => <option key={script.id} value={script.id}>{script.name}</option>)}</select></label>
+                <label>Steps JSON<textarea value={scriptForm.steps} onChange={(event) => setScriptForm({ ...scriptForm, steps: event.target.value })} /></label>
+                <button disabled={!selectedScriptId} onClick={() => adminAction("Creating script version", () => api(`/scripts/${selectedScriptId}/versions`, { method: "POST", body: JSON.stringify({ status: "active", definition: parseJsonText(scriptForm.steps) }) }))}>Create Version</button>
+                <label>Runtime Session<select value={selectedRuntimeId} onChange={(event) => setSelectedRuntimeId(event.target.value)}><option value="">Select runtime</option>{runtimeSessions.map((session) => <option key={session.id} value={session.id}>{session.id}</option>)}</select></label>
+                <button disabled={!selectedRuntimeId || !selectedScriptId} onClick={() => adminAction("Testing script run", () => api(`/runtime-sessions/${selectedRuntimeId}/run-script`, { method: "POST", body: JSON.stringify({ scriptId: selectedScriptId, context: {} }) }))}>Test Run</button>
+              </div>
+              <AdminSimpleList items={[...scripts, ...scriptRuns]} search={adminSearch} />
+            </div>
+          ) : null}
+
+          {managementSection === "prompt-templates" ? (
+            <div className="adminGrid">
+              <div className="adminForm">
+                <label>Name<input value={templateForm.name} onChange={(event) => setTemplateForm({ ...templateForm, name: event.target.value })} /></label>
+                <label>Category<input value={templateForm.category} onChange={(event) => setTemplateForm({ ...templateForm, category: event.target.value })} /></label>
+                <label>Status<input value={templateForm.status} onChange={(event) => setTemplateForm({ ...templateForm, status: event.target.value })} /></label>
+                <button onClick={() => adminAction("Creating template", () => api("/prompt-templates", { method: "POST", body: JSON.stringify({ name: templateForm.name, category: templateForm.category, status: templateForm.status }) }))}>Create Template</button>
+                <label>Template<select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>
+                <label>Template Text<textarea value={templateForm.templateText} onChange={(event) => setTemplateForm({ ...templateForm, templateText: event.target.value })} /></label>
+                <button disabled={!selectedTemplateId} onClick={() => adminAction("Creating template version", () => api(`/prompt-templates/${selectedTemplateId}/versions`, { method: "POST", body: JSON.stringify({ templateText: templateForm.templateText, status: "draft" }) }))}>Create Version</button>
+                <label>Group<select value={selectedGroupId} onChange={(event) => setSelectedGroupId(event.target.value)}>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+                <button disabled={!selectedTemplateId || !selectedGroupId} onClick={() => adminAction("Rendering preview", () => api("/prompt-builder/render", { method: "POST", body: JSON.stringify({ templateId: selectedTemplateId, groupId: selectedGroupId }) }))}>Render Preview</button>
+              </div>
+              <AdminSimpleList items={templates} search={adminSearch} />
+            </div>
+          ) : null}
+
+          {managementSection === "character-groups" ? (
+            <div className="adminGrid">
+              <div className="adminForm">
+                <label>Name<input value={groupForm.name} onChange={(event) => setGroupForm({ ...groupForm, name: event.target.value })} /></label>
+                <label>Description<input value={groupForm.description} onChange={(event) => setGroupForm({ ...groupForm, description: event.target.value })} /></label>
+                <button onClick={() => adminAction("Creating group", () => api("/character-groups", { method: "POST", body: JSON.stringify({ name: groupForm.name, description: groupForm.description, status: groupForm.status }) }))}>Create Group</button>
+                <label>Group<select value={selectedGroupId} onChange={(event) => setSelectedGroupId(event.target.value)}>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+                <label>Character ID<input value={groupForm.characterId} onChange={(event) => setGroupForm({ ...groupForm, characterId: event.target.value })} /></label>
+                <button disabled={!selectedGroupId} onClick={() => adminAction("Adding member", () => api(`/character-groups/${selectedGroupId}/members`, { method: "POST", body: JSON.stringify({ characterId: groupForm.characterId, role: groupForm.role }) }))}>Add Member</button>
+                <label>Attribute<select value={groupForm.attributeId} onChange={(event) => setGroupForm({ ...groupForm, attributeId: event.target.value })}>{attributes.map((attr) => <option key={attr.id} value={attr.id}>{attr.name}</option>)}</select></label>
+                <label>Custom Value<input value={groupForm.customValue} onChange={(event) => setGroupForm({ ...groupForm, customValue: event.target.value })} /></label>
+                <button disabled={!selectedGroupId || !groupForm.attributeId} onClick={() => adminAction("Assigning attribute", () => api(`/character-groups/${selectedGroupId}/attributes`, { method: "POST", body: JSON.stringify({ attributeId: groupForm.attributeId, customValue: groupForm.customValue }) }))}>Assign Attribute</button>
+                <button disabled={!selectedGroupId} onClick={() => adminAction("Creating production batch", () => api("/production-batches", { method: "POST", body: JSON.stringify({ batchType: "CHARACTER_GROUP", sourceGroupId: selectedGroupId, status: "READY", usageStatus: "AVAILABLE", metadata: { createdFrom: "Management" } }) }))}>Create Batch</button>
+              </div>
+              <AdminSimpleList items={groups} search={adminSearch} />
+            </div>
+          ) : null}
+
+          {managementSection === "production-resources" ? (
+            <div className="adminGrid">
+              <div className="adminForm">
+                <label>Batch Type<select value={batchForm.batchType} onChange={(event) => setBatchForm({ ...batchForm, batchType: event.target.value })}>{["CHARACTER_GROUP", "IMAGE_BATCH", "VIDEO_BATCH", "MUSIC_TRACK", "FINAL_VIDEO"].map((type) => <option key={type}>{type}</option>)}</select></label>
+                <label>Status<input value={batchForm.status} onChange={(event) => setBatchForm({ ...batchForm, status: event.target.value })} /></label>
+                <label>Usage Status<input value={batchForm.usageStatus} onChange={(event) => setBatchForm({ ...batchForm, usageStatus: event.target.value })} /></label>
+                <label>Metadata JSON<textarea value={batchForm.metadata} onChange={(event) => setBatchForm({ ...batchForm, metadata: event.target.value })} /></label>
+                <button onClick={() => adminAction("Creating production batch", () => api("/production-batches", { method: "POST", body: JSON.stringify({ batchType: batchForm.batchType, status: batchForm.status, usageStatus: batchForm.usageStatus, metadata: parseJsonText(batchForm.metadata), attributes: {} }) }))}>Create Batch</button>
+                <label>Selected Batch<select value={selectedResourceId} onChange={(event) => setSelectedResourceId(event.target.value)}>{batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.batchType} {displayShortId(batch.id)}</option>)}</select></label>
+                <div className="controlActions">{["mark-ready", "reserve", "release", "mark-used"].map((action) => <button disabled={!selectedResourceId} key={action} onClick={() => adminAction(action, () => api(`/production-batches/${selectedResourceId}/${action}`, { method: "POST" }))}>{action}</button>)}<button disabled={!selectedResourceId} onClick={() => adminAction("Lineage", () => api(`/production-batches/${selectedResourceId}/lineage`))}>Lineage</button></div>
+              </div>
+              <AdminSimpleList items={batches.filter((batch) => compactJson(batch).toLowerCase().includes(adminSearch.toLowerCase())).slice(0, 20)} search="" />
+            </div>
+          ) : null}
+
+          {managementSection === "orchestrator-rules" ? (
+            <div className="adminGrid">
+              <div className="adminForm">
+                <label>Name<input value={ruleForm.name} onChange={(event) => setRuleForm({ ...ruleForm, name: event.target.value })} /></label>
+                <label>Trigger Batch<input value={ruleForm.triggerBatchType} onChange={(event) => setRuleForm({ ...ruleForm, triggerBatchType: event.target.value })} /></label>
+                <label>Trigger Status<input value={ruleForm.triggerStatus} onChange={(event) => setRuleForm({ ...ruleForm, triggerStatus: event.target.value })} /></label>
+                <label>Target Stage<input value={ruleForm.targetStageType} onChange={(event) => setRuleForm({ ...ruleForm, targetStageType: event.target.value })} /></label>
+                <label>Priority<input value={ruleForm.priority} onChange={(event) => setRuleForm({ ...ruleForm, priority: event.target.value })} /></label>
+                <label>Config JSON<textarea value={ruleForm.config} onChange={(event) => setRuleForm({ ...ruleForm, config: event.target.value })} /></label>
+                <button onClick={() => adminAction("Creating rule", () => api("/orchestrator/rules", { method: "POST", body: JSON.stringify({ ...ruleForm, priority: Number(ruleForm.priority), config: parseJsonText(ruleForm.config), isActive: true }) }))}>Create Rule</button>
+                <button onClick={() => adminAction("Manual scan", () => api("/orchestrator/scan", { method: "POST" }))}>Manual Scan</button>
+              </div>
+              <div className="adminTable">{orchestratorRules.map((rule) => <div className="adminRow" key={rule.id}><b>{rule.name}</b><span>{rule.triggerBatchType} to {rule.targetStageType}</span><span>{rule.priority}</span><span>{rule.isActive ? "active" : "disabled"}</span><button onClick={() => adminAction("Toggle rule", () => api(`/orchestrator/rules/${rule.id}/${rule.isActive ? "disable" : "enable"}`, { method: "POST" }))}>{rule.isActive ? "Disable" : "Enable"}</button></div>)}</div>
+            </div>
+          ) : null}
+
+          {managementSection === "jobs" ? <AdminJobsPanel jobs={jobs} pools={pools} busy={busy} runJobAction={runJobAction} search={adminSearch} /> : null}
+          {managementSection === "runtime-sessions" ? <AdminRuntimePanel sessions={runtimeSessions} scriptRuns={scriptRuns} busy={busy} selectRuntimeSession={selectRuntimeSession} runtimeAction={runtimeAction} search={adminSearch} /> : null}
+
+          <div className="adminResult">
+            <strong>Result JSON</strong>
+            <pre>{adminJson}</pre>
+          </div>
+        </section>
+      </section>
+      ) : page === "control-center" ? (
+      <section className="controlCenter">
+        <div className="controlToolbar panel">
+          <div>
+            <strong>Factory Control Center</strong>
+            <small>Production flow visibility and test controls</small>
+          </div>
+          <label className="toggleControl">
+            <input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} />
+            Auto refresh every 5 seconds
+          </label>
+          <button className="secondaryButton" onClick={() => refreshQueue()} disabled={busy}>
+            <RefreshCcw size={15} />
+            Manual Refresh
+          </button>
+        </div>
+
+        <div className="kpiBar">
+          {[
+            ["Ready Batches", kpis.readyBatches],
+            ["Pending Jobs", kpis.pendingJobs],
+            ["Allocated Jobs", kpis.allocatedJobs],
+            ["Running Runtime Sessions", kpis.runningRuntimeSessions],
+            ["Failed Recoverable Sessions", kpis.failedRecoverableSessions],
+            ["Final Outputs", kpis.finalOutputs]
+          ].map(([label, value]) => (
+            <div className="kpiCard" key={String(label)}>
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </div>
+          ))}
+        </div>
+
+        <div className="pipelineBoard">
+          {[
+            { title: "Input Groups", items: board.inputGroups, kind: "batch" },
+            { title: "Image Batches", items: board.imageBatches, kind: "batch" },
+            { title: "Video Batches", items: board.videoBatches, kind: "batch" },
+            { title: "Music Tracks", items: board.musicTracks, kind: "batch" },
+            { title: "Final Videos", items: board.finalVideos, kind: "batch" },
+            { title: "Jobs", items: board.jobs, kind: "job" },
+            { title: "Runtime Sessions", items: board.runtimeSessions, kind: "runtime" }
+          ].map((column) => (
+            <section className="pipelineColumn" key={column.title}>
+              <h2>{column.title}</h2>
+              <div className="pipelineCards">
+                {column.items.slice(0, 12).map((item) => {
+                  const isJob = column.kind === "job";
+                  const isRuntime = column.kind === "runtime";
+                  const batch = item as ProductionBatch;
+                  const job = item as OrchestratorJob;
+                  const runtime = item as RuntimeSession;
+                  return (
+                    <button
+                      className="pipelineCard"
+                      key={String(item.id)}
+                      onClick={() => {
+                        if (isJob) loadJobDetail(job);
+                        else if (isRuntime) selectRuntimeSession(runtime);
+                        else setSelectedBatchId(String(batch.id));
+                      }}
+                    >
+                      <strong>{displayShortId(String(item.id))}</strong>
+                      <span>{isJob ? job.targetStageType : isRuntime ? "Runtime" : batch.batchType}</span>
+                      <small>{String(item.status)}</small>
+                      {!isJob && !isRuntime ? <small>{batch.usageStatus}</small> : null}
+                      <small>{displayDateTime(isRuntime ? runtime.updatedAt : isJob ? job.createdAt : batch.createdAt)}</small>
+                      {isJob ? <em>source {displayShortId(job.sourceBatchId)}</em> : null}
+                      {isRuntime ? <em>job {displayShortId(runtime.jobId)}</em> : null}
+                    </button>
+                  );
+                })}
+                {!column.items.length ? <p>No items</p> : null}
+              </div>
+            </section>
+          ))}
+        </div>
+
+        <div className="controlDetails">
+          <section className="panel controlPanel">
+            <div className="panelHeader">
+              <ClipboardList size={18} />
+              <h2>Job Detail</h2>
+            </div>
+            {selectedJob ? (
+              <>
+                <div className="detailList">
+                  <span>Job id <b>{selectedJob.id}</b></span>
+                  <span>Source batch <b>{selectedJob.sourceBatchId}</b></span>
+                  <span>Target stage <b>{selectedJob.targetStageType}</b></span>
+                  <span>Status <b>{selectedJob.status}</b></span>
+                  <span>Pool <b>{displayJobPool(selectedJob, pools)}</b></span>
+                  <span>Instance <b>{displayJobInstance(selectedJob)}</b></span>
+                </div>
+                <pre className="jsonBlock">{compactJson(selectedJob.payload)}</pre>
+                <div className="controlActions">
+                  {(["allocate", "execute-mock", "execute-image-edit", "start", "complete", "fail"] as const).map((action) => (
+                    <button
+                      key={action}
+                      onClick={() => runJobAction(selectedJob, action)}
+                      disabled={
+                        busy
+                        || (action === "allocate" && selectedJob.status !== "PENDING")
+                        || (["execute-mock", "execute-image-edit", "start"].includes(action) && selectedJob.status !== "ALLOCATED")
+                        || (action === "execute-image-edit" && selectedJob.targetStageType !== "IMAGE_EDIT")
+                        || (action === "complete" && !["ALLOCATED", "RUNNING"].includes(selectedJob.status))
+                        || (action === "fail" && ["COMPLETED", "FAILED", "CANCELLED"].includes(selectedJob.status))
+                      }
+                    >
+                      {action === "execute-image-edit" ? "Execute IMAGE_EDIT" : action}
+                    </button>
+                  ))}
+                  <button onClick={() => refreshQueue()} disabled={busy}>Refresh</button>
+                </div>
+              </>
+            ) : (
+              <p className="emptyDetail">Select a job from the board.</p>
+            )}
+          </section>
+
+          <section className="panel controlPanel">
+            <div className="panelHeader">
+              <Play size={18} />
+              <h2>Runtime Detail</h2>
+            </div>
+            {selectedRuntime ? (
+              <>
+                <div className="detailList">
+                  <span>Runtime id <b>{selectedRuntime.id}</b></span>
+                  <span>Status <b>{selectedRuntime.status}</b></span>
+                  <span>Host <b>{selectedRuntime.hostId ?? "-"}</b></span>
+                  <span>Instance <b>{selectedRuntime.instanceId ?? "-"}</b></span>
+                  <span>Current step <b>{selectedRuntime.currentStepNo}</b></span>
+                </div>
+                <pre className="jsonBlock">{compactJson(selectedRuntime.checkpoint)}</pre>
+                <div className="controlActions">
+                  <button onClick={() => runtimeAction("test-screenshot")} disabled={busy}>Test Screenshot</button>
+                  <button onClick={() => runtimeAction("recover")} disabled={busy || selectedRuntime.status !== "FAILED_RECOVERABLE"}>Recover</button>
+                  <button onClick={() => runtimeAction("mark-unrecoverable")} disabled={busy}>Mark Unrecoverable</button>
+                </div>
+              </>
+            ) : (
+              <p className="emptyDetail">Select a runtime session from the board.</p>
+            )}
+          </section>
+
+          <section className="panel controlPanel timelinePanel">
+            <div className="panelHeader">
+              <ClipboardList size={18} />
+              <h2>Script Run Timeline</h2>
+            </div>
+            {selectedScriptRun ? (
+              <div className="timelineList">
+                <strong>{selectedScriptRun.status} / {selectedScriptRun.id}</strong>
+                {(selectedScriptRun.steps ?? []).map((step) => {
+                  const previewUrl = findUrl(step.output);
+                  return (
+                    <article className="timelineStep" key={step.id}>
+                      <span>{step.stepNo}. {step.stepType}</span>
+                      <b>{step.status}</b>
+                      <small>{displayDateTime(step.startedAt ?? undefined)} - {displayDateTime(step.finishedAt ?? undefined)}</small>
+                      {step.errorMessage ? <em>{step.errorMessage}</em> : null}
+                      {previewUrl ? <img src={previewUrl} alt="step output preview" /> : null}
+                      <pre>{compactJson(step.output)}</pre>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="emptyDetail">No script run selected.</p>
+            )}
+          </section>
+
+          <section className="panel controlPanel">
+            <div className="panelHeader">
+              <Users size={18} />
+              <h2>Host Agent Test</h2>
+            </div>
+            <div className="hostForm">
+              <label>
+                <span>Host</span>
+                <select value={selectedHost?.id ?? ""} onChange={(event) => setSelectedHostId(event.target.value)}>
+                  {hosts.map((host) => <option key={host.id} value={host.id}>{host.name} / {host.hostId}</option>)}
+                </select>
+              </label>
+              <label><span>Instance ID</span><input value={hostInstanceId} onChange={(event) => setHostInstanceId(event.target.value)} placeholder="host-01-75-ld-2" /></label>
+              <label><span>ADB ID</span><input value={hostAdbId} onChange={(event) => setHostAdbId(event.target.value)} placeholder="emulator-5558" /></label>
+              <label><span>Text</span><input value={hostSendText} onChange={(event) => setHostSendText(event.target.value)} /></label>
+            </div>
+            <div className="controlActions">
+              <button onClick={() => runHostAction("health")} disabled={busy}>Health</button>
+              <button onClick={() => runHostAction("devices")} disabled={busy || !selectedHost}>ADB Devices</button>
+              <button onClick={() => runHostAction("screenshot")} disabled={busy}>Screenshot</button>
+              <button onClick={() => runHostAction("tap")} disabled={busy}>Tap Test</button>
+              <button onClick={() => runHostAction("send-text")} disabled={busy}>Send Text</button>
+              <button onClick={() => runHostAction("download-latest")} disabled={busy}>Download Latest</button>
+            </div>
+            {adbDevices.length ? (
+              <div className="deviceList">
+                {adbDevices.map((device) => <button key={device.adbId} onClick={() => setHostAdbId(device.adbId)}>{device.adbId} / {device.state}</button>)}
+              </div>
+            ) : null}
+            <pre className="jsonBlock">{compactJson(hostResult)}</pre>
+          </section>
+        </div>
+
+        <div className="panel relationshipPanel">
+          <div className="panelHeader">
+            <Boxes size={18} />
+            <h2>Visual Links</h2>
+          </div>
+          <div className="relationshipList">
+            {selectedJob ? <span>Batch {displayShortId(selectedJob.sourceBatchId)} to Job {displayShortId(selectedJob.id)}</span> : null}
+            {selectedJob && selectedRuntime ? <span>Job {displayShortId(selectedJob.id)} to Runtime {displayShortId(selectedRuntime.id)}</span> : null}
+            {selectedRuntime && selectedScriptRun ? <span>Runtime {displayShortId(selectedRuntime.id)} to Script Run {displayShortId(selectedScriptRun.id)}</span> : null}
+            {selectedJob && outputBatches.map((batch) => <span key={batch.id}>Job {displayShortId(selectedJob.id)} to Output Batch {displayShortId(batch.id)}</span>)}
+            {!selectedJob && !selectedRuntime ? <span>Select a job or runtime to see links.</span> : null}
+          </div>
+        </div>
+
+        <div className="panel debugPanel">
+          <div className="drawerSectionHeader">
+            <strong>Debug JSON</strong>
+            <button className="secondaryButton" onClick={() => setDebugOpen((current) => !current)}>
+              {debugOpen ? "Hide" : "Show"}
+            </button>
+          </div>
+          {debugOpen ? (
+            <div className="debugGrid">
+              <pre>{compactJson(selectedBatch)}</pre>
+              <pre>{compactJson(selectedJob)}</pre>
+              <pre>{compactJson(selectedRuntime)}</pre>
+              <pre>{compactJson(selectedScriptRun)}</pre>
+            </div>
+          ) : null}
+        </div>
+      </section>
+      ) : page === "studio" ? (
       <section className="studioGrid">
         <aside className="panel leftPanel">
           <div className="panelHeader">
