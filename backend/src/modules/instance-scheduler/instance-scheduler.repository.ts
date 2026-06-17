@@ -50,7 +50,7 @@ export const instanceSchedulerRepository = {
     return row ? mapAllocation(row as Record<string, unknown>) : null;
   },
 
-  findCandidate(poolType: string) {
+  findCandidate(poolType: string, excludeInstanceId?: string) {
     const row = db.prepare(`
       SELECT
         ip.id AS pool_id,
@@ -65,10 +65,11 @@ export const instanceSchedulerRepository = {
         AND UPPER(ip.status) = 'ACTIVE'
         AND UPPER(ipm.status) = 'ACTIVE'
         AND UPPER(ipm.status) NOT IN ('ERROR', 'CAPTCHA', 'OFFLINE')
+        AND (? IS NULL OR ipm.instance_id <> ?)
       GROUP BY ip.id, ipm.instance_id, ipm.priority
       ORDER BY active_allocation_count ASC, ipm.priority ASC, ipm.created_at ASC
       LIMIT 1
-    `).get(poolType);
+    `).get(poolType, excludeInstanceId ?? null, excludeInstanceId ?? null);
 
     return row as { pool_id: string; instance_id: string; active_allocation_count: number } | undefined;
   },
@@ -129,4 +130,3 @@ export const instanceSchedulerRepository = {
     return this.getAllocation(id);
   }
 };
-

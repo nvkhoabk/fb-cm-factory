@@ -79,6 +79,17 @@ export const hostAgentService = {
     return host;
   },
 
+  getDefaultHost() {
+    const row = db.prepare(`
+      SELECT * FROM hosts
+      WHERE UPPER(status) = 'ACTIVE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get();
+
+    return row ? mapHost(row as Record<string, unknown>) : null;
+  },
+
   targetForHost(idOrHostId: string) {
     const host = this.getHostRequired(idOrHostId);
     return {

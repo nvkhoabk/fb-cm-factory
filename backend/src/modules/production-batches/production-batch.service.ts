@@ -1,4 +1,6 @@
 import { AppError } from "../shared/resource";
+import { orchestratorRepository } from "../orchestrator/orchestrator.repository";
+import { orchestratorService } from "../orchestrator/orchestrator.service";
 import { productionBatchRepository } from "./production-batch.repository";
 import type {
   BatchType,
@@ -103,5 +105,42 @@ export const productionBatchService = {
     }
 
     return productionBatchRepository.getLineage(batchId);
+  },
+
+  launch(id: string) {
+    const batch = productionBatchRepository.get(id);
+    if (!batch) throw new AppError("PRODUCTION_BATCH_NOT_FOUND", "Production batch not found", 404);
+    if (!["NEW", "READY"].includes(String(batch.status))) {
+      throw new AppError("PRODUCTION_BATCH_NOT_LAUNCHABLE", "Only NEW or READY batches can be launched");
+    }
+
+    const readyBatch = batch.status === "READY"
+      ? batch
+      : productionBatchRepository.setStatus(id, "READY");
+
+    orchestratorService.scan();
+    const metadata = readyBatch?.metadata && typeof readyBatch.metadata === "object"
+      ? readyBatch.metadata as Record<string, unknown>
+      : {};
+    if (readyBatch?.batchType === "IMAGE_BATCH" && !orchestratorRepository.getJobBySourceAndStage(String(id), "IMAGE_EDIT")) {
+      orchestratorRepository.createJob({
+        sourceBatchId: String(id),
+        targetStageType: "IMAGE_EDIT",
+        payload: {
+          sourceBatchId: id,
+          sourceBatchType: readyBatch.batchType,
+          scriptId: metadata.scriptId ?? metadata.imageEditScriptId ?? null,
+          hostId: metadata.hostId ?? null
+        }
+      });
+    }
+    const relatedJobs = orchestratorRepository.listJobs()
+      .filter((item) => item.sourceBatchId === id);
+
+    return {
+      batch: readyBatch,
+      createdJobs: relatedJobs,
+      jobs: relatedJobs
+    };
   }
 };

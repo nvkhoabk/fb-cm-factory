@@ -12,12 +12,15 @@ import { instanceSchedulerRouter } from "./modules/instance-scheduler/instance-s
 import { characterGroupsRouter } from "./modules/character-groups/character-groups.routes";
 import { groupAttributesRouter } from "./modules/group-attributes/group-attributes.routes";
 import { promptTemplateVersionsRouter, promptTemplatesRouter, promptsRouter } from "./modules/prompt-builder/prompt-builder.routes";
+import { promptRenderRouter } from "./modules/prompt-builder/prompt-render.routes";
 import { productionBatchRouter } from "./modules/production-batches/production-batch.routes";
 import { orchestratorRouter } from "./modules/orchestrator/orchestrator.routes";
 import { jobExecutorRouter } from "./modules/job-executor/job-executor.routes";
 import { managerBridgeRouter } from "./modules/manager-bridge/manager-bridge.routes";
 import { runtimeSessionsRouter } from "./modules/runtime-sessions/runtime-sessions.routes";
+import { runtimeRecoveryRouter } from "./modules/runtime-recovery/runtime-recovery.routes";
 import { hostAgentRouter } from "./modules/host-agent-adapter/host-agent.routes";
+import { scriptRunsRouter, scriptsRouter } from "./modules/script-runtime/script-runtime.routes";
 import { assetsRouter } from "./modules/assets/assets.routes";
 
 export const app = express();
@@ -37,13 +40,17 @@ function mountRoutes(prefix = "") {
   app.use(`${prefix}/group-attributes`, groupAttributesRouter);
   app.use(`${prefix}/prompt-templates`, promptTemplatesRouter);
   app.use(`${prefix}/prompt-template-versions`, promptTemplateVersionsRouter);
+  app.use(`${prefix}/prompt-builder`, promptRenderRouter);
   app.use(`${prefix}/prompts`, promptsRouter);
   app.use(`${prefix}/production-batches`, productionBatchRouter);
   app.use(`${prefix}/orchestrator`, orchestratorRouter);
   app.use(`${prefix}/job-executor`, jobExecutorRouter);
   app.use(`${prefix}/manager-bridge`, managerBridgeRouter);
   app.use(`${prefix}/runtime-sessions`, runtimeSessionsRouter);
+  app.use(`${prefix}/runtime-sessions`, runtimeRecoveryRouter);
   app.use(`${prefix}/hosts`, hostAgentRouter);
+  app.use(`${prefix}/scripts`, scriptsRouter);
+  app.use(`${prefix}/script-runs`, scriptRunsRouter);
   app.use(`${prefix}/assets`, assetsRouter);
 }
 

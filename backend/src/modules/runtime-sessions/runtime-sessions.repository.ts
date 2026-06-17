@@ -109,6 +109,9 @@ export const runtimeSessionsRepository = {
     db.prepare(`
       UPDATE runtime_sessions
       SET status = @status,
+          script_id = @scriptId,
+          host_id = @hostId,
+          instance_id = @instanceId,
           current_step_no = @currentStepNo,
           context_json = @contextJson,
           checkpoint_json = @checkpointJson,
@@ -119,6 +122,9 @@ export const runtimeSessionsRepository = {
     `).run({
       id,
       status,
+      scriptId: input.scriptId === undefined ? current.scriptId : input.scriptId,
+      hostId: input.hostId === undefined ? current.hostId : input.hostId,
+      instanceId: input.instanceId === undefined ? current.instanceId : input.instanceId,
       currentStepNo: input.currentStepNo ?? current.currentStepNo,
       contextJson: jsonString(input.context ?? current.context, {}),
       checkpointJson: jsonString(input.checkpoint ?? current.checkpoint, {}),

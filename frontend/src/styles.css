@@ -1,0 +1,931 @@
+:root {
+  color: #1b2028;
+  background: #eef1f4;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.studio {
+  min-height: 100vh;
+  padding: 18px;
+}
+
+.topbar {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.eyebrow {
+  color: #6c7380;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  margin: 0 0 3px;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+h2 {
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.statusLine {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #d9dee6;
+  border-radius: 8px;
+  display: flex;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 10px;
+}
+
+.appNav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.appNav button {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  color: #2d3440;
+  display: inline-flex;
+  gap: 7px;
+  min-height: 36px;
+  padding: 7px 11px;
+}
+
+.appNav button.active {
+  background: #e9f2ef;
+  border-color: #4f9d7a;
+  color: #174f40;
+  font-weight: 700;
+}
+
+.studioGrid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(245px, 0.85fr) minmax(380px, 1.35fr) minmax(290px, 1fr);
+  min-height: calc(100vh - 92px);
+}
+
+.panel {
+  background: #ffffff;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 14px;
+}
+
+.panelHeader {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.panelHeader h2 {
+  flex: 1;
+}
+
+.compact {
+  margin-bottom: 8px;
+}
+
+.promptHeader,
+.batchHeader {
+  border-top: 1px solid #e4e8ee;
+  margin-top: 18px;
+  padding-top: 14px;
+}
+
+.iconButton {
+  align-items: center;
+  background: #f4f6f8;
+  border: 1px solid #d8dee6;
+  border-radius: 7px;
+  color: #2d3440;
+  display: inline-flex;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+
+.iconButton:hover,
+.choice:hover,
+.groupRow:hover {
+  border-color: #7d8da1;
+}
+
+.groupList,
+.previewStack,
+.stageList,
+.batchList,
+.jobList {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.groupRow {
+  align-items: flex-start;
+  background: #f8f9fb;
+  border: 1px solid #e1e6ed;
+  border-radius: 8px;
+  color: inherit;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 20px 1fr;
+  min-height: 74px;
+  padding: 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.groupRow.selected {
+  background: #eef7f3;
+  border-color: #4f9d7a;
+}
+
+.groupRow strong,
+.stageRow strong,
+.batchRow strong {
+  display: block;
+  font-size: 13px;
+}
+
+.groupRow small,
+.stageRow small,
+.batchRow small {
+  color: #6c7380;
+  display: block;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.groupRow em {
+  color: #7c6470;
+  display: block;
+  font-size: 12px;
+  font-style: normal;
+  margin-top: 6px;
+}
+
+.check {
+  align-items: center;
+  border: 1px solid #cad2dc;
+  border-radius: 6px;
+  display: flex;
+  height: 20px;
+  justify-content: center;
+  width: 20px;
+}
+
+.attributeGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.attributeBlock {
+  border: 1px solid #e1e6ed;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.attributeBlock label,
+.templateSelect span,
+.promptPreview span {
+  color: #5c6674;
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.choiceRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.choice {
+  background: #f4f6f8;
+  border: 1px solid #dbe1e8;
+  border-radius: 7px;
+  color: #2b3340;
+  min-height: 30px;
+  padding: 5px 8px;
+}
+
+.choice.active {
+  background: #e7f0ff;
+  border-color: #5587c7;
+}
+
+.templateGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.templateSelect select {
+  background: #ffffff;
+  border: 1px solid #ccd4df;
+  border-radius: 7px;
+  color: #1b2028;
+  min-height: 36px;
+  padding: 6px 8px;
+  width: 100%;
+}
+
+.jobsToolbar {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(210px, 1fr) repeat(3, minmax(150px, 0.55fr)) auto;
+  margin-bottom: 14px;
+}
+
+.jobsToolbarTitle {
+  align-items: center;
+  display: flex;
+  gap: 9px;
+}
+
+.jobsToolbarTitle strong {
+  display: block;
+  font-size: 14px;
+}
+
+.jobsToolbarTitle small,
+.jobsToolbar label span {
+  color: #6c7380;
+  display: block;
+  font-size: 12px;
+}
+
+.jobsToolbar label select,
+.paginationControls select {
+  background: #ffffff;
+  border: 1px solid #ccd4df;
+  border-radius: 7px;
+  color: #1b2028;
+  min-height: 34px;
+  padding: 5px 8px;
+  width: 100%;
+}
+
+.secondaryButton {
+  align-items: center;
+  background: #f7f8fa;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  color: #2d3440;
+  display: inline-flex;
+  gap: 7px;
+  justify-content: center;
+  min-height: 36px;
+  padding: 7px 11px;
+}
+
+.secondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.jobsWorkspace {
+  align-items: start;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 0.38fr);
+}
+
+.operationsPanel {
+  padding: 0;
+}
+
+.operationsHeader {
+  align-items: center;
+  border-bottom: 1px solid #e4e8ee;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px 14px;
+}
+
+.searchLabel {
+  align-items: center;
+  color: #4f5967;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 7px;
+}
+
+.paginationControls {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.paginationControls span {
+  color: #6c7380;
+  font-size: 12px;
+}
+
+.paginationControls button {
+  background: #f7f8fa;
+  border: 1px solid #d8dee6;
+  border-radius: 7px;
+  color: #2d3440;
+  min-height: 30px;
+  padding: 5px 9px;
+}
+
+.paginationControls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.promptPreview {
+  background: #fbfaf7;
+  border: 1px solid #e4ded0;
+  border-radius: 8px;
+  min-height: 82px;
+  padding: 10px;
+}
+
+.promptPreview p {
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.stageRow {
+  align-items: center;
+  border: 1px solid #e1e6ed;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 22px 1fr 28px;
+  min-height: 56px;
+  padding: 9px;
+}
+
+.stageRow b {
+  align-items: center;
+  background: #edf0f3;
+  border-radius: 50%;
+  display: flex;
+  font-size: 12px;
+  height: 26px;
+  justify-content: center;
+  width: 26px;
+}
+
+.queueBox {
+  background: #f4f8f6;
+  border: 1px solid #cfded7;
+  border-radius: 8px;
+  margin-top: 16px;
+  padding: 12px;
+}
+
+.queueBox p {
+  color: #4f5967;
+  font-size: 13px;
+  line-height: 1.4;
+  margin-bottom: 12px;
+}
+
+.primaryButton {
+  align-items: center;
+  background: #1f6f5b;
+  border: 1px solid #1f6f5b;
+  border-radius: 8px;
+  color: #ffffff;
+  display: inline-flex;
+  gap: 8px;
+  justify-content: center;
+  min-height: 38px;
+  padding: 8px 12px;
+  width: 100%;
+}
+
+.primaryButton:disabled {
+  background: #96aaa3;
+  border-color: #96aaa3;
+  cursor: not-allowed;
+}
+
+.batchRow,
+.jobRow {
+  align-items: center;
+  border: 1px solid #e1e6ed;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr auto;
+  min-height: 48px;
+  padding: 8px 10px;
+}
+
+.batchRow span {
+  background: #edf0f3;
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.batchRow small {
+  grid-column: 1 / -1;
+}
+
+.miniButton {
+  align-items: center;
+  background: #fff7e8;
+  border: 1px solid #e2c98e;
+  border-radius: 7px;
+  color: #4e3c12;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 5px;
+  grid-column: 1 / -1;
+  justify-content: center;
+  min-height: 30px;
+  padding: 5px 8px;
+}
+
+.miniButton:disabled,
+.jobActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.launchResult {
+  background: #f4f8ff;
+  border: 1px solid #d4deef;
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 9px;
+}
+
+.launchResult strong,
+.launchResult span {
+  font-size: 12px;
+}
+
+.productionJobsPanel {
+  margin-top: 10px;
+  overflow-x: auto;
+}
+
+.productionJobsPanel.full {
+  margin-top: 0;
+}
+
+.jobsTable {
+  border: 1px solid #e1e6ed;
+  border-radius: 8px;
+  min-width: 720px;
+  overflow: hidden;
+}
+
+.operationsTable {
+  border: 0;
+  border-radius: 0;
+  min-width: 1080px;
+}
+
+.jobsTableHeader,
+.jobsTableRow {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 76px 96px 116px 82px 88px 126px minmax(210px, 1fr);
+  padding: 8px 10px;
+}
+
+.operationsTable .jobsTableHeader,
+.operationsTable .jobsTableRow {
+  grid-template-columns: 88px 104px 130px 92px 150px 96px 140px minmax(230px, 1fr);
+}
+
+.jobsTableHeader {
+  background: #f4f6f8;
+  color: #5c6674;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.jobsTableRow {
+  border-top: 1px solid #e8ecf1;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.jobsTableRow.selected {
+  background: #eef7f3;
+}
+
+.jobsTableRow:hover {
+  background: #f8fafb;
+}
+
+.jobsTableRow strong {
+  font-size: 12px;
+}
+
+.jobsTableRow > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusPill {
+  background: #edf0f3;
+  border-radius: 999px;
+  display: inline-flex;
+  justify-content: center;
+  padding: 4px 7px;
+}
+
+.jobsEmpty {
+  border-top: 1px solid #e8ecf1;
+  color: #6c7380;
+  font-size: 13px;
+  padding: 12px;
+}
+
+.jobDrawer {
+  max-height: calc(100vh - 160px);
+  overflow: auto;
+  padding: 0;
+  position: sticky;
+  top: 14px;
+}
+
+.drawerHeader {
+  align-items: center;
+  border-bottom: 1px solid #e4e8ee;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 12px;
+}
+
+.drawerHeader strong {
+  display: block;
+  font-size: 14px;
+}
+
+.drawerHeader small {
+  color: #6c7380;
+  display: block;
+  font-size: 12px;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.drawerSection {
+  border-bottom: 1px solid #e4e8ee;
+  padding: 12px;
+}
+
+.drawerSectionHeader {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 9px;
+}
+
+.drawerSectionHeader strong {
+  font-size: 13px;
+}
+
+.drawerSectionHeader small {
+  color: #6c7380;
+  font-size: 12px;
+}
+
+.detailList {
+  display: grid;
+  gap: 6px;
+}
+
+.detailList span {
+  color: #6c7380;
+  display: grid;
+  font-size: 12px;
+  gap: 4px;
+  grid-template-columns: 90px 1fr;
+}
+
+.detailList b {
+  color: #1b2028;
+  font-weight: 700;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.detailList pre {
+  background: #f4f6f8;
+  border: 1px solid #e1e6ed;
+  border-radius: 7px;
+  color: #2d3440;
+  font-size: 11px;
+  line-height: 1.4;
+  margin: 2px 0 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px;
+}
+
+.compactList {
+  margin-bottom: 8px;
+}
+
+.scriptStepTable {
+  border: 1px solid #e1e6ed;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.scriptStepTable > div {
+  align-items: center;
+  border-top: 1px solid #e8ecf1;
+  display: grid;
+  gap: 7px;
+  grid-template-columns: 28px 1fr 90px;
+  padding: 7px 8px;
+}
+
+.scriptStepTable > div:first-child {
+  border-top: 0;
+}
+
+.scriptStepTable span,
+.scriptStepTable b,
+.scriptStepTable small {
+  font-size: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.scriptStepTable small {
+  color: #8b2b22;
+  grid-column: 2 / -1;
+}
+
+.outputBatchList {
+  display: grid;
+  gap: 7px;
+}
+
+.outputBatchList > div {
+  background: #f8f9fb;
+  border: 1px solid #e1e6ed;
+  border-radius: 8px;
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+}
+
+.outputBatchList strong,
+.outputBatchList small,
+.outputBatchList span,
+.emptyDetail {
+  font-size: 12px;
+}
+
+.outputBatchList small,
+.emptyDetail {
+  color: #6c7380;
+  overflow-wrap: anywhere;
+}
+
+.jobRow {
+  align-items: start;
+  grid-template-columns: 1fr auto;
+}
+
+.jobRow > span {
+  background: #edf0f3;
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.jobActions {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.jobActions button {
+  background: #f7f8fa;
+  border: 1px solid #d8dee6;
+  border-radius: 7px;
+  color: #2d3440;
+  font-size: 12px;
+  min-height: 30px;
+  padding: 5px 8px;
+}
+
+.jobDetailPanel {
+  border: 1px solid #e1e6ed;
+  border-radius: 8px;
+  margin-top: 10px;
+  padding: 10px;
+}
+
+.detailHeader {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.detailHeader strong,
+.detailCard strong {
+  display: block;
+  font-size: 13px;
+}
+
+.detailHeader small,
+.detailCard small {
+  color: #6c7380;
+  display: block;
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.detailGrid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.detailCard {
+  background: #f8f9fb;
+  border: 1px solid #e1e6ed;
+  border-radius: 8px;
+  min-height: 116px;
+  padding: 9px;
+}
+
+.detailCard > span {
+  color: #5c6674;
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  margin-bottom: 7px;
+  text-transform: uppercase;
+}
+
+.detailCard p,
+.detailLoading,
+.detailError {
+  color: #4f5967;
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.detailLoading {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.detailError {
+  background: #fff2f1;
+  border: 1px solid #e6b8b2;
+  border-radius: 7px;
+  color: #8b2b22;
+  margin-bottom: 8px;
+  padding: 8px;
+}
+
+.stepList {
+  border-top: 1px solid #e1e6ed;
+  display: grid;
+  gap: 2px;
+  margin-top: 7px;
+  padding-top: 6px;
+}
+
+.recoverButton {
+  background: #fff7e8;
+  border: 1px solid #e2c98e;
+  border-radius: 7px;
+  color: #4e3c12;
+  font-size: 12px;
+  min-height: 30px;
+  padding: 5px 10px;
+}
+
+.recoverButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 1120px) {
+  .studioGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .jobsToolbar,
+  .jobsWorkspace {
+    grid-template-columns: 1fr;
+  }
+
+  .jobDrawer {
+    max-height: none;
+    position: static;
+  }
+
+  .attributeGrid,
+  .templateGrid,
+  .detailGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .studio {
+    padding: 10px;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .statusLine {
+    width: 100%;
+  }
+}

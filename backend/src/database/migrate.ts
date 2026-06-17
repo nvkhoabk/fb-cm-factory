@@ -533,6 +533,59 @@ export function migrate() {
 
     CREATE INDEX IF NOT EXISTS idx_hosts_host_id ON hosts(host_id);
     CREATE INDEX IF NOT EXISTS idx_hosts_status ON hosts(status);
+
+    CREATE TABLE IF NOT EXISTS scripts (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      status TEXT DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS script_versions (
+      id TEXT PRIMARY KEY,
+      script_id TEXT NOT NULL,
+      version_no INTEGER NOT NULL,
+      status TEXT DEFAULT 'draft',
+      definition_json TEXT DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (script_id) REFERENCES scripts(id) ON DELETE CASCADE,
+      UNIQUE(script_id, version_no)
+    );
+
+    CREATE TABLE IF NOT EXISTS script_runs (
+      id TEXT PRIMARY KEY,
+      runtime_session_id TEXT NOT NULL,
+      script_id TEXT NOT NULL,
+      script_version_id TEXT NOT NULL,
+      status TEXT DEFAULT 'PENDING',
+      current_step_no INTEGER DEFAULT 0,
+      context_json TEXT DEFAULT '{}',
+      started_at TEXT,
+      finished_at TEXT,
+      FOREIGN KEY (runtime_session_id) REFERENCES runtime_sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (script_id) REFERENCES scripts(id),
+      FOREIGN KEY (script_version_id) REFERENCES script_versions(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS script_run_steps (
+      id TEXT PRIMARY KEY,
+      script_run_id TEXT NOT NULL,
+      step_no INTEGER NOT NULL,
+      step_type TEXT NOT NULL,
+      status TEXT DEFAULT 'PENDING',
+      input_json TEXT DEFAULT '{}',
+      output_json TEXT DEFAULT '{}',
+      error_message TEXT,
+      started_at TEXT,
+      finished_at TEXT,
+      FOREIGN KEY (script_run_id) REFERENCES script_runs(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_script_versions_script ON script_versions(script_id, version_no);
+    CREATE INDEX IF NOT EXISTS idx_script_runs_session ON script_runs(runtime_session_id, status);
+    CREATE INDEX IF NOT EXISTS idx_script_run_steps_run ON script_run_steps(script_run_id, step_no);
   `);
 
   addColumnIfMissing("instance_allocations", "created_at", "TEXT");

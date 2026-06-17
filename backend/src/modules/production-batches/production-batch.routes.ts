@@ -33,6 +33,14 @@ productionBatchRouter.post("/", (req, res) => {
   }
 });
 
+productionBatchRouter.post("/:id/launch", (req, res) => {
+  try {
+    res.json({ ok: true, data: productionBatchService.launch(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 productionBatchRouter.get("/:id", (req, res) => {
   try {
     res.json({ ok: true, data: productionBatchService.get(req.params.id) });

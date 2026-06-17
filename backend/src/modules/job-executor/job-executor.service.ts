@@ -1,7 +1,11 @@
 import { orchestratorRepository } from "../orchestrator/orchestrator.repository";
 import { orchestratorService } from "../orchestrator/orchestrator.service";
 import { managerBridgeService } from "../manager-bridge/manager-bridge.service";
+import { hostAgentService } from "../host-agent-adapter/host-agent.service";
 import { productionBatchRepository } from "../production-batches/production-batch.repository";
+import { promptRenderService } from "../prompt-builder/prompt-render.service";
+import { scriptRuntimeRepository } from "../script-runtime/script-runtime.repository";
+import { scriptRuntimeService } from "../script-runtime/script-runtime.service";
 import { runtimeSessionsService } from "../runtime-sessions/runtime-sessions.service";
 import { AppError } from "../shared/resource";
 import type { BatchType, BatchUsageStatus } from "../production-batches/production-batch.schemas";
@@ -34,6 +38,14 @@ function usageTypeForOutput(sourceBatchType: unknown, outputBatchType: BatchType
   if (sourceBatchType === "IMAGE_BATCH" && outputBatchType === "VIDEO_BATCH") return "IMAGE_TO_VIDEO";
   if (sourceBatchType === "VIDEO_BATCH" && outputBatchType === "FINAL_VIDEO") return "VIDEO_TO_FINAL";
   return null;
+}
+
+function objectValue(value: unknown) {
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value ? value : undefined;
 }
 
 export const jobExecutorService = {
@@ -131,6 +143,114 @@ export const jobExecutorService = {
     });
 
     return orchestratorService.completeJob(jobId, output);
+  },
+
+  async executeImageEditJob(jobId: string) {
+    const job = orchestratorRepository.getJob(jobId);
+    if (!job) throw new AppError("ORCHESTRATOR_JOB_NOT_FOUND", "Orchestrator job not found", 404);
+    if (job.status !== "ALLOCATED") {
+      throw new AppError("JOB_NOT_EXECUTABLE", "Only ALLOCATED jobs can be executed as IMAGE_EDIT");
+    }
+    if (job.targetStageType !== "IMAGE_EDIT") {
+      throw new AppError("JOB_STAGE_TYPE_MISMATCH", "Only IMAGE_EDIT jobs can use execute-image-edit");
+    }
+
+    const sourceBatch = productionBatchRepository.get(String(job.sourceBatchId));
+    if (!sourceBatch) throw new AppError("SOURCE_BATCH_NOT_FOUND", "Source production batch not found", 404);
+
+    const payload = objectValue(job.payload);
+    const metadata = objectValue(sourceBatch.metadata);
+    const promptTemplates = objectValue(metadata.promptTemplates);
+    const host = stringValue(payload.hostId)
+      ?? stringValue(metadata.hostId)
+      ?? stringValue(hostAgentService.getDefaultHost()?.id);
+    if (!host) throw new AppError("HOST_NOT_FOUND", "No active Host Agent host is registered");
+
+    const instanceId = stringValue(payload.instanceId);
+    if (!instanceId) throw new AppError("JOB_ALLOCATION_NOT_FOUND", "Allocated job payload is missing instanceId");
+
+    const script = stringValue(payload.scriptId)
+      ?? stringValue(metadata.scriptId)
+      ?? stringValue(metadata.imageEditScriptId)
+      ?? stringValue(scriptRuntimeRepository.getLatestActiveScript()?.id);
+    if (!script) throw new AppError("SCRIPT_REQUIRED", "No script is available for IMAGE_EDIT execution");
+
+    const groupId = stringValue(sourceBatch.sourceGroupId);
+    const templateId = stringValue(promptTemplates.image)
+      ?? stringValue(metadata.imagePromptTemplateId)
+      ?? stringValue(metadata.promptTemplateId);
+    const renderedPrompt = groupId && templateId
+      ? promptRenderService.renderImagePrompt({ templateId, groupId })
+      : { prompt: "" };
+
+    const group = groupId ? promptRenderService.getGroupPromptContext(groupId) : null;
+    const context = {
+      group,
+      attributes: sourceBatch.attributes,
+      prompt: {
+        image: renderedPrompt.prompt
+      },
+      sourceBatch,
+      job
+    };
+
+    const runtimeSession = runtimeSessionsService.createRuntimeSession({
+      jobId,
+      hostId: host,
+      instanceId,
+      scriptId: script,
+      status: "PENDING",
+      currentStepNo: 0,
+      context,
+      checkpoint: {
+        jobId,
+        allocationId: payload.allocationId ?? null,
+        instanceId,
+        hostId: host,
+        currentStepNo: 0,
+        context
+      }
+    });
+
+    if (!runtimeSession) {
+      throw new AppError("RUNTIME_SESSION_CREATE_FAILED", "Could not create runtime session");
+    }
+
+    orchestratorService.startJob(jobId);
+    const scriptRun = scriptRuntimeService.createScriptRun(String(runtimeSession.id), {
+      scriptId: script,
+      context
+    });
+    if (!scriptRun) throw new AppError("SCRIPT_RUN_CREATE_FAILED", "Could not create script run");
+
+    const completedRun = await scriptRuntimeService.executeScriptRun(String(scriptRun.id));
+
+    const outputBatch = productionBatchRepository.create({
+      batchType: "IMAGE_BATCH",
+      sourceGroupId: groupId,
+      workflowId: stringValue(sourceBatch.workflowId),
+      workflowRunId: stringValue(sourceBatch.workflowRunId),
+      status: "READY",
+      usageStatus: "AVAILABLE",
+      attributes: sourceBatch.attributes as Record<string, unknown>,
+      metadata: {
+        sourceJobId: job.id,
+        runtimeSessionId: runtimeSession.id,
+        prompt: renderedPrompt.prompt,
+        sourceBatchId: sourceBatch.id,
+        targetStageType: "IMAGE_EDIT"
+      }
+    });
+
+    const result = {
+      outputBatchId: outputBatch?.id ?? null,
+      outputBatchType: "IMAGE_BATCH",
+      runtimeSessionId: runtimeSession.id,
+      scriptRunId: completedRun?.id ?? scriptRun.id,
+      prompt: renderedPrompt.prompt
+    };
+
+    return orchestratorService.completeJob(jobId, result);
   },
 
   mockExecuteVideoGenerate() {
