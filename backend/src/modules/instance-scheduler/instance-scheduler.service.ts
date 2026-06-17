@@ -1,18 +1,18 @@
-import { AppError } from "../shared/resource";
 import { orchestratorRepository } from "../orchestrator/orchestrator.repository";
-import { instanceAllocationRepository } from "./instance-allocation.repository";
+import { AppError } from "../shared/resource";
+import { instanceSchedulerRepository } from "./instance-scheduler.repository";
 
 const stageTypeToPoolType: Record<string, string> = {
-  IMAGE_EDIT: "IMAGE_EDIT",
   VIDEO_GENERATE: "VIDEO_GENERATE",
-  MUSIC_GENERATE: "MUSIC_GENERATE",
-  VIDEO_COMPOSE: "VIDEO_COMPOSE"
+  VIDEO_COMPOSE: "VIDEO_COMPOSE",
+  IMAGE_EDIT: "IMAGE_EDIT",
+  MUSIC_GENERATE: "MUSIC_GENERATE"
 };
 
-export const instanceAllocationService = {
-  list: () => instanceAllocationRepository.list(),
+export const instanceSchedulerService = {
+  listAllocations: () => instanceSchedulerRepository.listAllocations(),
 
-  listActive: () => instanceAllocationRepository.listActive(),
+  getActiveAllocations: () => instanceSchedulerRepository.getActiveAllocations(),
 
   allocateForJob(jobId: string) {
     const job = orchestratorRepository.getJob(jobId);
@@ -23,21 +23,21 @@ export const instanceAllocationService = {
 
     const poolType = stageTypeToPoolType[String(job.targetStageType)];
     if (!poolType) {
-      throw new AppError("NO_INSTANCE_AVAILABLE", `No pool mapping for ${String(job.targetStageType)}`);
+      throw new AppError("NO_INSTANCE_AVAILABLE", `No pool mapping for ${String(job.targetStageType)}`, 409);
     }
 
-    const candidate = instanceAllocationRepository.findCandidate(poolType);
+    const candidate = instanceSchedulerRepository.findCandidate(poolType);
     if (!candidate) {
       throw new AppError("NO_INSTANCE_AVAILABLE", `No active instance is available for pool type ${poolType}`, 409);
     }
 
-    const allocation = instanceAllocationRepository.create({
+    const allocation = instanceSchedulerRepository.createAllocation({
       poolId: candidate.pool_id,
       instanceId: candidate.instance_id,
       orchestratorJobId: String(job.id),
       metadata: {
-        targetStageType: job.targetStageType,
-        poolType
+        poolType,
+        targetStageType: job.targetStageType
       }
     });
 
@@ -58,31 +58,33 @@ export const instanceAllocationService = {
   },
 
   releaseAllocation(allocationId: string) {
-    const allocation = instanceAllocationRepository.get(allocationId);
+    const allocation = instanceSchedulerRepository.getAllocation(allocationId);
     if (!allocation) throw new AppError("INSTANCE_ALLOCATION_NOT_FOUND", "Instance allocation not found", 404);
     if (allocation.status !== "ALLOCATED") return allocation;
 
-    return instanceAllocationRepository.close(allocationId, "RELEASED");
+    return instanceSchedulerRepository.closeAllocation(allocationId, "RELEASED");
   },
 
   failAllocation(allocationId: string) {
-    const allocation = instanceAllocationRepository.get(allocationId);
+    const allocation = instanceSchedulerRepository.getAllocation(allocationId);
     if (!allocation) throw new AppError("INSTANCE_ALLOCATION_NOT_FOUND", "Instance allocation not found", 404);
     if (allocation.status !== "ALLOCATED") return allocation;
 
-    return instanceAllocationRepository.close(allocationId, "FAILED");
+    return instanceSchedulerRepository.closeAllocation(allocationId, "FAILED");
   },
 
   releaseActiveForJob(jobId: string) {
-    const allocation = instanceAllocationRepository.getActiveByJob(jobId);
+    const allocation = instanceSchedulerRepository.getActiveAllocationByJob(jobId);
     if (!allocation) return null;
-    return instanceAllocationRepository.close(String(allocation.id), "RELEASED");
+
+    return instanceSchedulerRepository.closeAllocation(String(allocation.id), "RELEASED");
   },
 
   failActiveForJob(jobId: string) {
-    const allocation = instanceAllocationRepository.getActiveByJob(jobId);
+    const allocation = instanceSchedulerRepository.getActiveAllocationByJob(jobId);
     if (!allocation) return null;
-    return instanceAllocationRepository.close(String(allocation.id), "FAILED");
+
+    return instanceSchedulerRepository.closeAllocation(String(allocation.id), "FAILED");
   }
 };
 

@@ -331,6 +331,7 @@ export function migrate() {
   addColumnIfMissing("workflow_runs", "output_json", "TEXT DEFAULT '{}'");
   addColumnIfMissing("workflow_runs", "current_stage_no", "INTEGER DEFAULT 0");
   addColumnIfMissing("workflow_runs", "updated_at", "TEXT");
+  addColumnIfMissing("orchestrator_jobs", "output_json", "TEXT DEFAULT '{}'");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS prompt_template_versions (
@@ -464,6 +465,8 @@ export function migrate() {
       released_at TEXT,
       status TEXT DEFAULT 'ALLOCATED',
       metadata_json TEXT DEFAULT '{}',
+      created_at TEXT,
+      updated_at TEXT,
       FOREIGN KEY (pool_id) REFERENCES instance_pools(id),
       FOREIGN KEY (orchestrator_job_id) REFERENCES orchestrator_jobs(id)
     );
@@ -484,6 +487,9 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_instance_allocations_active ON instance_allocations(instance_id, status);
     CREATE INDEX IF NOT EXISTS idx_instance_allocations_job ON instance_allocations(orchestrator_job_id, status);
   `);
+
+  addColumnIfMissing("instance_allocations", "created_at", "TEXT");
+  addColumnIfMissing("instance_allocations", "updated_at", "TEXT");
 }
 
 if (require.main === module) {

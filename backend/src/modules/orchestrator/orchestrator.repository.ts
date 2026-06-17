@@ -10,6 +10,7 @@ function mapJob(row: Record<string, unknown>) {
     targetStageType: row.target_stage_type,
     status: row.status,
     payload: jsonParse(row.payload_json, {}),
+    output: jsonParse(row.output_json, {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -89,6 +90,31 @@ export const orchestratorRepository = {
       id,
       status,
       payloadJson: jsonString({ ...current.payload, ...patch }, {}),
+      updatedAt: now()
+    });
+
+    return this.getJob(id);
+  },
+
+  updateJobResult(id: string, status: OrchestratorJobStatus, patch: {
+    payload?: Record<string, unknown>;
+    output?: Record<string, unknown>;
+  }) {
+    const current = this.getJob(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE orchestrator_jobs
+      SET status = @status,
+          payload_json = @payloadJson,
+          output_json = @outputJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      status,
+      payloadJson: jsonString({ ...current.payload, ...(patch.payload ?? {}) }, {}),
+      outputJson: jsonString({ ...current.output, ...(patch.output ?? {}) }, {}),
       updatedAt: now()
     });
 

@@ -8,12 +8,13 @@ import {
   workflowStagesRouter
 } from "./modules/workflows/workflows.routes";
 import { instancePoolsRouter } from "./modules/instance-pools/instance-pools.routes";
-import { instanceAllocationsRouter } from "./modules/instance-allocations/instance-allocation.routes";
+import { instanceSchedulerRouter } from "./modules/instance-scheduler/instance-scheduler.routes";
 import { characterGroupsRouter } from "./modules/character-groups/character-groups.routes";
 import { groupAttributesRouter } from "./modules/group-attributes/group-attributes.routes";
 import { promptTemplateVersionsRouter, promptTemplatesRouter, promptsRouter } from "./modules/prompt-builder/prompt-builder.routes";
 import { productionBatchRouter } from "./modules/production-batches/production-batch.routes";
 import { orchestratorRouter } from "./modules/orchestrator/orchestrator.routes";
+import { jobExecutorRouter } from "./modules/job-executor/job-executor.routes";
 import { assetsRouter } from "./modules/assets/assets.routes";
 
 export const app = express();
@@ -28,7 +29,7 @@ function mountRoutes(prefix = "") {
   app.use(`${prefix}/workflow-stages`, workflowStagesRouter);
   app.use(`${prefix}/workflow-stage-runs`, workflowStageRunsRouter);
   app.use(`${prefix}/instance-pools`, instancePoolsRouter);
-  app.use(`${prefix}/instance-allocations`, instanceAllocationsRouter);
+  app.use(`${prefix}/instance-allocations`, instanceSchedulerRouter);
   app.use(`${prefix}/character-groups`, characterGroupsRouter);
   app.use(`${prefix}/group-attributes`, groupAttributesRouter);
   app.use(`${prefix}/prompt-templates`, promptTemplatesRouter);
@@ -36,6 +37,7 @@ function mountRoutes(prefix = "") {
   app.use(`${prefix}/prompts`, promptsRouter);
   app.use(`${prefix}/production-batches`, productionBatchRouter);
   app.use(`${prefix}/orchestrator`, orchestratorRouter);
+  app.use(`${prefix}/job-executor`, jobExecutorRouter);
   app.use(`${prefix}/assets`, assetsRouter);
 }
 

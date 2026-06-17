@@ -58,6 +58,7 @@ export const createBatchUsageSchema = z.object({
 });
 
 export type BatchType = z.infer<typeof batchTypeSchema>;
+export type BatchUsageStatus = z.infer<typeof batchUsageStatusSchema>;
 export type CreateProductionBatchInput = z.infer<typeof createProductionBatchSchema>;
 export type UpdateProductionBatchInput = z.infer<typeof updateProductionBatchSchema>;
 export type CreateProductionBatchItemInput = z.infer<typeof createProductionBatchItemSchema>;

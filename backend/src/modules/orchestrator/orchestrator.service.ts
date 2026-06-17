@@ -1,5 +1,5 @@
 import { AppError } from "../shared/resource";
-import { instanceAllocationService } from "../instance-allocations/instance-allocation.service";
+import { instanceSchedulerService } from "../instance-scheduler/instance-scheduler.service";
 import { orchestratorRepository } from "./orchestrator.repository";
 import type { FailOrchestratorJobInput } from "./orchestrator.schemas";
 
@@ -60,7 +60,7 @@ export const orchestratorService = {
   },
 
   allocateJob(id: string) {
-    return instanceAllocationService.allocateForJob(id);
+    return instanceSchedulerService.allocateForJob(id);
   },
 
   startJob(id: string) {
@@ -74,12 +74,19 @@ export const orchestratorService = {
     return job;
   },
 
-  completeJob(id: string) {
+  completeJob(id: string, result?: Record<string, unknown>) {
     const current = orchestratorRepository.getJob(id);
     if (!current) throw new AppError("ORCHESTRATOR_JOB_NOT_FOUND", "Orchestrator job not found", 404);
 
-    const job = orchestratorRepository.updateJobStatus(id, "COMPLETED");
-    instanceAllocationService.releaseActiveForJob(id);
+    const job = result
+      ? orchestratorRepository.updateJobResult(id, "COMPLETED", {
+          payload: {
+            result
+          },
+          output: result
+        })
+      : orchestratorRepository.updateJobStatus(id, "COMPLETED");
+    instanceSchedulerService.releaseActiveForJob(id);
     return job;
   },
 
@@ -90,7 +97,7 @@ export const orchestratorService = {
     const job = orchestratorRepository.updateJobStatus(id, "FAILED", {
       errorMessage: input.errorMessage ?? "Job failed"
     });
-    instanceAllocationService.failActiveForJob(id);
+    instanceSchedulerService.failActiveForJob(id);
     return job;
   }
 };

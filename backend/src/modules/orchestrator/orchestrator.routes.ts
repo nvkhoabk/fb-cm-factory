@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { jobExecutorService } from "../job-executor/job-executor.service";
 import { sendError } from "../shared/resource";
 import { failOrchestratorJobSchema } from "./orchestrator.schemas";
 import { orchestratorService } from "./orchestrator.service";
@@ -45,6 +46,14 @@ orchestratorRouter.post("/jobs/:id/fail", (req, res) => {
   try {
     const input = failOrchestratorJobSchema.parse(req.body ?? {});
     res.json({ ok: true, data: orchestratorService.failJob(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+orchestratorRouter.post("/jobs/:id/execute-mock", async (req, res) => {
+  try {
+    res.json({ ok: true, data: await jobExecutorService.executeMockJob(req.params.id) });
   } catch (error) {
     sendError(res, error);
   }

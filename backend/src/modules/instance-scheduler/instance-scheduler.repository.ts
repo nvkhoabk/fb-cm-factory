@@ -1,7 +1,6 @@
 import { db } from "../../database/db";
 import { createId, jsonParse, jsonString, now } from "../shared/resource";
-
-export type AllocationStatus = "ALLOCATED" | "RELEASED" | "FAILED";
+import type { AllocationStatus } from "./instance-scheduler.schemas";
 
 function mapAllocation(row: Record<string, unknown>) {
   return {
@@ -14,18 +13,20 @@ function mapAllocation(row: Record<string, unknown>) {
     allocatedAt: row.allocated_at,
     releasedAt: row.released_at ?? null,
     status: row.status,
-    metadata: jsonParse(row.metadata_json, {})
+    metadata: jsonParse(row.metadata_json, {}),
+    createdAt: row.created_at ?? row.allocated_at,
+    updatedAt: row.updated_at ?? row.allocated_at
   };
 }
 
-export const instanceAllocationRepository = {
-  list() {
+export const instanceSchedulerRepository = {
+  listAllocations() {
     return db.prepare("SELECT * FROM instance_allocations ORDER BY allocated_at DESC")
       .all()
       .map((row) => mapAllocation(row as Record<string, unknown>));
   },
 
-  listActive() {
+  getActiveAllocations() {
     return db.prepare(`
       SELECT * FROM instance_allocations
       WHERE status = 'ALLOCATED'
@@ -33,12 +34,12 @@ export const instanceAllocationRepository = {
     `).all().map((row) => mapAllocation(row as Record<string, unknown>));
   },
 
-  get(id: string) {
+  getAllocation(id: string) {
     const row = db.prepare("SELECT * FROM instance_allocations WHERE id = ?").get(id);
     return row ? mapAllocation(row as Record<string, unknown>) : null;
   },
 
-  getActiveByJob(orchestratorJobId: string) {
+  getActiveAllocationByJob(orchestratorJobId: string) {
     const row = db.prepare(`
       SELECT * FROM instance_allocations
       WHERE orchestrator_job_id = ? AND status = 'ALLOCATED'
@@ -72,7 +73,7 @@ export const instanceAllocationRepository = {
     return row as { pool_id: string; instance_id: string; active_allocation_count: number } | undefined;
   },
 
-  create(input: {
+  createAllocation(input: {
     poolId: string;
     instanceId: string;
     orchestratorJobId?: string | null;
@@ -81,15 +82,17 @@ export const instanceAllocationRepository = {
     metadata?: Record<string, unknown>;
   }) {
     const id = createId("alloc");
-    const allocatedAt = now();
+    const timestamp = now();
 
     db.prepare(`
       INSERT INTO instance_allocations (
         id, pool_id, instance_id, orchestrator_job_id, workflow_run_id,
-        workflow_stage_run_id, allocated_at, status, metadata_json
+        workflow_stage_run_id, allocated_at, released_at, status,
+        metadata_json, created_at, updated_at
       ) VALUES (
         @id, @poolId, @instanceId, @orchestratorJobId, @workflowRunId,
-        @workflowStageRunId, @allocatedAt, 'ALLOCATED', @metadataJson
+        @workflowStageRunId, @allocatedAt, NULL, 'ALLOCATED',
+        @metadataJson, @createdAt, @updatedAt
       )
     `).run({
       id,
@@ -98,28 +101,32 @@ export const instanceAllocationRepository = {
       orchestratorJobId: input.orchestratorJobId ?? null,
       workflowRunId: input.workflowRunId ?? null,
       workflowStageRunId: input.workflowStageRunId ?? null,
-      allocatedAt,
-      metadataJson: jsonString(input.metadata ?? {}, {})
+      allocatedAt: timestamp,
+      metadataJson: jsonString(input.metadata ?? {}, {}),
+      createdAt: timestamp,
+      updatedAt: timestamp
     });
 
-    return this.get(id);
+    return this.getAllocation(id);
   },
 
-  close(id: string, status: AllocationStatus) {
-    const releasedAt = now();
+  closeAllocation(id: string, status: AllocationStatus) {
+    const timestamp = now();
 
     db.prepare(`
       UPDATE instance_allocations
       SET status = @status,
-          released_at = @releasedAt
+          released_at = @releasedAt,
+          updated_at = @updatedAt
       WHERE id = @id
     `).run({
       id,
       status,
-      releasedAt
+      releasedAt: timestamp,
+      updatedAt: timestamp
     });
 
-    return this.get(id);
+    return this.getAllocation(id);
   }
 };
 
