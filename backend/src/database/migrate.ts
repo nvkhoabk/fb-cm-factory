@@ -2,6 +2,7 @@ import { db } from "./db";
 
 function addColumnIfMissing(table: string, column: string, definition: string) {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (columns.length === 0) return;
   const exists = columns.some((item) => item.name === column);
 
   if (!exists) {
@@ -333,6 +334,11 @@ export function migrate() {
   addColumnIfMissing("workflow_runs", "updated_at", "TEXT");
   addColumnIfMissing("orchestrator_jobs", "output_json", "TEXT DEFAULT '{}'");
   addColumnIfMissing("instance_pool_members", "metadata_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("instance_pool_members", "role", "TEXT");
+  addColumnIfMissing("instance_pool_members", "notes", "TEXT");
+  addColumnIfMissing("instance_allocations", "host_id", "TEXT");
+  addColumnIfMissing("instance_allocations", "local_id", "TEXT");
+  addColumnIfMissing("instance_allocations", "adb_id", "TEXT");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS prompt_template_versions (
@@ -353,9 +359,27 @@ export function migrate() {
       instance_id TEXT NOT NULL,
       priority INTEGER DEFAULT 100,
       status TEXT DEFAULT 'active',
+      role TEXT,
+      notes TEXT,
+      metadata_json TEXT DEFAULT '{}',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (pool_id) REFERENCES instance_pools(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS instances (
+      id TEXT PRIMARY KEY,
+      host_id TEXT NOT NULL,
+      local_id TEXT NOT NULL,
+      name TEXT,
+      adb_id TEXT,
+      status TEXT DEFAULT 'UNKNOWN',
+      runtime_status TEXT DEFAULT 'IDLE',
+      metadata_json TEXT DEFAULT '{}',
+      last_seen_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(host_id, local_id)
     );
 
     CREATE TABLE IF NOT EXISTS workflow_stages (
@@ -459,6 +483,9 @@ export function migrate() {
       id TEXT PRIMARY KEY,
       pool_id TEXT NOT NULL,
       instance_id TEXT NOT NULL,
+      host_id TEXT,
+      local_id TEXT,
+      adb_id TEXT,
       orchestrator_job_id TEXT,
       workflow_run_id TEXT,
       workflow_stage_run_id TEXT,

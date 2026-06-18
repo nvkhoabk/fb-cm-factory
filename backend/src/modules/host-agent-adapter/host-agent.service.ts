@@ -1,6 +1,7 @@
 import { config } from "../../config";
 import { db } from "../../database/db";
 import { runtimeSessionsService } from "../runtime-sessions/runtime-sessions.service";
+import { instancesRepository } from "../instances/instances.repository";
 import { AppError, createId, now } from "../shared/resource";
 import { hostAgentClient } from "./host-agent.client";
 import type {
@@ -30,6 +31,24 @@ function publicHost(host: ReturnType<typeof mapHost>) {
     ...host,
     apiKey: host.apiKey ? "***" : null
   };
+}
+
+function canonicalInstanceId(hostId: string, localId: string) {
+  return `${hostId}-ld-${localId}`;
+}
+
+function normalizeHostInstances(value: unknown) {
+  if (!value || typeof value !== "object") return [];
+  const instances = (value as { instances?: unknown }).instances;
+  if (!Array.isArray(instances)) return [];
+  return instances.map((item) => item as Record<string, unknown>);
+}
+
+function normalizeAdbDevices(value: unknown) {
+  if (!value || typeof value !== "object") return [];
+  const devices = (value as { devices?: unknown }).devices;
+  if (!Array.isArray(devices)) return [];
+  return devices.map((item) => item as Record<string, unknown>);
 }
 
 export const hostAgentService = {
@@ -117,6 +136,64 @@ export const hostAgentService = {
       host: publicHost(host),
       health: await hostAgentClient.healthCheckAgent(target)
     };
+  },
+
+  async syncInstances(hostId: string) {
+    const { host, target } = this.targetForHost(hostId);
+    const [instancePayload, adbPayload] = await Promise.all([
+      hostAgentClient.listInstances(target),
+      hostAgentClient.listAdbDevices(target).catch(() => ({ devices: [] }))
+    ]);
+    const discovered = normalizeHostInstances(instancePayload);
+    const devices = normalizeAdbDevices(adbPayload);
+    const timestamp = now();
+
+    const synced = discovered.map((item, index) => {
+      const localId = String(item.localId ?? item.index ?? item.id ?? index);
+      const adbDevice = devices[index];
+      const adbId = typeof item.adbId === "string"
+        ? item.adbId
+        : typeof adbDevice?.adbId === "string"
+          ? adbDevice.adbId
+          : null;
+      return instancesRepository.upsert({
+        id: canonicalInstanceId(String(host.hostId), localId),
+        hostId: String(host.hostId),
+        localId,
+        name: typeof item.name === "string" ? item.name : `LDPlayer ${localId}`,
+        adbId,
+        status: adbId ? "ONLINE" : "DISCOVERED",
+        runtimeStatus: "IDLE",
+        metadata: {
+          raw: item,
+          adbDevice: adbDevice ?? null,
+          hostDbId: host.id
+        },
+        lastSeenAt: timestamp
+      });
+    }).filter(Boolean);
+
+    instancesRepository.markMissingForHost(String(host.hostId), synced.map((item) => String(item?.id)));
+
+    return {
+      host: publicHost(host),
+      instances: instancesRepository.listByHost(String(host.hostId))
+    };
+  },
+
+  async startInstance(hostId: string, localId: string) {
+    const { host, target } = this.targetForHost(hostId);
+    return { host: publicHost(host), result: await hostAgentClient.startInstance(target, localId) };
+  },
+
+  async stopInstance(hostId: string, localId: string) {
+    const { host, target } = this.targetForHost(hostId);
+    return { host: publicHost(host), result: await hostAgentClient.stopInstance(target, localId) };
+  },
+
+  async restartInstance(hostId: string, localId: string) {
+    const { host, target } = this.targetForHost(hostId);
+    return { host: publicHost(host), result: await hostAgentClient.restartInstance(target, localId) };
   },
 
   async takeScreenshot(hostId: string, input: { instanceId: string; adbId: string }) {

@@ -70,6 +70,38 @@ hostAgentRouter.get("/:id/health", async (req, res) => {
   }
 });
 
+hostAgentRouter.post("/:id/sync-instances", async (req, res) => {
+  try {
+    res.json({ ok: true, data: await hostAgentService.syncInstances(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+hostAgentRouter.post("/:id/instances/:localId/start", async (req, res) => {
+  try {
+    res.json({ ok: true, data: await hostAgentService.startInstance(req.params.id, req.params.localId) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+hostAgentRouter.post("/:id/instances/:localId/stop", async (req, res) => {
+  try {
+    res.json({ ok: true, data: await hostAgentService.stopInstance(req.params.id, req.params.localId) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+hostAgentRouter.post("/:id/instances/:localId/restart", async (req, res) => {
+  try {
+    res.json({ ok: true, data: await hostAgentService.restartInstance(req.params.id, req.params.localId) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 hostAgentRouter.post("/:id/screenshot", async (req, res) => {
   try {
     const input = parseCommand(instanceCommandSchema, req.body);

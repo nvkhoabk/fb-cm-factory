@@ -78,6 +78,23 @@ type InstancePoolMember = {
   priority: number;
   status: string;
   metadata?: Record<string, unknown>;
+  role?: string | null;
+  notes?: string | null;
+  instance?: InstanceRecord | null;
+};
+
+type InstanceRecord = {
+  id: string;
+  hostId: string;
+  localId: string;
+  name?: string | null;
+  adbId?: string | null;
+  status: string;
+  runtimeStatus: string;
+  metadata?: Record<string, unknown>;
+  lastSeenAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 type ScriptRecord = {
@@ -173,6 +190,7 @@ type ScriptRun = {
 type PromptKind = "image" | "video" | "music";
 type ManagementSection =
   | "hosts"
+  | "instances"
   | "instance-pools"
   | "scripts"
   | "prompt-templates"
@@ -460,6 +478,7 @@ export function App() {
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [hosts, setHosts] = useState<HostRecord[]>([]);
   const [pools, setPools] = useState<InstancePool[]>([]);
+  const [instances, setInstances] = useState<InstanceRecord[]>([]);
   const [batches, setBatches] = useState<ProductionBatch[]>([]);
   const [jobs, setJobs] = useState<OrchestratorJob[]>([]);
   const [runtimeSessions, setRuntimeSessions] = useState<RuntimeSession[]>([]);
@@ -507,6 +526,10 @@ export function App() {
   const [scripts, setScripts] = useState<ScriptRecord[]>([]);
   const [orchestratorRules, setOrchestratorRules] = useState<OrchestratorRule[]>([]);
   const [selectedPoolId, setSelectedPoolId] = useState("");
+  const [selectedInstanceId, setSelectedInstanceId] = useState("");
+  const [selectedHostDrawerId, setSelectedHostDrawerId] = useState("");
+  const [poolModalInstanceId, setPoolModalInstanceId] = useState("");
+  const [selectedPoolMemberships, setSelectedPoolMemberships] = useState<string[]>([]);
   const [selectedScriptId, setSelectedScriptId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState("");
@@ -596,6 +619,7 @@ export function App() {
       attributeData,
       templateData,
       hostData,
+      instanceData,
       poolData,
       batchData,
       jobData,
@@ -608,6 +632,7 @@ export function App() {
       api<GroupAttribute[]>("/group-attributes"),
       api<PromptTemplate[]>("/prompt-templates"),
       api<HostRecord[]>("/hosts"),
+      api<InstanceRecord[]>("/instances"),
       api<InstancePool[]>("/instance-pools"),
       api<ProductionBatch[]>("/production-batches"),
       api<OrchestratorJob[]>("/orchestrator/jobs"),
@@ -621,7 +646,12 @@ export function App() {
     setAttributes(attributeData);
     setTemplates(templateData);
     setHosts(hostData);
-    setPools(poolData);
+    setInstances(instanceData);
+    const poolDetails = await Promise.all(poolData.map((pool) =>
+      api<InstancePool>(`/instance-pools/${pool.id}`).catch(() => pool)
+    ));
+
+    setPools(poolDetails);
     setBatches(batchData);
     setJobs(jobData);
     setRuntimeSessions(sessionData);
@@ -630,7 +660,8 @@ export function App() {
     setOrchestratorRules(ruleData);
     setSelectedGroups((current) => current.length ? current : groupData[0] ? [groupData[0].id] : []);
     setSelectedHostId((current) => current || hostData[0]?.id || "");
-    setSelectedPoolId((current) => current || poolData[0]?.id || "");
+    setSelectedInstanceId((current) => current || instanceData[0]?.id || "");
+    setSelectedPoolId((current) => current || poolDetails[0]?.id || "");
     setSelectedScriptId((current) => current || scriptData[0]?.id || "");
     setSelectedTemplateId((current) => current || templateData[0]?.id || "");
     setSelectedGroupId((current) => current || groupData[0]?.id || "");
@@ -789,8 +820,9 @@ export function App() {
   }
 
   async function refreshQueue() {
-    const [latestHosts, latestPools, latestBatches, latestJobs, latestSessions, latestScriptRuns, latestScripts, latestRules] = await Promise.all([
+    const [latestHosts, latestInstances, latestPools, latestBatches, latestJobs, latestSessions, latestScriptRuns, latestScripts, latestRules] = await Promise.all([
       api<HostRecord[]>("/hosts"),
+      api<InstanceRecord[]>("/instances"),
       api<InstancePool[]>("/instance-pools"),
       api<ProductionBatch[]>("/production-batches"),
       api<OrchestratorJob[]>("/orchestrator/jobs"),
@@ -800,7 +832,12 @@ export function App() {
       api<OrchestratorRule[]>("/orchestrator/rules")
     ]);
     setHosts(latestHosts);
-    setPools(latestPools);
+    setInstances(latestInstances);
+    const latestPoolDetails = await Promise.all(latestPools.map((pool) =>
+      api<InstancePool>(`/instance-pools/${pool.id}`).catch(() => pool)
+    ));
+
+    setPools(latestPoolDetails);
     setBatches(latestBatches);
     setJobs(latestJobs);
     setRuntimeSessions(latestSessions);
@@ -811,6 +848,7 @@ export function App() {
       batches: latestBatches,
       jobs: latestJobs,
       hosts: latestHosts,
+      pools: latestPoolDetails,
       runtimeSessions: latestSessions,
       scriptRuns: latestScriptRuns
     };
@@ -1042,6 +1080,121 @@ export function App() {
     return detail;
   }
 
+  function hostForInstance(instance: InstanceRecord) {
+    return hosts.find((host) => host.hostId === instance.hostId || host.id === instance.hostId) ?? null;
+  }
+
+  async function syncHostInstances(host: HostRecord) {
+    return adminAction("Syncing host instances", () => api(`/hosts/${host.id}/sync-instances`, { method: "POST" }));
+  }
+
+  async function instanceHostAction(instance: InstanceRecord, action: "screenshot" | "start" | "stop" | "restart") {
+    const host = hostForInstance(instance);
+    if (!host) throw new Error("Host not found for instance");
+    if (action === "screenshot") {
+      return adminAction("Testing instance screenshot", () => api(`/hosts/${host.id}/screenshot`, {
+        method: "POST",
+        body: JSON.stringify({ instanceId: instance.id, adbId: instance.adbId })
+      }));
+    }
+    return adminAction(`${action} instance`, () => api(`/hosts/${host.id}/instances/${instance.localId}/${action}`, { method: "POST" }));
+  }
+
+  async function addInstanceToPool(instanceId = selectedInstanceId, poolId = selectedPoolId) {
+    if (!instanceId || !poolId) throw new Error("Select instance and pool");
+    return adminAction("Adding instance to pool", () => api(`/instance-pools/${poolId}/members`, {
+      method: "POST",
+      body: JSON.stringify({
+        instanceId,
+        priority: Number(memberForm.priority),
+        status: "ACTIVE",
+        role: memberForm.status === "ACTIVE" ? "worker" : undefined,
+        notes: memberForm.metadata,
+        metadata: {}
+      })
+    }).then(() => loadPoolDetail(poolId)));
+  }
+
+  function instancePoolMemberships(instanceId: string) {
+    return pools
+      .map((pool) => {
+        const member = (pool.members ?? []).find((item) => item.instanceId === instanceId);
+        return member ? { pool, member } : null;
+      })
+      .filter(Boolean) as Array<{ pool: InstancePool; member: InstancePoolMember }>;
+  }
+
+  async function loadAllPoolDetails() {
+    const details = await Promise.all(pools.map((pool) => api<InstancePool>(`/instance-pools/${pool.id}`)));
+    setPools(details);
+    return details;
+  }
+
+  async function openPoolManager(instanceId: string) {
+    setSelectedInstanceId(instanceId);
+    setPoolModalInstanceId(instanceId);
+    const details = await loadAllPoolDetails();
+    setSelectedPoolMemberships(
+      details
+        .filter((pool) => (pool.members ?? []).some((member) => member.instanceId === instanceId))
+        .map((pool) => pool.id)
+    );
+  }
+
+  async function savePoolMemberships() {
+    const instanceId = poolModalInstanceId;
+    if (!instanceId) return;
+    setBusy(true);
+    setStatus("Saving pool memberships");
+    try {
+      const details = await loadAllPoolDetails();
+      const desired = new Set(selectedPoolMemberships);
+      const existing = new Map<string, InstancePoolMember>();
+      for (const pool of details) {
+        const member = (pool.members ?? []).find((item) => item.instanceId === instanceId);
+        if (member) existing.set(pool.id, member);
+      }
+
+      const tasks: Promise<unknown>[] = [];
+      for (const pool of details) {
+        const hasMember = existing.has(pool.id);
+        const wantsMember = desired.has(pool.id);
+        if (!hasMember && wantsMember) {
+          tasks.push(api(`/instance-pools/${pool.id}/members`, {
+            method: "POST",
+            body: JSON.stringify({
+              instanceId,
+              priority: Number(memberForm.priority),
+              status: "ACTIVE",
+              role: "worker",
+              notes: "",
+              metadata: {}
+            })
+          }));
+        }
+        if (hasMember && !wantsMember) {
+          tasks.push(api(`/instance-pools/${pool.id}/members/${existing.get(pool.id)?.id}`, { method: "DELETE" }));
+        }
+      }
+
+      await Promise.all(tasks);
+      await refreshQueue();
+      await loadAllPoolDetails();
+      setPoolModalInstanceId("");
+      setStatus("Pool memberships updated");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not save pool memberships");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function renderPoolBadges(instanceId: string) {
+    const memberships = instancePoolMemberships(instanceId);
+    if (!memberships.length) return <span className="poolBadge empty">No pools</span>;
+    return memberships.map(({ pool }) => <span className="poolBadge" key={pool.id}>{pool.poolType}</span>);
+  }
+
   return (
     <main className="studio">
       <header className="topbar">
@@ -1089,6 +1242,7 @@ export function App() {
           <strong>Management</strong>
           {[
             ["hosts", "Hosts"],
+            ["instances", "Instances"],
             ["instance-pools", "Instance Pools"],
             ["scripts", "Scripts"],
             ["prompt-templates", "Prompt Templates"],
@@ -1132,23 +1286,107 @@ export function App() {
               </div>
               <div className="adminTable">
                 {hosts.filter((host) => compactJson(host).toLowerCase().includes(adminSearch.toLowerCase())).slice(0, 20).map((host) => (
-                  <div className="adminRow" key={host.id}>
-                    <b>{host.name}</b><span>{host.hostId}</span><span>{host.baseUrl}</span><span>{host.status}</span>
-                    <button onClick={() => adminAction("Testing host health", () => api(`/hosts/${host.id}/health`))}>Health</button>
-                    <button onClick={() => adminAction("Testing ADB devices", () => hostApi(host.baseUrl, "/adb/devices"))}>ADB Devices</button>
-                    <button onClick={() => adminAction("Testing screenshot", () => api(`/hosts/${host.id}/screenshot`, { method: "POST", body: JSON.stringify({ instanceId: hostInstanceId, adbId: hostAdbId }) }))}>Screenshot</button>
-                    <button
-                      className="dangerButton"
-                      onClick={() => {
-                        if (window.confirm(`Delete host ${host.name}?`)) {
-                          adminAction("Deleting host", () => api(`/hosts/${host.id}`, { method: "DELETE" }));
-                        }
-                      }}
-                    >
-                      Delete
-                    </button>
+                  <div className="hostAdminCard" key={host.id}>
+                    <div className="hostAdminInfo">
+                      <b>{host.name}</b>
+                      <span>{host.hostId}</span>
+                      <span>{host.baseUrl}</span>
+                      <span>{host.status}</span>
+                      <span>{instances.filter((instance) => instance.hostId === host.hostId).length} instances</span>
+                    </div>
+                    <div className="hostAdminActions">
+                      <button onClick={() => adminAction("Testing host health", () => api(`/hosts/${host.id}/health`))}>Health</button>
+                      <button onClick={() => syncHostInstances(host)}>Sync Instances</button>
+                      <button onClick={() => adminAction("Testing ADB devices", () => hostApi(host.baseUrl, "/adb/devices"))}>ADB Devices</button>
+                      <button onClick={() => adminAction("Testing screenshot", () => api(`/hosts/${host.id}/screenshot`, { method: "POST", body: JSON.stringify({ instanceId: hostInstanceId, adbId: hostAdbId }) }))}>Screenshot</button>
+                      <button onClick={() => setSelectedHostDrawerId(host.id)}>View Instances</button>
+                      <button
+                        className="dangerButton"
+                        onClick={() => {
+                          if (window.confirm(`Delete host ${host.name}?`)) {
+                            adminAction("Deleting host", () => api(`/hosts/${host.id}`, { method: "DELETE" }));
+                          }
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 ))}
+              </div>
+              {selectedHostDrawerId ? (() => {
+                const host = hosts.find((item) => item.id === selectedHostDrawerId);
+                const hostInstances = host ? instances.filter((instance) => instance.hostId === host.hostId) : [];
+                return (
+                  <div className="instanceDrawerOverlay">
+                    <aside className="instanceDrawer">
+                      <div className="drawerHeader">
+                        <div>
+                          <strong>{host?.name ?? "Host Instances"}</strong>
+                          <small>{host?.hostId ?? ""} / {hostInstances.length} instances</small>
+                        </div>
+                        <button className="iconButton" onClick={() => setSelectedHostDrawerId("")} title="Close instance drawer">x</button>
+                      </div>
+                      <div className="instanceDrawerTable">
+                        <div className="instanceDrawerHeader">
+                          <span>Instance ID</span>
+                          <span>Local ID</span>
+                          <span>Name</span>
+                          <span>ADB ID</span>
+                          <span>Status</span>
+                          <span>Runtime Status</span>
+                          <span>Pools</span>
+                          <span>Actions</span>
+                        </div>
+                        {hostInstances.map((instance) => (
+                          <div className="instanceDrawerRow" key={instance.id}>
+                            <span title={instance.id}>{instance.id}</span>
+                            <span>{instance.localId}</span>
+                            <span>{instance.name ?? "-"}</span>
+                            <span>{instance.adbId ?? "-"}</span>
+                            <span>{instance.status}</span>
+                            <span>{instance.runtimeStatus}</span>
+                            <span className="poolBadgeList">{renderPoolBadges(instance.id)}</span>
+                            <div>
+                              <button onClick={() => instanceHostAction(instance, "screenshot")}>Screenshot</button>
+                              <button onClick={() => instanceHostAction(instance, "start")}>Start</button>
+                              <button onClick={() => instanceHostAction(instance, "stop")}>Stop</button>
+                              <button onClick={() => instanceHostAction(instance, "restart")}>Restart</button>
+                              <button onClick={() => openPoolManager(instance.id)}>Manage Pools</button>
+                            </div>
+                          </div>
+                        ))}
+                        {!hostInstances.length ? <div className="jobsEmpty">No synced instances yet.</div> : null}
+                      </div>
+                    </aside>
+                  </div>
+                );
+              })() : null}
+            </div>
+          ) : null}
+
+          {managementSection === "instances" ? (
+            <div className="adminGrid">
+              <div className="adminForm">
+                <label>Host Filter<select value={selectedHostId} onChange={(event) => setSelectedHostId(event.target.value)}><option value="">All hosts</option>{hosts.map((host) => <option key={host.id} value={host.hostId}>{host.name}</option>)}</select></label>
+                <label>Priority<input value={memberForm.priority} onChange={(event) => setMemberForm({ ...memberForm, priority: event.target.value })} /></label>
+                <button disabled={!selectedInstanceId} onClick={() => openPoolManager(selectedInstanceId)}>Manage Selected Pools</button>
+              </div>
+              <div className="adminTable">
+                {instances
+                  .filter((instance) => (!selectedHostId || instance.hostId === selectedHostId) && compactJson(instance).toLowerCase().includes(adminSearch.toLowerCase()))
+                  .slice(0, 20)
+                  .map((instance) => (
+                    <div className="adminRow" key={instance.id} onClick={() => setSelectedInstanceId(instance.id)}>
+                      <b>{instance.id}</b><span>{instance.name ?? "-"}</span><span>{instance.adbId ?? "-"}</span><span>{instance.status} / {instance.runtimeStatus}</span><small>{displayDateTime(instance.lastSeenAt ?? undefined)}</small>
+                      <span className="poolBadgeList">{renderPoolBadges(instance.id)}</span>
+                      <button onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "screenshot"); }}>Screenshot</button>
+                      <button onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "start"); }}>Start</button>
+                      <button onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "stop"); }}>Stop</button>
+                      <button onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "restart"); }}>Restart</button>
+                      <button onClick={(event) => { event.stopPropagation(); openPoolManager(instance.id); }}>Manage Pools</button>
+                    </div>
+                  ))}
               </div>
             </div>
           ) : null}
@@ -1162,11 +1400,11 @@ export function App() {
                 <button onClick={() => adminAction("Creating pool", () => api("/instance-pools", { method: "POST", body: JSON.stringify(poolForm) }))}>Create Pool</button>
                 <hr />
                 <label>Selected Pool<select value={selectedPoolId} onChange={(event) => { setSelectedPoolId(event.target.value); loadPoolDetail(event.target.value); }}>{pools.map((pool) => <option key={pool.id} value={pool.id}>{pool.name}</option>)}</select></label>
-                <label>Instance ID<input value={memberForm.instanceId} onChange={(event) => setMemberForm({ ...memberForm, instanceId: event.target.value })} /></label>
+                <label>Discovered Instance<select value={selectedInstanceId} onChange={(event) => setSelectedInstanceId(event.target.value)}>{instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.id} / {instance.adbId ?? "no adb"}</option>)}</select></label>
                 <label>Priority<input value={memberForm.priority} onChange={(event) => setMemberForm({ ...memberForm, priority: event.target.value })} /></label>
                 <label>Status<input value={memberForm.status} onChange={(event) => setMemberForm({ ...memberForm, status: event.target.value })} /></label>
-                <label>Metadata JSON<textarea value={memberForm.metadata} onChange={(event) => setMemberForm({ ...memberForm, metadata: event.target.value })} /></label>
-                <button disabled={!selectedPoolId} onClick={() => adminAction("Adding pool member", () => api(`/instance-pools/${selectedPoolId}/members`, { method: "POST", body: JSON.stringify({ instanceId: memberForm.instanceId, priority: Number(memberForm.priority), status: memberForm.status, metadata: parseJsonText(memberForm.metadata) }) }).then(() => loadPoolDetail()))}>Add Member</button>
+                <label>Notes<input value={memberForm.metadata} onChange={(event) => setMemberForm({ ...memberForm, metadata: event.target.value })} /></label>
+                <button disabled={!selectedPoolId || !selectedInstanceId} onClick={() => addInstanceToPool()}>Add Instance</button>
               </div>
               <div className="adminTable">
                 {pools.slice(0, 20).map((pool) => (
@@ -1174,8 +1412,9 @@ export function App() {
                     <b>{pool.name}</b><span>{pool.poolType}</span><span>{pool.status}</span>
                     {(pool.members ?? []).map((member) => (
                       <div className="nestedRow" key={member.id}>
-                        <span>{member.instanceId}</span><span>{member.status}</span><span>{member.priority}</span><small>{compactJson(member.metadata)}</small>
-                        <button onClick={(event) => { event.stopPropagation(); adminAction("Updating member", () => api(`/instance-pools/${pool.id}/members/${member.id}`, { method: "PATCH", body: JSON.stringify({ status: member.status === "ACTIVE" ? "OFFLINE" : "ACTIVE", metadata: member.metadata ?? {} }) }).then(() => loadPoolDetail(pool.id))); }}>Toggle Status</button>
+                        <span>{member.instanceId}</span><span>{member.status}</span><span>{member.priority}</span><small>{member.instance?.adbId ?? compactJson(member.metadata)}</small>
+                        <button onClick={(event) => { event.stopPropagation(); adminAction("Updating member", () => api(`/instance-pools/${pool.id}/members/${member.id}`, { method: "PATCH", body: JSON.stringify({ status: member.status === "ACTIVE" ? "INACTIVE" : "ACTIVE", metadata: member.metadata ?? {} }) }).then(() => loadPoolDetail(pool.id))); }}>Toggle Status</button>
+                        <button onClick={(event) => { event.stopPropagation(); adminAction("Mark error", () => api(`/instance-pools/${pool.id}/members/${member.id}`, { method: "PATCH", body: JSON.stringify({ status: "ERROR" }) }).then(() => loadPoolDetail(pool.id))); }}>Mark Error</button>
                         <button onClick={(event) => { event.stopPropagation(); adminAction("Removing member", () => api(`/instance-pools/${pool.id}/members/${member.id}`, { method: "DELETE" }).then(() => loadPoolDetail(pool.id))); }}>Remove</button>
                       </div>
                     ))}
@@ -1274,6 +1513,65 @@ export function App() {
             <strong>Result JSON</strong>
             <pre>{adminJson}</pre>
           </div>
+          {poolModalInstanceId ? (() => {
+            const instance = instances.find((item) => item.id === poolModalInstanceId);
+            const currentMemberships = instancePoolMemberships(poolModalInstanceId);
+            return (
+              <div className="instanceDrawerOverlay">
+                <aside className="poolManagerModal">
+                  <div className="drawerHeader">
+                    <div>
+                      <strong>Manage Pools</strong>
+                      <small>{instance?.id ?? poolModalInstanceId}</small>
+                    </div>
+                    <button className="iconButton" onClick={() => setPoolModalInstanceId("")} title="Close pool manager">x</button>
+                  </div>
+                  <div className="poolManagerBody">
+                    <section className="poolManagerSection">
+                      <h3>Current Pools</h3>
+                      <div className="poolBadgeList">
+                        {currentMemberships.length
+                          ? currentMemberships.map(({ pool }) => <span className="poolBadge" key={pool.id}>{pool.poolType}</span>)
+                          : <span className="poolBadge empty">No pools</span>}
+                      </div>
+                    </section>
+                    <section className="poolManagerSection">
+                      <h3>Pool Memberships</h3>
+                      <div className="poolCheckboxList">
+                        {pools.map((pool) => {
+                          const checked = selectedPoolMemberships.includes(pool.id);
+                          const members = pool.members ?? [];
+                          const activeCount = members.filter((member) => String(member.status).toUpperCase() === "ACTIVE").length;
+                          return (
+                            <label className="poolCheckboxRow" key={pool.id}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(event) => {
+                                  setSelectedPoolMemberships((current) => event.target.checked
+                                    ? [...new Set([...current, pool.id])]
+                                    : current.filter((id) => id !== pool.id));
+                                }}
+                              />
+                              <span>
+                                <b>{pool.poolType}</b>
+                                <small>{pool.name}</small>
+                              </span>
+                              <em>{activeCount}/{members.length} active</em>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </section>
+                    <div className="controlActions">
+                      <button onClick={savePoolMemberships} disabled={busy}>Save</button>
+                      <button className="secondaryButton" onClick={() => setPoolModalInstanceId("")}>Cancel</button>
+                    </div>
+                  </div>
+                </aside>
+              </div>
+            );
+          })() : null}
         </section>
       </section>
       ) : page === "control-center" ? (

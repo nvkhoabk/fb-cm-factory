@@ -34,10 +34,16 @@ export const instanceSchedulerService = {
     const allocation = instanceSchedulerRepository.createAllocation({
       poolId: candidate.pool_id,
       instanceId: candidate.instance_id,
+      hostId: candidate.host_id,
+      localId: candidate.local_id,
+      adbId: candidate.adb_id,
       orchestratorJobId: String(job.id),
       metadata: {
         poolType,
-        targetStageType: job.targetStageType
+        targetStageType: job.targetStageType,
+        hostId: candidate.host_id,
+        localId: candidate.local_id,
+        adbId: candidate.adb_id
       }
     });
 
@@ -48,7 +54,10 @@ export const instanceSchedulerService = {
     const updatedJob = orchestratorRepository.updateJobStatus(String(job.id), "ALLOCATED", {
       allocationId: allocation.id,
       poolId: allocation.poolId,
-      instanceId: allocation.instanceId
+      instanceId: allocation.instanceId,
+      hostId: allocation.hostId,
+      localId: allocation.localId,
+      adbId: allocation.adbId
     });
 
     return {
@@ -87,4 +96,3 @@ export const instanceSchedulerService = {
     return instanceSchedulerRepository.closeAllocation(String(allocation.id), "FAILED");
   }
 };
-

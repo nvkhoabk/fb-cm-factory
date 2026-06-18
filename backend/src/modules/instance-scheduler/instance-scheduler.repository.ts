@@ -7,6 +7,9 @@ function mapAllocation(row: Record<string, unknown>) {
     id: row.id,
     poolId: row.pool_id,
     instanceId: row.instance_id,
+    hostId: row.host_id ?? null,
+    localId: row.local_id ?? null,
+    adbId: row.adb_id ?? null,
     orchestratorJobId: row.orchestrator_job_id ?? null,
     workflowRunId: row.workflow_run_id ?? null,
     workflowStageRunId: row.workflow_stage_run_id ?? null,
@@ -55,9 +58,13 @@ export const instanceSchedulerRepository = {
       SELECT
         ip.id AS pool_id,
         ipm.instance_id AS instance_id,
+        i.host_id AS host_id,
+        i.local_id AS local_id,
+        i.adb_id AS adb_id,
         COUNT(ia.id) AS active_allocation_count
       FROM instance_pools ip
       JOIN instance_pool_members ipm ON ipm.pool_id = ip.id
+      JOIN instances i ON i.id = ipm.instance_id
       LEFT JOIN instance_allocations ia
         ON ia.instance_id = ipm.instance_id
        AND ia.status = 'ALLOCATED'
@@ -65,18 +72,22 @@ export const instanceSchedulerRepository = {
         AND UPPER(ip.status) = 'ACTIVE'
         AND UPPER(ipm.status) = 'ACTIVE'
         AND UPPER(ipm.status) NOT IN ('ERROR', 'CAPTCHA', 'OFFLINE')
+        AND UPPER(COALESCE(i.status, '')) NOT IN ('OFFLINE', 'INACTIVE', 'ERROR')
         AND (? IS NULL OR ipm.instance_id <> ?)
-      GROUP BY ip.id, ipm.instance_id, ipm.priority
+      GROUP BY ip.id, ipm.instance_id, i.host_id, i.local_id, i.adb_id, ipm.priority
       ORDER BY active_allocation_count ASC, ipm.priority ASC, ipm.created_at ASC
       LIMIT 1
     `).get(poolType, excludeInstanceId ?? null, excludeInstanceId ?? null);
 
-    return row as { pool_id: string; instance_id: string; active_allocation_count: number } | undefined;
+    return row as { pool_id: string; instance_id: string; host_id: string; local_id: string; adb_id: string | null; active_allocation_count: number } | undefined;
   },
 
   createAllocation(input: {
     poolId: string;
     instanceId: string;
+    hostId?: string | null;
+    localId?: string | null;
+    adbId?: string | null;
     orchestratorJobId?: string | null;
     workflowRunId?: string | null;
     workflowStageRunId?: string | null;
@@ -87,11 +98,11 @@ export const instanceSchedulerRepository = {
 
     db.prepare(`
       INSERT INTO instance_allocations (
-        id, pool_id, instance_id, orchestrator_job_id, workflow_run_id,
+        id, pool_id, instance_id, host_id, local_id, adb_id, orchestrator_job_id, workflow_run_id,
         workflow_stage_run_id, allocated_at, released_at, status,
         metadata_json, created_at, updated_at
       ) VALUES (
-        @id, @poolId, @instanceId, @orchestratorJobId, @workflowRunId,
+        @id, @poolId, @instanceId, @hostId, @localId, @adbId, @orchestratorJobId, @workflowRunId,
         @workflowStageRunId, @allocatedAt, NULL, 'ALLOCATED',
         @metadataJson, @createdAt, @updatedAt
       )
@@ -99,6 +110,9 @@ export const instanceSchedulerRepository = {
       id,
       poolId: input.poolId,
       instanceId: input.instanceId,
+      hostId: input.hostId ?? null,
+      localId: input.localId ?? null,
+      adbId: input.adbId ?? null,
       orchestratorJobId: input.orchestratorJobId ?? null,
       workflowRunId: input.workflowRunId ?? null,
       workflowStageRunId: input.workflowStageRunId ?? null,

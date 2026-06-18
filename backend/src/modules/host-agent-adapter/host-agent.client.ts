@@ -66,6 +66,26 @@ export const hostAgentClient = {
     return requestAgent(target, "/health", { method: "GET" });
   },
 
+  listInstances(target: HostAgentTarget) {
+    return requestAgent(target, "/instances", { method: "GET" });
+  },
+
+  listAdbDevices(target: HostAgentTarget) {
+    return requestAgent(target, "/adb/devices", { method: "GET" });
+  },
+
+  startInstance(target: HostAgentTarget, localId: string) {
+    return requestAgent(target, `/ldplayer/instances/${encodeURIComponent(localId)}/start`, { method: "POST" });
+  },
+
+  stopInstance(target: HostAgentTarget, localId: string) {
+    return requestAgent(target, `/ldplayer/instances/${encodeURIComponent(localId)}/stop`, { method: "POST" });
+  },
+
+  restartInstance(target: HostAgentTarget, localId: string) {
+    return requestAgent(target, `/ldplayer/instances/${encodeURIComponent(localId)}/restart`, { method: "POST" });
+  },
+
   takeScreenshot(target: HostAgentTarget, instanceId: string, adbId: string) {
     return requestAgent(target, `/instances/${encodeURIComponent(instanceId)}/screenshot`, {
       method: "POST",

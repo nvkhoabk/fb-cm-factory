@@ -24,7 +24,18 @@ function mapMember(row: Record<string, unknown>) {
     instanceId: row.instance_id,
     priority: row.priority,
     status: row.status,
+    role: row.role ?? null,
+    notes: row.notes ?? null,
     metadata: jsonParse(row.metadata_json, {}),
+    instance: row.instance_host_id ? {
+      id: row.instance_id,
+      hostId: row.instance_host_id,
+      localId: row.local_id,
+      name: row.instance_name,
+      adbId: row.adb_id,
+      status: row.instance_status,
+      runtimeStatus: row.runtime_status
+    } : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -46,9 +57,12 @@ export const instancePoolsRepository = {
     const pool = this.get(id);
     if (!pool) return null;
     const members = db.prepare(`
-      SELECT * FROM instance_pool_members
-      WHERE pool_id = ?
-      ORDER BY priority ASC, created_at DESC
+      SELECT ipm.*, i.host_id AS instance_host_id, i.local_id, i.name AS instance_name,
+             i.adb_id, i.status AS instance_status, i.runtime_status
+      FROM instance_pool_members ipm
+      LEFT JOIN instances i ON i.id = ipm.instance_id
+      WHERE ipm.pool_id = ?
+      ORDER BY ipm.priority ASC, ipm.created_at DESC
     `).all(id).map((row) => mapMember(row as Record<string, unknown>));
     return {
       ...pool,
@@ -84,9 +98,9 @@ export const instancePoolsRepository = {
 
     db.prepare(`
       INSERT INTO instance_pool_members (
-        id, pool_id, instance_id, priority, status, metadata_json, created_at, updated_at
+        id, pool_id, instance_id, priority, status, role, notes, metadata_json, created_at, updated_at
       ) VALUES (
-        @id, @poolId, @instanceId, @priority, @status, @metadataJson, @createdAt, @updatedAt
+        @id, @poolId, @instanceId, @priority, @status, @role, @notes, @metadataJson, @createdAt, @updatedAt
       )
     `).run({
       id,
@@ -94,6 +108,8 @@ export const instancePoolsRepository = {
       instanceId: input.instanceId,
       priority: input.priority,
       status: input.status,
+      role: input.role ?? null,
+      notes: input.notes ?? null,
       metadataJson: jsonString(input.metadata, {}),
       createdAt,
       updatedAt: createdAt
@@ -112,6 +128,8 @@ export const instancePoolsRepository = {
       UPDATE instance_pool_members
       SET priority = @priority,
           status = @status,
+          role = @role,
+          notes = @notes,
           metadata_json = @metadataJson,
           updated_at = @updatedAt
       WHERE id = @id AND pool_id = @poolId
@@ -120,6 +138,8 @@ export const instancePoolsRepository = {
       poolId,
       priority: input.priority ?? row.priority,
       status: input.status ?? row.status,
+      role: input.role === undefined ? row.role : input.role,
+      notes: input.notes === undefined ? row.notes : input.notes,
       metadataJson: jsonString(input.metadata ?? jsonParse(row.metadata_json, {}), {}),
       updatedAt: now()
     });
