@@ -1,5 +1,25 @@
 import { db } from "../../database/db";
-import { jsonParse, jsonString, now } from "../shared/resource";
+import { AppError, jsonParse, jsonString, now } from "../shared/resource";
+
+export const instancePoolStates = [
+  "AVAILABLE",
+  "STANDBY",
+  "WORKFLOW",
+  "MAINTENANCE",
+  "DISABLED",
+  "RETIRED"
+] as const;
+
+export type InstancePoolState = typeof instancePoolStates[number];
+
+export type InstanceCapabilities = {
+  canRun?: string[];
+  apps?: string[];
+  supportsUpload?: boolean;
+  supportsDownload?: boolean;
+  notes?: string;
+  [key: string]: unknown;
+};
 
 export type UpsertInstanceInput = {
   id: string;
@@ -22,6 +42,11 @@ function mapInstance(row: Record<string, unknown>) {
     adbId: row.adb_id ?? null,
     status: String(row.status ?? "UNKNOWN"),
     runtimeStatus: String(row.runtime_status ?? "IDLE"),
+    capabilities: jsonParse<InstanceCapabilities>(row.capabilities_json, {}),
+    currentPoolType: String(row.current_pool_type ?? "AVAILABLE"),
+    currentWorkflowRunId: row.current_workflow_run_id ?? null,
+    maintenanceReason: row.maintenance_reason ?? null,
+    lastErrorAt: row.last_error_at ?? null,
     metadata: jsonParse(row.metadata_json, {}),
     lastSeenAt: row.last_seen_at ?? null,
     createdAt: row.created_at,
@@ -30,9 +55,30 @@ function mapInstance(row: Record<string, unknown>) {
 }
 
 export const instancesRepository = {
-  list() {
-    return db.prepare("SELECT * FROM instances ORDER BY updated_at DESC")
-      .all()
+  list(filters: { hostId?: string; currentPoolType?: string; runtimeStatus?: string; capability?: string } = {}) {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+
+    if (filters.hostId) {
+      clauses.push("host_id = ?");
+      params.push(filters.hostId);
+    }
+    if (filters.currentPoolType) {
+      clauses.push("current_pool_type = ?");
+      params.push(filters.currentPoolType);
+    }
+    if (filters.runtimeStatus) {
+      clauses.push("runtime_status = ?");
+      params.push(filters.runtimeStatus);
+    }
+    if (filters.capability) {
+      clauses.push("capabilities_json LIKE ?");
+      params.push(`%"${filters.capability}"%`);
+    }
+
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    return db.prepare(`SELECT * FROM instances ${where} ORDER BY updated_at DESC`)
+      .all(...params)
       .map((row) => mapInstance(row as Record<string, unknown>));
   },
 
@@ -54,10 +100,10 @@ export const instancesRepository = {
     db.prepare(`
       INSERT INTO instances (
         id, host_id, local_id, name, adb_id, status, runtime_status,
-        metadata_json, last_seen_at, created_at, updated_at
+        metadata_json, last_seen_at, current_pool_type, created_at, updated_at
       ) VALUES (
         @id, @hostId, @localId, @name, @adbId, @status, @runtimeStatus,
-        @metadataJson, @lastSeenAt, @createdAt, @updatedAt
+        @metadataJson, @lastSeenAt, 'AVAILABLE', @createdAt, @updatedAt
       )
       ON CONFLICT(id) DO UPDATE SET
         host_id = excluded.host_id,
@@ -84,6 +130,31 @@ export const instancesRepository = {
     });
 
     return this.get(input.id);
+  },
+
+  updateCapabilities(id: string, capabilities: InstanceCapabilities) {
+    const timestamp = now();
+    const changes = db.prepare(`
+      UPDATE instances
+      SET capabilities_json = ?, updated_at = ?
+      WHERE id = ?
+    `).run(jsonString(capabilities, {}), timestamp, id).changes;
+
+    if (!changes) throw new AppError("INSTANCE_NOT_FOUND", "Instance not found", 404);
+    return this.get(id);
+  },
+
+  moveToPoolState(id: string, currentPoolType: InstancePoolState, maintenanceReason?: string | null) {
+    const timestamp = now();
+    const reason = currentPoolType === "MAINTENANCE" ? maintenanceReason ?? null : null;
+    const changes = db.prepare(`
+      UPDATE instances
+      SET current_pool_type = ?, maintenance_reason = ?, updated_at = ?
+      WHERE id = ?
+    `).run(currentPoolType, reason, timestamp, id).changes;
+
+    if (!changes) throw new AppError("INSTANCE_NOT_FOUND", "Instance not found", 404);
+    return this.get(id);
   },
 
   markMissingForHost(hostId: string, activeIds: string[]) {

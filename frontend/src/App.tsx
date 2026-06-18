@@ -91,10 +91,24 @@ type InstanceRecord = {
   adbId?: string | null;
   status: string;
   runtimeStatus: string;
+  capabilities?: InstanceCapabilities;
+  currentPoolType?: string;
+  currentWorkflowRunId?: string | null;
+  maintenanceReason?: string | null;
+  lastErrorAt?: string | null;
   metadata?: Record<string, unknown>;
   lastSeenAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
+};
+
+type InstanceCapabilities = {
+  canRun?: string[];
+  apps?: string[];
+  supportsUpload?: boolean;
+  supportsDownload?: boolean;
+  notes?: string;
+  [key: string]: unknown;
 };
 
 type ScriptRecord = {
@@ -225,6 +239,7 @@ const stageTypeToPoolType: Record<string, string> = {
 };
 
 const pageSizeOptions = [10, 20, 50];
+const instancePoolStateOptions = ["AVAILABLE", "STANDBY", "WORKFLOW", "MAINTENANCE", "DISABLED", "RETIRED"];
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -373,6 +388,18 @@ function parseJsonText(value: string, fallback: Record<string, unknown> = {}) {
   } catch {
     return fallback;
   }
+}
+
+function instanceCapabilityLabels(instance: InstanceRecord) {
+  const capabilities = instance.capabilities ?? {};
+  const canRun = Array.isArray(capabilities.canRun) ? capabilities.canRun : [];
+  const apps = Array.isArray(capabilities.apps) ? capabilities.apps : [];
+  return [
+    ...canRun.filter((item): item is string => typeof item === "string" && Boolean(item)),
+    ...apps.filter((item): item is string => typeof item === "string" && Boolean(item)),
+    capabilities.supportsUpload ? "upload" : "",
+    capabilities.supportsDownload ? "download" : ""
+  ].filter(Boolean);
 }
 
 function findJobError(job?: OrchestratorJob | null, runtimeSession?: RuntimeSession | null, scriptRun?: ScriptRun | null) {
@@ -530,6 +557,9 @@ export function App() {
   const [selectedHostDrawerId, setSelectedHostDrawerId] = useState("");
   const [poolModalInstanceId, setPoolModalInstanceId] = useState("");
   const [selectedPoolMemberships, setSelectedPoolMemberships] = useState<string[]>([]);
+  const [instancePoolStateFilter, setInstancePoolStateFilter] = useState("");
+  const [instanceCapabilityFilter, setInstanceCapabilityFilter] = useState("");
+  const [instanceRuntimeFilter, setInstanceRuntimeFilter] = useState("");
   const [selectedScriptId, setSelectedScriptId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState("");
@@ -594,6 +624,23 @@ export function App() {
     () => hosts.find((host) => host.id === selectedHostId || host.hostId === selectedHostId) ?? hosts[0] ?? null,
     [hosts, selectedHostId]
   );
+  const instanceCapabilityOptions = useMemo(() => {
+    return [...new Set(instances.flatMap((instance) => instanceCapabilityLabels(instance)))].sort();
+  }, [instances]);
+  const instanceRuntimeOptions = useMemo(() => {
+    return [...new Set(instances.map((instance) => instance.runtimeStatus).filter(Boolean))].sort();
+  }, [instances]);
+  const filteredInstances = useMemo(() => {
+    const lowerSearch = adminSearch.toLowerCase();
+    return instances.filter((instance) => {
+      const capabilityLabels = instanceCapabilityLabels(instance);
+      return (!selectedHostId || instance.hostId === selectedHostId)
+        && (!instancePoolStateFilter || instance.currentPoolType === instancePoolStateFilter)
+        && (!instanceCapabilityFilter || capabilityLabels.includes(instanceCapabilityFilter))
+        && (!instanceRuntimeFilter || instance.runtimeStatus === instanceRuntimeFilter)
+        && compactJson(instance).toLowerCase().includes(lowerSearch);
+    });
+  }, [adminSearch, instanceCapabilityFilter, instancePoolStateFilter, instanceRuntimeFilter, instances, selectedHostId]);
   const kpis = useMemo(() => ({
     readyBatches: batches.filter((batch) => batch.status === "READY" && ["AVAILABLE", "REUSABLE"].includes(batch.usageStatus)).length,
     pendingJobs: jobs.filter((job) => job.status === "PENDING").length,
@@ -1100,6 +1147,33 @@ export function App() {
     return adminAction(`${action} instance`, () => api(`/hosts/${host.id}/instances/${instance.localId}/${action}`, { method: "POST" }));
   }
 
+  async function setInstanceCapabilities(instance: InstanceRecord) {
+    const initial = compactJson(instance.capabilities ?? {
+      canRun: ["IMAGE_EDIT"],
+      apps: ["chatgpt"],
+      supportsUpload: true,
+      supportsDownload: true,
+      notes: ""
+    });
+    const value = window.prompt("Set instance capabilities JSON", initial);
+    if (value === null) return;
+    const capabilities = parseJsonText(value, instance.capabilities ?? {});
+    return adminAction("Updating capabilities", () => api(`/instances/${instance.id}/capabilities`, {
+      method: "PATCH",
+      body: JSON.stringify(capabilities)
+    }));
+  }
+
+  async function moveInstance(instance: InstanceRecord, action: "move-available" | "move-standby" | "move-maintenance" | "disable" | "retire") {
+    const body = action === "move-maintenance"
+      ? { reason: window.prompt("Maintenance reason", instance.maintenanceReason ?? "") ?? "" }
+      : undefined;
+    return adminAction("Moving instance", () => api(`/instances/${instance.id}/${action}`, {
+      method: "POST",
+      body: body ? JSON.stringify(body) : undefined
+    }));
+  }
+
   async function addInstanceToPool(instanceId = selectedInstanceId, poolId = selectedPoolId) {
     if (!instanceId || !poolId) throw new Error("Select instance and pool");
     return adminAction("Adding instance to pool", () => api(`/instance-pools/${poolId}/members`, {
@@ -1193,6 +1267,25 @@ export function App() {
     const memberships = instancePoolMemberships(instanceId);
     if (!memberships.length) return <span className="poolBadge empty">No pools</span>;
     return memberships.map(({ pool }) => <span className="poolBadge" key={pool.id}>{pool.poolType}</span>);
+  }
+
+  function renderCapabilityBadges(instance: InstanceRecord) {
+    const labels = instanceCapabilityLabels(instance);
+    if (!labels.length) return <span className="poolBadge empty">No capabilities</span>;
+    return labels.map((label) => <span className="poolBadge capabilityBadge" key={label}>{label}</span>);
+  }
+
+  function renderInstanceMovementActions(instance: InstanceRecord) {
+    return (
+      <>
+        <button onClick={(event) => { event.stopPropagation(); setInstanceCapabilities(instance); }}>Set Capabilities</button>
+        <button onClick={(event) => { event.stopPropagation(); moveInstance(instance, "move-available"); }}>Move Available</button>
+        <button onClick={(event) => { event.stopPropagation(); moveInstance(instance, "move-standby"); }}>Move Standby</button>
+        <button onClick={(event) => { event.stopPropagation(); moveInstance(instance, "move-maintenance"); }}>Move Maintenance</button>
+        <button onClick={(event) => { event.stopPropagation(); moveInstance(instance, "disable"); }}>Disable</button>
+        <button onClick={(event) => { event.stopPropagation(); moveInstance(instance, "retire"); }}>Retire</button>
+      </>
+    );
   }
 
   return (
@@ -1335,6 +1428,9 @@ export function App() {
                           <span>ADB ID</span>
                           <span>Status</span>
                           <span>Runtime Status</span>
+                          <span>Pool State</span>
+                          <span>Capabilities</span>
+                          <span>Maintenance</span>
                           <span>Pools</span>
                           <span>Actions</span>
                         </div>
@@ -1346,6 +1442,9 @@ export function App() {
                             <span>{instance.adbId ?? "-"}</span>
                             <span>{instance.status}</span>
                             <span>{instance.runtimeStatus}</span>
+                            <span>{instance.currentPoolType ?? "AVAILABLE"}</span>
+                            <span className="poolBadgeList">{renderCapabilityBadges(instance)}</span>
+                            <span>{instance.maintenanceReason ?? "-"}</span>
                             <span className="poolBadgeList">{renderPoolBadges(instance.id)}</span>
                             <div>
                               <button onClick={() => instanceHostAction(instance, "screenshot")}>Screenshot</button>
@@ -1353,6 +1452,7 @@ export function App() {
                               <button onClick={() => instanceHostAction(instance, "stop")}>Stop</button>
                               <button onClick={() => instanceHostAction(instance, "restart")}>Restart</button>
                               <button onClick={() => openPoolManager(instance.id)}>Manage Pools</button>
+                              {renderInstanceMovementActions(instance)}
                             </div>
                           </div>
                         ))}
@@ -1369,24 +1469,31 @@ export function App() {
             <div className="adminGrid">
               <div className="adminForm">
                 <label>Host Filter<select value={selectedHostId} onChange={(event) => setSelectedHostId(event.target.value)}><option value="">All hosts</option>{hosts.map((host) => <option key={host.id} value={host.hostId}>{host.name}</option>)}</select></label>
+                <label>Pool State<select value={instancePoolStateFilter} onChange={(event) => setInstancePoolStateFilter(event.target.value)}><option value="">All states</option>{instancePoolStateOptions.map((state) => <option key={state} value={state}>{state}</option>)}</select></label>
+                <label>Capability<select value={instanceCapabilityFilter} onChange={(event) => setInstanceCapabilityFilter(event.target.value)}><option value="">All capabilities</option>{instanceCapabilityOptions.map((capability) => <option key={capability} value={capability}>{capability}</option>)}</select></label>
+                <label>Runtime Status<select value={instanceRuntimeFilter} onChange={(event) => setInstanceRuntimeFilter(event.target.value)}><option value="">All runtime states</option>{instanceRuntimeOptions.map((runtimeStatus) => <option key={runtimeStatus} value={runtimeStatus}>{runtimeStatus}</option>)}</select></label>
                 <label>Priority<input value={memberForm.priority} onChange={(event) => setMemberForm({ ...memberForm, priority: event.target.value })} /></label>
                 <button disabled={!selectedInstanceId} onClick={() => openPoolManager(selectedInstanceId)}>Manage Selected Pools</button>
               </div>
               <div className="adminTable">
-                {instances
-                  .filter((instance) => (!selectedHostId || instance.hostId === selectedHostId) && compactJson(instance).toLowerCase().includes(adminSearch.toLowerCase()))
+                {filteredInstances
                   .slice(0, 20)
                   .map((instance) => (
                     <div className="adminRow" key={instance.id} onClick={() => setSelectedInstanceId(instance.id)}>
                       <b>{instance.id}</b><span>{instance.name ?? "-"}</span><span>{instance.adbId ?? "-"}</span><span>{instance.status} / {instance.runtimeStatus}</span><small>{displayDateTime(instance.lastSeenAt ?? undefined)}</small>
+                      <span className="statusPill">{instance.currentPoolType ?? "AVAILABLE"}</span>
+                      <span className="poolBadgeList">{renderCapabilityBadges(instance)}</span>
+                      <span>{instance.maintenanceReason ?? "-"}</span>
                       <span className="poolBadgeList">{renderPoolBadges(instance.id)}</span>
                       <button onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "screenshot"); }}>Screenshot</button>
                       <button onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "start"); }}>Start</button>
                       <button onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "stop"); }}>Stop</button>
                       <button onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "restart"); }}>Restart</button>
                       <button onClick={(event) => { event.stopPropagation(); openPoolManager(instance.id); }}>Manage Pools</button>
+                      {renderInstanceMovementActions(instance)}
                     </div>
                   ))}
+                {!filteredInstances.length ? <div className="jobsEmpty">No instances match the current filters.</div> : null}
               </div>
             </div>
           ) : null}

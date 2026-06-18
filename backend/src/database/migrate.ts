@@ -618,6 +618,17 @@ export function migrate() {
 
   addColumnIfMissing("instance_allocations", "created_at", "TEXT");
   addColumnIfMissing("instance_allocations", "updated_at", "TEXT");
+  addColumnIfMissing("instances", "capabilities_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("instances", "current_pool_type", "TEXT DEFAULT 'AVAILABLE'");
+  addColumnIfMissing("instances", "current_workflow_run_id", "TEXT");
+  addColumnIfMissing("instances", "maintenance_reason", "TEXT");
+  addColumnIfMissing("instances", "last_error_at", "TEXT");
+
+  db.prepare(`
+    UPDATE instances
+    SET current_pool_type = 'AVAILABLE'
+    WHERE current_pool_type IS NULL OR current_pool_type = ''
+  `).run();
 }
 
 if (require.main === module) {

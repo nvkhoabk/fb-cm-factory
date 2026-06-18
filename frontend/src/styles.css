@@ -892,8 +892,8 @@ h2 {
   align-items: center;
   display: grid;
   gap: 8px;
-  grid-template-columns: 190px 70px 140px 130px 100px 120px 170px minmax(360px, 1fr);
-  min-width: 1300px;
+  grid-template-columns: 190px 70px 140px 130px 100px 120px 120px 180px 170px 170px minmax(620px, 1fr);
+  min-width: 1960px;
   padding: 8px 10px;
 }
 
@@ -956,6 +956,12 @@ h2 {
   background: #f4f6f8;
   border-color: #d8dee6;
   color: #7a8492;
+}
+
+.capabilityBadge {
+  background: #f4f8ff;
+  border-color: #d4deef;
+  color: #334664;
 }
 
 .poolManagerModal {
