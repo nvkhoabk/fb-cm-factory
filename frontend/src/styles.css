@@ -1054,6 +1054,33 @@ h2 {
   margin-bottom: 6px;
 }
 
+.capacityAllocationList {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.capacityAllocationList > div {
+  border: 1px solid #e1e6ed;
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  grid-template-columns: minmax(180px, 1fr) 90px minmax(180px, 1fr);
+  padding: 8px;
+}
+
+.capacityAllocationList b,
+.capacityAllocationList span,
+.capacityAllocationList small {
+  font-size: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.capacityAllocationList small {
+  color: #6c7380;
+}
+
 .jobsWorkspace {
   align-items: start;
   display: grid;
@@ -1251,14 +1278,14 @@ h2 {
 .jobsTable {
   border: 1px solid #e1e6ed;
   border-radius: 8px;
-  min-width: 720px;
+  min-width: 870px;
   overflow: hidden;
 }
 
 .operationsTable {
   border: 0;
   border-radius: 0;
-  min-width: 1080px;
+  min-width: 1230px;
 }
 
 .jobsTableHeader,
@@ -1266,13 +1293,13 @@ h2 {
   align-items: center;
   display: grid;
   gap: 8px;
-  grid-template-columns: 76px 96px 116px 82px 88px 126px minmax(210px, 1fr);
+  grid-template-columns: 76px 96px 116px 82px 88px 150px 126px minmax(210px, 1fr);
   padding: 8px 10px;
 }
 
 .operationsTable .jobsTableHeader,
 .operationsTable .jobsTableRow {
-  grid-template-columns: 88px 104px 130px 92px 150px 96px 140px minmax(230px, 1fr);
+  grid-template-columns: 88px 104px 130px 92px 150px 96px 150px 140px minmax(230px, 1fr);
 }
 
 .jobsTableHeader {

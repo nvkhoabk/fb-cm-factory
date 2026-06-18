@@ -623,6 +623,8 @@ export function migrate() {
   addColumnIfMissing("instances", "current_workflow_run_id", "TEXT");
   addColumnIfMissing("instances", "maintenance_reason", "TEXT");
   addColumnIfMissing("instances", "last_error_at", "TEXT");
+  addColumnIfMissing("workflows", "capacity_config_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("workflow_runs", "capacity_config_json", "TEXT DEFAULT '{}'");
 
   db.prepare(`
     UPDATE instances

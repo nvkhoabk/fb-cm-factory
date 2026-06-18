@@ -7,6 +7,20 @@ import type {
   UpdateOrchestratorRuleInput
 } from "./orchestrator.schemas";
 
+const instanceIssueCodes = [
+  "INSTANCE_",
+  "HOST_AGENT_",
+  "ADB_",
+  "CAPTCHA",
+  "SCREEN_TIMEOUT"
+];
+
+function isInstanceIssueFailure(input: FailOrchestratorJobInput) {
+  if (input.instanceIssue === true || input.isInstanceIssue === true) return true;
+  const errorCode = input.errorCode ?? "";
+  return instanceIssueCodes.some((prefix) => errorCode.startsWith(prefix));
+}
+
 export const orchestratorService = {
   listJobs: () => orchestratorRepository.listJobs(),
 
@@ -132,10 +146,13 @@ export const orchestratorService = {
     const current = orchestratorRepository.getJob(id);
     if (!current) throw new AppError("ORCHESTRATOR_JOB_NOT_FOUND", "Orchestrator job not found", 404);
 
+    const errorMessage = input.errorMessage ?? input.errorCode ?? "Job failed";
     const job = orchestratorRepository.updateJobStatus(id, "FAILED", {
-      errorMessage: input.errorMessage ?? "Job failed"
+      errorMessage,
+      ...(input.errorCode ? { errorCode: input.errorCode } : {}),
+      ...(isInstanceIssueFailure(input) ? { instanceIssue: true } : {})
     });
-    instanceSchedulerService.failActiveForJob(id);
+    instanceSchedulerService.failActiveForJob(id, input.errorCode ?? errorMessage, isInstanceIssueFailure(input));
     return job;
   }
 };

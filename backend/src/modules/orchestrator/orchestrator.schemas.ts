@@ -10,7 +10,10 @@ export const orchestratorJobStatusSchema = z.enum([
 ]);
 
 export const failOrchestratorJobSchema = z.object({
-  errorMessage: z.string().min(1).optional()
+  errorMessage: z.string().min(1).optional(),
+  errorCode: z.string().min(1).optional(),
+  instanceIssue: z.boolean().optional(),
+  isInstanceIssue: z.boolean().optional()
 });
 
 export const createOrchestratorRuleSchema = z.object({

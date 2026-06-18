@@ -8,6 +8,7 @@ import type {
   FailWorkflowStageRunInput,
   UpdateWorkflowInput,
   UpdateWorkflowStageInput,
+  CapacityConfigInput,
   WorkflowRunStatus
 } from "./workflows.schemas";
 
@@ -17,6 +18,7 @@ function mapWorkflow(row: Record<string, unknown>) {
     name: row.name,
     description: row.description ?? null,
     status: row.status,
+    capacityConfig: jsonParse(row.capacity_config_json, {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -45,6 +47,7 @@ function mapWorkflowRun(row: Record<string, unknown>) {
     status: row.status,
     input: jsonParse(row.input_json, {}),
     output: jsonParse(row.output_json, {}),
+    capacityConfig: jsonParse(row.capacity_config_json, {}),
     currentStageNo: Number(row.current_stage_no ?? 0),
     errorMessage: row.error_message ?? null,
     startedAt: row.started_at ?? null,
@@ -122,6 +125,24 @@ export const workflowsRepository = {
       name: input.name ?? current.name,
       description: input.description ?? current.description,
       status: input.status ?? current.status,
+      updatedAt: now()
+    });
+
+    return this.get(id);
+  },
+
+  updateCapacity(id: string, capacityConfig: CapacityConfigInput) {
+    const current = this.get(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE workflows
+      SET capacity_config_json = @capacityConfigJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      capacityConfigJson: jsonString(capacityConfig, {}),
       updatedAt: now()
     });
 
@@ -232,6 +253,46 @@ export const workflowsRepository = {
       ...run,
       stageRuns: this.listStageRuns(id)
     };
+  },
+
+  updateRunCapacity(id: string, capacityConfig: CapacityConfigInput) {
+    const current = this.getRun(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE workflow_runs
+      SET capacity_config_json = @capacityConfigJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      capacityConfigJson: jsonString(capacityConfig, {}),
+      updatedAt: now()
+    });
+
+    return this.getRunDetail(id);
+  },
+
+  listCapacityAllocations(workflowRunId: string) {
+    return db.prepare(`
+      SELECT * FROM instance_allocations
+      WHERE workflow_run_id = ?
+      ORDER BY allocated_at DESC
+    `).all(workflowRunId).map((row) => {
+      const record = row as Record<string, unknown>;
+      return {
+        id: record.id,
+        instanceId: record.instance_id,
+        hostId: record.host_id ?? null,
+        localId: record.local_id ?? null,
+        adbId: record.adb_id ?? null,
+        workflowRunId: record.workflow_run_id ?? null,
+        status: record.status,
+        allocatedAt: record.allocated_at,
+        releasedAt: record.released_at ?? null,
+        metadata: jsonParse(record.metadata_json, {})
+      };
+    });
   },
 
   createRun(workflowId: string, input: CreateWorkflowRunInput) {

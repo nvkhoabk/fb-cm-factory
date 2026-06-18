@@ -83,6 +83,45 @@ type InstancePoolMember = {
   instance?: InstanceRecord | null;
 };
 
+type WorkflowRecord = {
+  id: string;
+  name: string;
+  description?: string | null;
+  status: string;
+  capacityConfig?: CapacityConfig;
+};
+
+type WorkflowRunRecord = {
+  id: string;
+  workflowId: string;
+  status: string;
+  capacityConfig?: CapacityConfig;
+  currentStageNo?: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type CapacityConfig = Record<string, number>;
+
+type CapacityAllocation = {
+  id: string;
+  instanceId: string;
+  hostId?: string | null;
+  localId?: string | number | null;
+  adbId?: string | null;
+  status: string;
+  metadata?: Record<string, unknown>;
+};
+
+type WorkflowCapacityResponse = {
+  workflowRunId: string;
+  workflowId: string;
+  capacityConfig: CapacityConfig;
+  code?: string;
+  allocations: CapacityAllocation[];
+  details?: Array<Record<string, unknown>>;
+};
+
 type InstanceRecord = {
   id: string;
   hostId: string;
@@ -204,6 +243,7 @@ type ScriptRun = {
 type PromptKind = "image" | "video" | "music";
 type ManagementSection =
   | "hosts"
+  | "workflows"
   | "instances"
   | "instance-pools"
   | "scripts"
@@ -240,6 +280,7 @@ const stageTypeToPoolType: Record<string, string> = {
 
 const pageSizeOptions = [10, 20, 50];
 const instancePoolStateOptions = ["AVAILABLE", "STANDBY", "WORKFLOW", "MAINTENANCE", "DISABLED", "RETIRED"];
+const capacityStageOptions = ["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT"];
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -305,6 +346,11 @@ function displayShortId(id?: string | null) {
 function displayJobInstance(job: OrchestratorJob) {
   const instanceId = job.payload?.instanceId;
   return typeof instanceId === "string" && instanceId ? instanceId : "-";
+}
+
+function displayJobAllocationMode(job: OrchestratorJob) {
+  const allocationMode = job.payload?.allocationMode;
+  return typeof allocationMode === "string" && allocationMode ? allocationMode : "-";
 }
 
 function displayJobPool(job: OrchestratorJob, pools: InstancePool[]) {
@@ -504,6 +550,8 @@ export function App() {
   const [attributes, setAttributes] = useState<GroupAttribute[]>([]);
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [hosts, setHosts] = useState<HostRecord[]>([]);
+  const [workflows, setWorkflows] = useState<WorkflowRecord[]>([]);
+  const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunRecord[]>([]);
   const [pools, setPools] = useState<InstancePool[]>([]);
   const [instances, setInstances] = useState<InstanceRecord[]>([]);
   const [batches, setBatches] = useState<ProductionBatch[]>([]);
@@ -557,6 +605,16 @@ export function App() {
   const [selectedHostDrawerId, setSelectedHostDrawerId] = useState("");
   const [poolModalInstanceId, setPoolModalInstanceId] = useState("");
   const [selectedPoolMemberships, setSelectedPoolMemberships] = useState<string[]>([]);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState("");
+  const [selectedWorkflowRunId, setSelectedWorkflowRunId] = useState("");
+  const [capacityForm, setCapacityForm] = useState<CapacityConfig>({
+    IMAGE_EDIT: 0,
+    VIDEO_GENERATE: 0,
+    MUSIC_GENERATE: 0,
+    VIDEO_COMPOSE: 0,
+    POST_CONTENT: 0
+  });
+  const [capacityResult, setCapacityResult] = useState<WorkflowCapacityResponse | null>(null);
   const [instancePoolStateFilter, setInstancePoolStateFilter] = useState("");
   const [instanceCapabilityFilter, setInstanceCapabilityFilter] = useState("");
   const [instanceRuntimeFilter, setInstanceRuntimeFilter] = useState("");
@@ -624,6 +682,14 @@ export function App() {
     () => hosts.find((host) => host.id === selectedHostId || host.hostId === selectedHostId) ?? hosts[0] ?? null,
     [hosts, selectedHostId]
   );
+  const selectedWorkflow = useMemo(
+    () => workflows.find((workflow) => workflow.id === selectedWorkflowId) ?? workflows[0] ?? null,
+    [selectedWorkflowId, workflows]
+  );
+  const selectedWorkflowRun = useMemo(
+    () => workflowRuns.find((run) => run.id === selectedWorkflowRunId) ?? workflowRuns.find((run) => run.workflowId === selectedWorkflow?.id) ?? null,
+    [selectedWorkflow, selectedWorkflowRunId, workflowRuns]
+  );
   const instanceCapabilityOptions = useMemo(() => {
     return [...new Set(instances.flatMap((instance) => instanceCapabilityLabels(instance)))].sort();
   }, [instances]);
@@ -666,6 +732,8 @@ export function App() {
       attributeData,
       templateData,
       hostData,
+      workflowData,
+      workflowRunData,
       instanceData,
       poolData,
       batchData,
@@ -679,6 +747,8 @@ export function App() {
       api<GroupAttribute[]>("/group-attributes"),
       api<PromptTemplate[]>("/prompt-templates"),
       api<HostRecord[]>("/hosts"),
+      api<WorkflowRecord[]>("/workflows"),
+      api<WorkflowRunRecord[]>("/workflow-runs"),
       api<InstanceRecord[]>("/instances"),
       api<InstancePool[]>("/instance-pools"),
       api<ProductionBatch[]>("/production-batches"),
@@ -693,6 +763,8 @@ export function App() {
     setAttributes(attributeData);
     setTemplates(templateData);
     setHosts(hostData);
+    setWorkflows(workflowData);
+    setWorkflowRuns(workflowRunData);
     setInstances(instanceData);
     const poolDetails = await Promise.all(poolData.map((pool) =>
       api<InstancePool>(`/instance-pools/${pool.id}`).catch(() => pool)
@@ -707,6 +779,8 @@ export function App() {
     setOrchestratorRules(ruleData);
     setSelectedGroups((current) => current.length ? current : groupData[0] ? [groupData[0].id] : []);
     setSelectedHostId((current) => current || hostData[0]?.id || "");
+    setSelectedWorkflowId((current) => current || workflowData[0]?.id || "");
+    setSelectedWorkflowRunId((current) => current || workflowRunData[0]?.id || "");
     setSelectedInstanceId((current) => current || instanceData[0]?.id || "");
     setSelectedPoolId((current) => current || poolDetails[0]?.id || "");
     setSelectedScriptId((current) => current || scriptData[0]?.id || "");
@@ -753,6 +827,16 @@ export function App() {
   useEffect(() => {
     if (jobsPage > totalJobPages) setJobsPage(totalJobPages);
   }, [jobsPage, totalJobPages]);
+
+  useEffect(() => {
+    const config = selectedWorkflowRun?.capacityConfig && Object.values(selectedWorkflowRun.capacityConfig).some((value) => Number(value) > 0)
+      ? selectedWorkflowRun.capacityConfig
+      : selectedWorkflow?.capacityConfig ?? {};
+    setCapacityForm((current) => ({
+      ...current,
+      ...Object.fromEntries(capacityStageOptions.map((stageType) => [stageType, Number(config[stageType] ?? 0)]))
+    }));
+  }, [selectedWorkflow, selectedWorkflowRun]);
 
   useEffect(() => {
     let cancelled = false;
@@ -867,8 +951,10 @@ export function App() {
   }
 
   async function refreshQueue() {
-    const [latestHosts, latestInstances, latestPools, latestBatches, latestJobs, latestSessions, latestScriptRuns, latestScripts, latestRules] = await Promise.all([
+    const [latestHosts, latestWorkflows, latestWorkflowRuns, latestInstances, latestPools, latestBatches, latestJobs, latestSessions, latestScriptRuns, latestScripts, latestRules] = await Promise.all([
       api<HostRecord[]>("/hosts"),
+      api<WorkflowRecord[]>("/workflows"),
+      api<WorkflowRunRecord[]>("/workflow-runs"),
       api<InstanceRecord[]>("/instances"),
       api<InstancePool[]>("/instance-pools"),
       api<ProductionBatch[]>("/production-batches"),
@@ -879,6 +965,8 @@ export function App() {
       api<OrchestratorRule[]>("/orchestrator/rules")
     ]);
     setHosts(latestHosts);
+    setWorkflows(latestWorkflows);
+    setWorkflowRuns(latestWorkflowRuns);
     setInstances(latestInstances);
     const latestPoolDetails = await Promise.all(latestPools.map((pool) =>
       api<InstancePool>(`/instance-pools/${pool.id}`).catch(() => pool)
@@ -895,6 +983,8 @@ export function App() {
       batches: latestBatches,
       jobs: latestJobs,
       hosts: latestHosts,
+      workflows: latestWorkflows,
+      workflowRuns: latestWorkflowRuns,
       pools: latestPoolDetails,
       runtimeSessions: latestSessions,
       scriptRuns: latestScriptRuns
@@ -1116,6 +1206,56 @@ export function App() {
     }
   }
 
+  async function saveWorkflowCapacity(scope: "workflow" | "run") {
+    if (scope === "workflow" && !selectedWorkflow) {
+      setStatus("Select a workflow");
+      return;
+    }
+    if (scope === "run" && !selectedWorkflowRun) {
+      setStatus("Select a workflow run");
+      return;
+    }
+
+    await adminAction("Saving capacity", async () => {
+      const result = scope === "workflow"
+        ? await api<WorkflowRecord>(`/workflows/${selectedWorkflow?.id}/capacity`, {
+            method: "PATCH",
+            body: JSON.stringify(capacityForm)
+          })
+        : await api<WorkflowRunRecord>(`/workflow-runs/${selectedWorkflowRun?.id}/capacity`, {
+            method: "POST",
+            body: JSON.stringify(capacityForm)
+          });
+      return result;
+    });
+  }
+
+  async function loadWorkflowRunCapacity() {
+    if (!selectedWorkflowRun) {
+      setStatus("Select a workflow run");
+      return;
+    }
+    return adminAction("Loading workflow capacity", async () => {
+      const result = await api<WorkflowCapacityResponse>(`/workflow-runs/${selectedWorkflowRun.id}/capacity`);
+      setCapacityResult(result);
+      return result;
+    });
+  }
+
+  async function allocateWorkflowCapacity(workflowRunId = selectedWorkflowRun?.id ?? "") {
+    if (!workflowRunId) {
+      setStatus("Select a workflow run");
+      return;
+    }
+    return adminAction("Allocating workflow capacity", async () => {
+      const result = await api<WorkflowCapacityResponse>(`/workflow-runs/${workflowRunId}/allocate-capacity`, {
+        method: "POST"
+      });
+      setCapacityResult(result);
+      return result;
+    });
+  }
+
   function selectedPool() {
     return pools.find((pool) => pool.id === selectedPoolId) ?? null;
   }
@@ -1335,6 +1475,7 @@ export function App() {
           <strong>Management</strong>
           {[
             ["hosts", "Hosts"],
+            ["workflows", "Workflows"],
             ["instances", "Instances"],
             ["instance-pools", "Instance Pools"],
             ["scripts", "Scripts"],
@@ -1462,6 +1603,63 @@ export function App() {
                   </div>
                 );
               })() : null}
+            </div>
+          ) : null}
+
+          {managementSection === "workflows" ? (
+            <div className="adminGrid">
+              <div className="adminForm">
+                <label>Workflow<select value={selectedWorkflow?.id ?? ""} onChange={(event) => {
+                  setSelectedWorkflowId(event.target.value);
+                  const nextRun = workflowRuns.find((run) => run.workflowId === event.target.value);
+                  setSelectedWorkflowRunId(nextRun?.id ?? "");
+                  setCapacityResult(null);
+                }}><option value="">Select workflow</option>{workflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}</select></label>
+                <label>Workflow Run<select value={selectedWorkflowRun?.id ?? ""} onChange={(event) => { setSelectedWorkflowRunId(event.target.value); setCapacityResult(null); }}><option value="">Select run</option>{workflowRuns.filter((run) => !selectedWorkflow || run.workflowId === selectedWorkflow.id).map((run) => <option key={run.id} value={run.id}>{displayShortId(run.id)} / {run.status}</option>)}</select></label>
+                {capacityStageOptions.map((stageType) => (
+                  <label key={stageType}>{stageType}<input type="number" min="0" value={capacityForm[stageType] ?? 0} onChange={(event) => setCapacityForm({ ...capacityForm, [stageType]: Number(event.target.value) })} /></label>
+                ))}
+                <button disabled={!selectedWorkflow} onClick={() => saveWorkflowCapacity("workflow")}>Save Workflow Capacity</button>
+                <button disabled={!selectedWorkflowRun} onClick={() => saveWorkflowCapacity("run")}>Save Run Capacity</button>
+                <button disabled={!selectedWorkflowRun} onClick={() => allocateWorkflowCapacity()}>Allocate Capacity</button>
+                <button disabled={!selectedWorkflowRun} onClick={loadWorkflowRunCapacity}>Refresh Capacity</button>
+              </div>
+              <div className="adminTable">
+                {workflows.filter((workflow) => compactJson(workflow).toLowerCase().includes(adminSearch.toLowerCase())).slice(0, 12).map((workflow) => (
+                  <div className="adminRow" key={workflow.id} onClick={() => {
+                    setSelectedWorkflowId(String(workflow.id));
+                    const nextRun = workflowRuns.find((run) => run.workflowId === workflow.id);
+                    setSelectedWorkflowRunId(nextRun?.id ?? "");
+                    setCapacityResult(null);
+                  }}>
+                    <b>{workflow.name}</b><span>{workflow.status}</span><span>{displayShortId(workflow.id)}</span><span>{workflow.description ?? "-"}</span>
+                    <pre>{compactJson(workflow.capacityConfig ?? {})}</pre>
+                    {workflowRuns.filter((run) => run.workflowId === workflow.id).slice(0, 4).map((run) => (
+                      <div className="nestedRow" key={run.id}>
+                        <span>{displayShortId(run.id)}</span><span>{run.status}</span><span>{run.currentStageNo ?? 0}</span><small>{displayDateTime(run.createdAt)}</small>
+                        <button onClick={(event) => { event.stopPropagation(); setSelectedWorkflowId(String(workflow.id)); setSelectedWorkflowRunId(String(run.id)); setCapacityResult(null); }}>Select Run</button>
+                        <button onClick={(event) => { event.stopPropagation(); setSelectedWorkflowId(String(workflow.id)); setSelectedWorkflowRunId(String(run.id)); allocateWorkflowCapacity(String(run.id)); }}>Allocate</button>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                {capacityResult ? (
+                  <div className="adminResult">
+                    <strong>{capacityResult.code ?? "Capacity"}</strong>
+                    <pre>{compactJson(capacityResult.details ?? capacityResult.capacityConfig)}</pre>
+                    <div className="capacityAllocationList">
+                      {capacityResult.allocations.map((allocation) => (
+                        <div key={allocation.id}>
+                          <b>{allocation.instanceId}</b>
+                          <span>{allocation.status}</span>
+                          <small>{getString(allocation.metadata?.stageType)} / {allocation.hostId ?? "-"} / {allocation.adbId ?? "-"}</small>
+                        </div>
+                      ))}
+                      {!capacityResult.allocations.length ? <p className="emptyDetail">No capacity allocations yet.</p> : null}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : null}
 
@@ -1774,6 +1972,7 @@ export function App() {
                   <span>Status <b>{selectedJob.status}</b></span>
                   <span>Pool <b>{displayJobPool(selectedJob, pools)}</b></span>
                   <span>Instance <b>{displayJobInstance(selectedJob)}</b></span>
+                  <span>Allocation <b>{displayJobAllocationMode(selectedJob)}</b></span>
                 </div>
                 <pre className="jsonBlock">{compactJson(selectedJob.payload)}</pre>
                 <div className="controlActions">
@@ -2087,6 +2286,7 @@ export function App() {
                 <span>Target Stage</span>
                 <span>Status</span>
                 <span>Instance</span>
+                <span>Allocation</span>
                 <span>Created At</span>
                 <span>Actions</span>
               </div>
@@ -2102,6 +2302,7 @@ export function App() {
                   <strong>{job.targetStageType}</strong>
                   <span className="statusPill">{job.status}</span>
                   <span title={displayJobInstance(job)}>{displayShortId(displayJobInstance(job))}</span>
+                  <span title={displayJobAllocationMode(job)}>{displayJobAllocationMode(job)}</span>
                   <span>{displayDateTime(job.createdAt)}</span>
                   <div className="jobActions">
                     <button
@@ -2303,6 +2504,7 @@ export function App() {
                   <span>Status</span>
                   <span>Pool</span>
                   <span>Instance</span>
+                  <span>Allocation</span>
                   <span>Created At</span>
                   <span>Actions</span>
                 </div>
@@ -2319,6 +2521,7 @@ export function App() {
                     <span className="statusPill">{job.status}</span>
                     <span title={displayJobPool(job, pools)}>{displayJobPool(job, pools)}</span>
                     <span title={displayJobInstance(job)}>{displayShortId(displayJobInstance(job))}</span>
+                    <span title={displayJobAllocationMode(job)}>{displayJobAllocationMode(job)}</span>
                     <span>{displayDateTime(job.createdAt)}</span>
                     <div className="jobActions">
                       <button

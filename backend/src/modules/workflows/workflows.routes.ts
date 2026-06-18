@@ -2,6 +2,7 @@ import { Router } from "express";
 import { sendError } from "../shared/resource";
 import {
   completeWorkflowStageRunSchema,
+  capacityConfigSchema,
   createWorkflowSchema,
   createWorkflowRunSchema,
   createWorkflowStageSchema,
@@ -40,6 +41,15 @@ workflowsRouter.patch("/:id", (req, res) => {
   try {
     const input = updateWorkflowSchema.parse(req.body);
     res.json({ ok: true, data: workflowsService.update(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowsRouter.patch("/:id/capacity", (req, res) => {
+  try {
+    const input = capacityConfigSchema.parse(req.body ?? {});
+    res.json({ ok: true, data: workflowsService.updateCapacity(req.params.id, input) });
   } catch (error) {
     sendError(res, error);
   }
@@ -97,6 +107,31 @@ workflowRunsRouter.get("/", (_req, res) => {
 workflowRunsRouter.get("/:id", (req, res) => {
   try {
     res.json({ ok: true, data: workflowsService.getRun(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowRunsRouter.get("/:id/capacity", (req, res) => {
+  try {
+    res.json({ ok: true, data: workflowsService.getRunCapacity(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowRunsRouter.post("/:id/capacity", (req, res) => {
+  try {
+    const input = capacityConfigSchema.parse(req.body ?? {});
+    res.json({ ok: true, data: workflowsService.updateRunCapacity(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowRunsRouter.post("/:id/allocate-capacity", (req, res) => {
+  try {
+    res.json({ ok: true, data: workflowsService.allocateCapacity(req.params.id) });
   } catch (error) {
     sendError(res, error);
   }

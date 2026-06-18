@@ -4,8 +4,17 @@ export const stageTypeSchema = z.enum([
   "IMAGE_EDIT",
   "VIDEO_GENERATE",
   "MUSIC_GENERATE",
-  "VIDEO_COMPOSE"
+  "VIDEO_COMPOSE",
+  "POST_CONTENT"
 ]);
+
+export const capacityConfigSchema = z.object({
+  IMAGE_EDIT: z.number().int().min(0).optional(),
+  VIDEO_GENERATE: z.number().int().min(0).optional(),
+  MUSIC_GENERATE: z.number().int().min(0).optional(),
+  VIDEO_COMPOSE: z.number().int().min(0).optional(),
+  POST_CONTENT: z.number().int().min(0).optional()
+});
 
 export const createWorkflowSchema = z.object({
   name: z.string().min(1),
@@ -56,3 +65,4 @@ export type WorkflowRunStatus = z.infer<typeof workflowRunStatusSchema>;
 export type CreateWorkflowRunInput = z.infer<typeof createWorkflowRunSchema>;
 export type CompleteWorkflowStageRunInput = z.infer<typeof completeWorkflowStageRunSchema>;
 export type FailWorkflowStageRunInput = z.infer<typeof failWorkflowStageRunSchema>;
+export type CapacityConfigInput = z.infer<typeof capacityConfigSchema>;

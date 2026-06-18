@@ -1,6 +1,8 @@
 import { AppError } from "../shared/resource";
+import { instanceSchedulerRepository } from "../instance-scheduler/instance-scheduler.repository";
 import { workflowsRepository } from "./workflows.repository";
 import type {
+  CapacityConfigInput,
   CompleteWorkflowStageRunInput,
   CreateWorkflowInput,
   CreateWorkflowRunInput,
@@ -9,6 +11,27 @@ import type {
   UpdateWorkflowInput,
   UpdateWorkflowStageInput
 } from "./workflows.schemas";
+
+const capacityStageTypes = [
+  "IMAGE_EDIT",
+  "VIDEO_GENERATE",
+  "MUSIC_GENERATE",
+  "VIDEO_COMPOSE",
+  "POST_CONTENT"
+] as const;
+
+function normalizeCapacityConfig(input: CapacityConfigInput = {}) {
+  return Object.fromEntries(
+    capacityStageTypes.map((stageType) => [
+      stageType,
+      Math.max(0, Number(input[stageType] ?? 0))
+    ])
+  ) as Record<typeof capacityStageTypes[number], number>;
+}
+
+function hasConfiguredCapacity(input: unknown) {
+  return Boolean(input && typeof input === "object" && Object.values(input).some((value) => Number(value) > 0));
+}
 
 export const workflowsService = {
   list: () => workflowsRepository.list(),
@@ -23,6 +46,12 @@ export const workflowsService = {
 
   update(id: string, input: UpdateWorkflowInput) {
     const workflow = workflowsRepository.update(id, input);
+    if (!workflow) throw new AppError("WORKFLOW_NOT_FOUND", "Workflow not found", 404);
+    return workflow;
+  },
+
+  updateCapacity(id: string, input: CapacityConfigInput) {
+    const workflow = workflowsRepository.updateCapacity(id, normalizeCapacityConfig(input));
     if (!workflow) throw new AppError("WORKFLOW_NOT_FOUND", "Workflow not found", 404);
     return workflow;
   },
@@ -59,6 +88,117 @@ export const workflowsService = {
     const run = workflowsRepository.getRunDetail(id);
     if (!run) throw new AppError("WORKFLOW_RUN_NOT_FOUND", "Workflow run not found", 404);
     return run;
+  },
+
+  updateRunCapacity(id: string, input: CapacityConfigInput) {
+    const run = workflowsRepository.updateRunCapacity(id, normalizeCapacityConfig(input));
+    if (!run) throw new AppError("WORKFLOW_RUN_NOT_FOUND", "Workflow run not found", 404);
+    return run;
+  },
+
+  getRunCapacity(id: string) {
+    const run = workflowsRepository.getRunDetail(id);
+    if (!run) throw new AppError("WORKFLOW_RUN_NOT_FOUND", "Workflow run not found", 404);
+
+    const workflow = workflowsRepository.get(String(run.workflowId));
+    const capacityConfig = normalizeCapacityConfig(
+      hasConfiguredCapacity(run.capacityConfig)
+        ? run.capacityConfig as CapacityConfigInput
+        : workflow?.capacityConfig as CapacityConfigInput | undefined
+    );
+    const allocations = workflowsRepository.listCapacityAllocations(id);
+
+    return {
+      workflowRunId: id,
+      workflowId: run.workflowId,
+      capacityConfig,
+      allocations
+    };
+  },
+
+  allocateCapacity(id: string) {
+    const run = workflowsRepository.getRunDetail(id);
+    if (!run) throw new AppError("WORKFLOW_RUN_NOT_FOUND", "Workflow run not found", 404);
+
+    const workflow = workflowsRepository.get(String(run.workflowId));
+    const capacityConfig = normalizeCapacityConfig(
+      hasConfiguredCapacity(run.capacityConfig)
+        ? run.capacityConfig as CapacityConfigInput
+        : workflow?.capacityConfig as CapacityConfigInput | undefined
+    );
+    const existingAllocations = workflowsRepository.listCapacityAllocations(id);
+    const selectedInstanceIds = new Set<string>();
+    const details = [];
+    let requestedTotal = 0;
+    let allocatedTotal = 0;
+
+    for (const stageType of capacityStageTypes) {
+      const requested = capacityConfig[stageType] ?? 0;
+      requestedTotal += requested;
+      if (requested <= 0) {
+        details.push({ stageType, requested, alreadyAllocated: 0, newlyAllocated: 0, missing: 0, allocations: [] });
+        continue;
+      }
+
+      const activeForStage = existingAllocations.filter((allocation) => {
+        const metadata = allocation.metadata && typeof allocation.metadata === "object"
+          ? allocation.metadata as Record<string, unknown>
+          : {};
+        return allocation.status === "ALLOCATED"
+          && metadata.allocationType === "WORKFLOW_CAPACITY"
+          && metadata.stageType === stageType;
+      });
+      const remaining = Math.max(0, requested - activeForStage.length);
+      const candidates = instanceSchedulerRepository.findDynamicCapacityCandidates(stageType, remaining, [...selectedInstanceIds]);
+      const allocations = [];
+
+      for (const candidate of candidates) {
+        selectedInstanceIds.add(candidate.instance_id);
+        const allocation = instanceSchedulerRepository.createAllocation({
+          poolId: candidate.pool_id,
+          instanceId: candidate.instance_id,
+          hostId: candidate.host_id,
+          localId: candidate.local_id,
+          adbId: candidate.adb_id,
+          workflowRunId: String(run.id),
+          metadata: {
+            allocationType: "WORKFLOW_CAPACITY",
+            allocationMode: "DYNAMIC_CAPABILITY",
+            workflowRunId: run.id,
+            stageType,
+            instanceId: candidate.instance_id,
+            hostId: candidate.host_id,
+            localId: Number.isInteger(Number(candidate.local_id)) ? Number(candidate.local_id) : candidate.local_id,
+            adbId: candidate.adb_id,
+            capabilities: candidate.capabilities
+          }
+        });
+        if (!allocation) continue;
+        instanceSchedulerRepository.moveInstanceToWorkflow(candidate.instance_id, String(run.id));
+        allocations.push(allocation);
+      }
+
+      allocatedTotal += activeForStage.length + allocations.length;
+      details.push({
+        stageType,
+        requested,
+        alreadyAllocated: activeForStage.length,
+        newlyAllocated: allocations.length,
+        missing: Math.max(0, requested - activeForStage.length - allocations.length),
+        allocations
+      });
+    }
+
+    return {
+      code: allocatedTotal < requestedTotal ? "PARTIAL_CAPACITY_ALLOCATED" : "CAPACITY_ALLOCATED",
+      workflowRunId: id,
+      workflowId: run.workflowId,
+      capacityConfig,
+      requestedTotal,
+      allocatedTotal,
+      details,
+      allocations: workflowsRepository.listCapacityAllocations(id)
+    };
   },
 
   createRun(workflowId: string, input: CreateWorkflowRunInput) {
