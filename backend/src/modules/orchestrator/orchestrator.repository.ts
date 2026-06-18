@@ -80,10 +80,8 @@ export const orchestratorRepository = {
   },
 
   seedDefaultRulesIfEmpty() {
-    if (this.countRules() > 0) return [];
-
-    return [
-      this.createRule({
+    const defaults = [
+      {
         name: "Default image batch to video generate",
         triggerBatchType: "IMAGE_BATCH",
         triggerStatus: "READY",
@@ -91,8 +89,8 @@ export const orchestratorRepository = {
         priority: 100,
         isActive: true,
         config: {}
-      }),
-      this.createRule({
+      },
+      {
         name: "Default video batch to video compose",
         triggerBatchType: "VIDEO_BATCH",
         triggerStatus: "READY",
@@ -102,8 +100,37 @@ export const orchestratorRepository = {
         config: {
           requiresMusic: true
         }
-      })
+      },
+      {
+        name: "Default final video to post content",
+        triggerBatchType: "FINAL_VIDEO",
+        triggerStatus: "READY",
+        targetStageType: "POST_CONTENT",
+        priority: 300,
+        isActive: true,
+        config: {}
+      }
     ];
+
+    const createdRules = [];
+    for (const rule of defaults) {
+      const existing = this.getJobRuleByTriggerAndTarget(rule.triggerBatchType, rule.triggerStatus, rule.targetStageType);
+      if (!existing) createdRules.push(this.createRule(rule));
+    }
+
+    return createdRules;
+  },
+
+  getJobRuleByTriggerAndTarget(triggerBatchType: string, triggerStatus: string, targetStageType: string) {
+    const row = db.prepare(`
+      SELECT * FROM orchestrator_rules
+      WHERE trigger_batch_type = ?
+        AND trigger_status = ?
+        AND target_stage_type = ?
+      LIMIT 1
+    `).get(triggerBatchType, triggerStatus, targetStageType);
+
+    return row ? mapRule(row as Record<string, unknown>) : null;
   },
 
   listActiveRules() {

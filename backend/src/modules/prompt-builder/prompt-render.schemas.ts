@@ -10,5 +10,11 @@ export const renderBatchPromptSchema = z.object({
   templateId: z.string().min(1).optional()
 });
 
+export const renderPostContentPromptSchema = z.object({
+  templateId: z.string().min(1).optional(),
+  hashtagsTemplateId: z.string().min(1).optional()
+});
+
 export type RenderPromptInput = z.infer<typeof renderPromptSchema>;
 export type RenderBatchPromptInput = z.infer<typeof renderBatchPromptSchema>;
+export type RenderPostContentPromptInput = z.infer<typeof renderPostContentPromptSchema>;

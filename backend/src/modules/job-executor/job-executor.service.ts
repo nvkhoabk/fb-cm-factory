@@ -31,12 +31,17 @@ function outputBatchTypeForStage(targetStageType: unknown): BatchType | null {
     return "MUSIC_TRACK";
   }
 
+  if (targetStageType === "POST_CONTENT") {
+    return "POST_CONTENT";
+  }
+
   return null;
 }
 
 function usageTypeForOutput(sourceBatchType: unknown, outputBatchType: BatchType) {
   if (sourceBatchType === "IMAGE_BATCH" && outputBatchType === "VIDEO_BATCH") return "IMAGE_TO_VIDEO";
   if (sourceBatchType === "VIDEO_BATCH" && outputBatchType === "FINAL_VIDEO") return "VIDEO_TO_FINAL";
+  if (sourceBatchType === "FINAL_VIDEO" && outputBatchType === "POST_CONTENT") return "FINAL_TO_POST_CONTENT";
   return null;
 }
 
@@ -50,8 +55,14 @@ function stringValue(value: unknown) {
 
 export const jobExecutorService = {
   async executeMockJob(jobId: string) {
-    const job = orchestratorRepository.getJob(jobId);
+    let job = orchestratorRepository.getJob(jobId);
     if (!job) throw new AppError("ORCHESTRATOR_JOB_NOT_FOUND", "Orchestrator job not found", 404);
+    if (job.status === "PENDING" && job.targetStageType === "POST_CONTENT") {
+      job = orchestratorRepository.updateJobStatus(jobId, "ALLOCATED", {
+        allocationMode: "MOCK_NO_INSTANCE"
+      });
+      if (!job) throw new AppError("ORCHESTRATOR_JOB_NOT_FOUND", "Orchestrator job not found", 404);
+    }
     if (job.status !== "ALLOCATED") {
       throw new AppError("JOB_NOT_EXECUTABLE", "Only ALLOCATED jobs can be mock executed");
     }
@@ -267,6 +278,13 @@ export const jobExecutorService = {
     };
   },
 
+  mockExecutePostContent() {
+    return {
+      producedBatchType: "POST_CONTENT",
+      mock: true
+    };
+  },
+
   createOutputBatch(job: {
     id: unknown;
     sourceBatchId: unknown;
@@ -292,6 +310,13 @@ export const jobExecutorService = {
     }
 
     const usageStatus: BatchUsageStatus = outputBatchType === "MUSIC_TRACK" ? "REUSABLE" : "AVAILABLE";
+    const postContent = outputBatchType === "POST_CONTENT"
+      ? promptRenderService.generatePostContentForFinalVideo(String(sourceBatch.id), {
+          templateId: typeof job.payload.promptTemplateId === "string" ? job.payload.promptTemplateId : undefined,
+          hashtagsTemplateId: typeof job.payload.hashtagsTemplateId === "string" ? job.payload.hashtagsTemplateId : undefined,
+          mock: options.mock
+        })
+      : null;
     const outputBatch = productionBatchRepository.create({
       batchType: outputBatchType,
       sourceGroupId: typeof sourceBatch.sourceGroupId === "string" ? sourceBatch.sourceGroupId : undefined,
@@ -305,6 +330,7 @@ export const jobExecutorService = {
         sourceBatchId: job.sourceBatchId,
         targetStageType: job.targetStageType,
         mock: options.mock,
+        ...(postContent ?? {}),
         ...(options.managerTaskId ? { managerTaskId: options.managerTaskId } : {})
       }
     });
@@ -337,6 +363,7 @@ export const jobExecutorService = {
       outputBatchType,
       producedBatchType: outputBatchType,
       mock: options.mock,
+      ...(postContent ? { postContent } : {}),
       ...(options.managerTaskId ? { managerTaskId: options.managerTaskId } : {})
     };
   },

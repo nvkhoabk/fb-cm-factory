@@ -275,12 +275,15 @@ const stageTypeToPoolType: Record<string, string> = {
   IMAGE_EDIT: "IMAGE_EDIT",
   VIDEO_GENERATE: "VIDEO_GENERATE",
   MUSIC_GENERATE: "MUSIC_GENERATE",
-  VIDEO_COMPOSE: "VIDEO_COMPOSE"
+  VIDEO_COMPOSE: "VIDEO_COMPOSE",
+  POST_CONTENT: "POST_CONTENT"
 };
 
 const pageSizeOptions = [10, 20, 50];
 const instancePoolStateOptions = ["AVAILABLE", "STANDBY", "WORKFLOW", "MAINTENANCE", "DISABLED", "RETIRED"];
 const capacityStageOptions = ["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT"];
+const productionBatchTypeOptions = ["CHARACTER_GROUP", "IMAGE_BATCH", "VIDEO_BATCH", "MUSIC_TRACK", "FINAL_VIDEO", "POST_CONTENT"];
+const promptCategoryOptions = ["image", "video", "music", "POST_CONTENT"];
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -314,6 +317,7 @@ async function hostApi<T>(baseUrl: string, path: string, init?: RequestInit): Pr
 
 function normalizeCategory(category: string) {
   const lower = category.toLowerCase();
+  if (lower.includes("post")) return "post";
   if (lower.includes("video")) return "video";
   if (lower.includes("music")) return "music";
   return "image";
@@ -434,6 +438,21 @@ function parseJsonText(value: string, fallback: Record<string, unknown> = {}) {
   } catch {
     return fallback;
   }
+}
+
+function postContentMetadata(batch: ProductionBatch) {
+  const metadata = getRecord(batch.metadata);
+  const hashtags = Array.isArray(metadata.hashtags)
+    ? metadata.hashtags.map((item) => String(item)).filter(Boolean)
+    : [];
+  return {
+    caption: getString(metadata.caption),
+    postText: getString(metadata.postText),
+    hashtags,
+    title: getString(metadata.title),
+    cta: getString(metadata.cta),
+    platform: getString(metadata.platform) || "facebook"
+  };
 }
 
 function instanceCapabilityLabels(instance: InstanceRecord) {
@@ -622,6 +641,7 @@ export function App() {
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [selectedResourceId, setSelectedResourceId] = useState("");
+  const [resourceTypeFilter, setResourceTypeFilter] = useState("");
   const [adminSearch, setAdminSearch] = useState("");
   const [adminJson, setAdminJson] = useState("{}");
   const [hostForm, setHostForm] = useState({ hostId: "", name: "", baseUrl: "http://localhost:3300", apiKey: "", status: "active" });
@@ -789,8 +809,10 @@ export function App() {
 
     const nextSelections = { image: "", video: "", music: "" };
     for (const template of templateData) {
-      const kind = normalizeCategory(template.category) as PromptKind;
-      if (!nextSelections[kind]) nextSelections[kind] = template.id;
+      const kind = normalizeCategory(template.category);
+      if (!["image", "video", "music"].includes(kind)) continue;
+      const promptKind = kind as PromptKind;
+      if (!nextSelections[promptKind]) nextSelections[promptKind] = template.id;
     }
     setPromptSelections((current) => ({
       image: current.image || nextSelections.image,
@@ -1749,7 +1771,7 @@ export function App() {
             <div className="adminGrid">
               <div className="adminForm">
                 <label>Name<input value={templateForm.name} onChange={(event) => setTemplateForm({ ...templateForm, name: event.target.value })} /></label>
-                <label>Category<input value={templateForm.category} onChange={(event) => setTemplateForm({ ...templateForm, category: event.target.value })} /></label>
+                <label>Category<select value={templateForm.category} onChange={(event) => setTemplateForm({ ...templateForm, category: event.target.value })}>{promptCategoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
                 <label>Status<input value={templateForm.status} onChange={(event) => setTemplateForm({ ...templateForm, status: event.target.value })} /></label>
                 <button onClick={() => adminAction("Creating template", () => api("/prompt-templates", { method: "POST", body: JSON.stringify({ name: templateForm.name, category: templateForm.category, status: templateForm.status }) }))}>Create Template</button>
                 <label>Template<select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>
@@ -1783,7 +1805,8 @@ export function App() {
           {managementSection === "production-resources" ? (
             <div className="adminGrid">
               <div className="adminForm">
-                <label>Batch Type<select value={batchForm.batchType} onChange={(event) => setBatchForm({ ...batchForm, batchType: event.target.value })}>{["CHARACTER_GROUP", "IMAGE_BATCH", "VIDEO_BATCH", "MUSIC_TRACK", "FINAL_VIDEO"].map((type) => <option key={type}>{type}</option>)}</select></label>
+                <label>Batch Type<select value={batchForm.batchType} onChange={(event) => setBatchForm({ ...batchForm, batchType: event.target.value })}>{productionBatchTypeOptions.map((type) => <option key={type}>{type}</option>)}</select></label>
+                <label>Filter<select value={resourceTypeFilter} onChange={(event) => setResourceTypeFilter(event.target.value)}><option value="">All batch types</option>{productionBatchTypeOptions.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
                 <label>Status<input value={batchForm.status} onChange={(event) => setBatchForm({ ...batchForm, status: event.target.value })} /></label>
                 <label>Usage Status<input value={batchForm.usageStatus} onChange={(event) => setBatchForm({ ...batchForm, usageStatus: event.target.value })} /></label>
                 <label>Metadata JSON<textarea value={batchForm.metadata} onChange={(event) => setBatchForm({ ...batchForm, metadata: event.target.value })} /></label>
@@ -1791,7 +1814,29 @@ export function App() {
                 <label>Selected Batch<select value={selectedResourceId} onChange={(event) => setSelectedResourceId(event.target.value)}>{batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.batchType} {displayShortId(batch.id)}</option>)}</select></label>
                 <div className="controlActions">{["mark-ready", "reserve", "release", "mark-used"].map((action) => <button disabled={!selectedResourceId} key={action} onClick={() => adminAction(action, () => api(`/production-batches/${selectedResourceId}/${action}`, { method: "POST" }))}>{action}</button>)}<button disabled={!selectedResourceId} onClick={() => adminAction("Lineage", () => api(`/production-batches/${selectedResourceId}/lineage`))}>Lineage</button></div>
               </div>
-              <AdminSimpleList items={batches.filter((batch) => compactJson(batch).toLowerCase().includes(adminSearch.toLowerCase())).slice(0, 20)} search="" />
+              <div className="adminTable">
+                {batches
+                  .filter((batch) => (!resourceTypeFilter || batch.batchType === resourceTypeFilter) && compactJson(batch).toLowerCase().includes(adminSearch.toLowerCase()))
+                  .slice(0, 20)
+                  .map((batch) => {
+                    const post = postContentMetadata(batch);
+                    return (
+                      <div className="adminRow" key={batch.id} onClick={() => setSelectedResourceId(batch.id)}>
+                        <b>{batch.batchType}</b><span>{batch.status}</span><span>{batch.usageStatus}</span><small>{displayShortId(batch.id)}</small>
+                        {batch.batchType === "POST_CONTENT" ? (
+                          <div className="postPreview">
+                            <strong>{post.title || "Untitled post"}</strong>
+                            <p>{post.caption || post.postText || "No post text yet."}</p>
+                            {post.postText && post.postText !== post.caption ? <p>{post.postText}</p> : null}
+                            <small>{post.hashtags.join(" ")} {post.cta ? `/ ${post.cta}` : ""} / {post.platform}</small>
+                          </div>
+                        ) : (
+                          <pre>{compactJson(batch.metadata)}</pre>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
             </div>
           ) : null}
 

@@ -6,7 +6,8 @@ const stageTypeToPoolType: Record<string, string> = {
   VIDEO_GENERATE: "VIDEO_GENERATE",
   VIDEO_COMPOSE: "VIDEO_COMPOSE",
   IMAGE_EDIT: "IMAGE_EDIT",
-  MUSIC_GENERATE: "MUSIC_GENERATE"
+  MUSIC_GENERATE: "MUSIC_GENERATE",
+  POST_CONTENT: "POST_CONTENT"
 };
 
 function recordValue(value: unknown) {

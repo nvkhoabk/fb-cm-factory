@@ -1081,6 +1081,34 @@ h2 {
   color: #6c7380;
 }
 
+.postPreview {
+  background: #f8f9fb;
+  border: 1px solid #e1e6ed;
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  grid-column: 1 / -1;
+  padding: 9px;
+}
+
+.postPreview strong,
+.postPreview p,
+.postPreview small {
+  font-size: 12px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.postPreview p {
+  color: #2d3440;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.postPreview small {
+  color: #6c7380;
+}
+
 .jobsWorkspace {
   align-items: start;
   display: grid;

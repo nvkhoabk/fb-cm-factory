@@ -5,7 +5,8 @@ export const batchTypeSchema = z.enum([
   "IMAGE_BATCH",
   "VIDEO_BATCH",
   "MUSIC_TRACK",
-  "FINAL_VIDEO"
+  "FINAL_VIDEO",
+  "POST_CONTENT"
 ]);
 
 export const batchStatusSchema = z.enum([
