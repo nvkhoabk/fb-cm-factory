@@ -284,6 +284,8 @@ const instancePoolStateOptions = ["AVAILABLE", "STANDBY", "WORKFLOW", "MAINTENAN
 const capacityStageOptions = ["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT"];
 const productionBatchTypeOptions = ["CHARACTER_GROUP", "IMAGE_BATCH", "VIDEO_BATCH", "MUSIC_TRACK", "FINAL_VIDEO", "POST_CONTENT"];
 const promptCategoryOptions = ["image", "video", "music", "POST_CONTENT"];
+const musicPolicyModes = ["RANDOM_LIBRARY", "REQUIRE_MATCHED", "CREATE_DEDICATED"];
+const musicMatchAttributeOptions = ["mood", "tempo", "style", "scene", "emotion", "tags"];
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -455,6 +457,21 @@ function postContentMetadata(batch: ProductionBatch) {
   };
 }
 
+function musicTrackMetadata(batch: ProductionBatch) {
+  const metadata = getRecord(batch.metadata);
+  const attributes = getRecord(batch.attributes);
+  const tagsValue = metadata.tags ?? attributes.tags;
+  const tags = Array.isArray(tagsValue) ? tagsValue.map((item) => String(item)).filter(Boolean) : [];
+  return {
+    mood: getString(metadata.mood) || getString(attributes.mood),
+    tempo: getString(metadata.tempo) || getString(attributes.tempo),
+    style: getString(metadata.style) || getString(attributes.style),
+    scene: getString(metadata.scene) || getString(attributes.scene),
+    emotion: getString(metadata.emotion) || getString(attributes.emotion),
+    tags
+  };
+}
+
 function instanceCapabilityLabels(instance: InstanceRecord) {
   const capabilities = instance.capabilities ?? {};
   const canRun = Array.isArray(capabilities.canRun) ? capabilities.canRun : [];
@@ -584,6 +601,8 @@ export function App() {
     emotion: "happy",
     outfit: "sport"
   });
+  const [musicPolicyMode, setMusicPolicyMode] = useState("RANDOM_LIBRARY");
+  const [musicMatchAttributes, setMusicMatchAttributes] = useState<string[]>(["mood", "tempo", "emotion"]);
   const [promptSelections, setPromptSelections] = useState<PromptSelections>({
     image: "",
     video: "",
@@ -923,6 +942,14 @@ export function App() {
     setSelectedGroups([group.id]);
   }
 
+  function toggleMusicMatchAttribute(attribute: string) {
+    setMusicMatchAttributes((current) =>
+      current.includes(attribute)
+        ? current.filter((item) => item !== attribute)
+        : [...current, attribute]
+    );
+  }
+
   async function createProductionBatches() {
     if (!selectedGroups.length) {
       setStatus("Select at least one character group");
@@ -937,7 +964,11 @@ export function App() {
           studio: "Production Studio",
           attributes: attributeValues,
           promptTemplates: promptSelections,
-          promptPreview: previews
+          promptPreview: previews,
+          musicPolicy: {
+            mode: musicPolicyMode,
+            matchAttributes: musicMatchAttributes
+          }
         };
         await api<ProductionBatch>("/production-batches", {
           method: "POST",
@@ -1820,6 +1851,7 @@ export function App() {
                   .slice(0, 20)
                   .map((batch) => {
                     const post = postContentMetadata(batch);
+                    const music = musicTrackMetadata(batch);
                     return (
                       <div className="adminRow" key={batch.id} onClick={() => setSelectedResourceId(batch.id)}>
                         <b>{batch.batchType}</b><span>{batch.status}</span><span>{batch.usageStatus}</span><small>{displayShortId(batch.id)}</small>
@@ -1829,6 +1861,12 @@ export function App() {
                             <p>{post.caption || post.postText || "No post text yet."}</p>
                             {post.postText && post.postText !== post.caption ? <p>{post.postText}</p> : null}
                             <small>{post.hashtags.join(" ")} {post.cta ? `/ ${post.cta}` : ""} / {post.platform}</small>
+                          </div>
+                        ) : batch.batchType === "MUSIC_TRACK" ? (
+                          <div className="postPreview">
+                            <strong>{[music.mood, music.tempo, music.style].filter(Boolean).join(" / ") || "Music track"}</strong>
+                            <p>{[music.scene, music.emotion].filter(Boolean).join(" scene / ") || "No scene or emotion metadata."}</p>
+                            <small>{music.tags.join(", ") || "No tags"}</small>
                           </div>
                         ) : (
                           <pre>{compactJson(batch.metadata)}</pre>
@@ -2216,6 +2254,30 @@ export function App() {
                 </div>
               );
             })}
+          </div>
+
+          <div className="musicPolicyPanel">
+            <div className="panelHeader compact">
+              <Music size={18} />
+              <h2>Music Policy</h2>
+            </div>
+            <label className="templateSelect">
+              <span>Mode</span>
+              <select value={musicPolicyMode} onChange={(event) => setMusicPolicyMode(event.target.value)}>
+                {musicPolicyModes.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
+              </select>
+            </label>
+            <div className="choiceRow">
+              {musicMatchAttributeOptions.map((attribute) => (
+                <button
+                  className={musicMatchAttributes.includes(attribute) ? "choice active" : "choice"}
+                  key={attribute}
+                  onClick={() => toggleMusicMatchAttribute(attribute)}
+                >
+                  {attribute}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="panelHeader promptHeader">

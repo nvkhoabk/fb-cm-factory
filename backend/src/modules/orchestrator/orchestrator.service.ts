@@ -21,6 +21,64 @@ function isInstanceIssueFailure(input: FailOrchestratorJobInput) {
   return instanceIssueCodes.some((prefix) => errorCode.startsWith(prefix));
 }
 
+type MusicPolicy = {
+  mode: "RANDOM_LIBRARY" | "REQUIRE_MATCHED" | "CREATE_DEDICATED";
+  matchAttributes: string[];
+};
+
+function recordValue(value: unknown) {
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+function normalizeMusicPolicy(value: unknown): MusicPolicy {
+  const record = recordValue(value);
+  const mode = ["RANDOM_LIBRARY", "REQUIRE_MATCHED", "CREATE_DEDICATED"].includes(String(record.mode))
+    ? String(record.mode) as MusicPolicy["mode"]
+    : "RANDOM_LIBRARY";
+  const matchAttributes = Array.isArray(record.matchAttributes)
+    ? record.matchAttributes.map((item) => String(item)).filter(Boolean)
+    : [];
+  return { mode, matchAttributes };
+}
+
+function valueForMatch(source: ReturnType<typeof orchestratorRepository.listTriggerBatches>[number], key: string) {
+  const attributes = recordValue(source.attributes);
+  const metadata = recordValue(source.metadata);
+  const value = attributes[key] ?? metadata[key];
+  return value === undefined || value === null ? "" : String(value).trim().toLowerCase();
+}
+
+function musicValueForMatch(music: ReturnType<typeof orchestratorRepository.listReusableMusicTracks>[number], key: string) {
+  const attributes = recordValue(music.attributes);
+  const metadata = recordValue(music.metadata);
+  const value = attributes[key] ?? metadata[key];
+  if (Array.isArray(value)) return value.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
+  return value === undefined || value === null ? "" : String(value).trim().toLowerCase();
+}
+
+function musicMatches(source: ReturnType<typeof orchestratorRepository.listTriggerBatches>[number], music: ReturnType<typeof orchestratorRepository.listReusableMusicTracks>[number], keys: string[]) {
+  return keys.every((key) => {
+    const expected = valueForMatch(source, key);
+    if (!expected) return true;
+    const actual = musicValueForMatch(music, key);
+    return Array.isArray(actual) ? actual.includes(expected) : actual === expected;
+  });
+}
+
+function resolveMusicPolicy(sourceBatch: ReturnType<typeof orchestratorRepository.listTriggerBatches>[number]) {
+  const metadata = recordValue(sourceBatch.metadata);
+  if (metadata.musicPolicy && typeof metadata.musicPolicy === "object") return normalizeMusicPolicy(metadata.musicPolicy);
+  return normalizeMusicPolicy(orchestratorRepository.getWorkflowMusicPolicy(
+    typeof sourceBatch.workflowId === "string" ? sourceBatch.workflowId : null
+  ));
+}
+
+function selectMusicForPolicy(sourceBatch: ReturnType<typeof orchestratorRepository.listTriggerBatches>[number], policy: MusicPolicy) {
+  if (policy.mode === "RANDOM_LIBRARY") return orchestratorRepository.getReusableOrAvailableMusic();
+  const musicTracks = orchestratorRepository.listReusableMusicTracks();
+  return musicTracks.find((music) => musicMatches(sourceBatch, music, policy.matchAttributes)) ?? null;
+}
+
 export const orchestratorService = {
   listJobs: () => orchestratorRepository.listJobs(),
 
@@ -76,16 +134,37 @@ export const orchestratorService = {
           sourceBatchType: sourceBatch.batchType
         };
 
-        const requiresMusic =
-          rule.targetStageType === "VIDEO_COMPOSE" &&
-          rule.config.requiresMusic !== false;
+        const requiresMusic = rule.targetStageType === "VIDEO_COMPOSE" && rule.config.requiresMusic !== false;
 
         if (requiresMusic) {
-          const musicBatch = orchestratorRepository.getReusableOrAvailableMusic();
-          if (!musicBatch) continue;
+          const musicPolicy = resolveMusicPolicy(sourceBatch);
+          const musicBatch = selectMusicForPolicy(sourceBatch, musicPolicy);
+          if (!musicBatch) {
+            if (musicPolicy.mode === "CREATE_DEDICATED") {
+              const existingMusicJob = orchestratorRepository.getJobBySourceAndStage(sourceBatch.id, "MUSIC_GENERATE");
+              if (!existingMusicJob) {
+                const musicJob = orchestratorRepository.createJob({
+                  ruleId: rule.id,
+                  sourceBatchId: sourceBatch.id,
+                  targetStageType: "MUSIC_GENERATE",
+                  payload: {
+                    ruleId: rule.id,
+                    sourceBatchId: sourceBatch.id,
+                    sourceBatchType: sourceBatch.batchType,
+                    musicPolicy,
+                    requestedForStageType: "VIDEO_COMPOSE"
+                  }
+                });
+                createdJobs.push(musicJob);
+              }
+            }
+            continue;
+          }
 
           payload.musicBatchId = musicBatch.id;
           payload.musicUsageStatus = musicBatch.usageStatus;
+          payload.musicPolicy = musicPolicy;
+          payload.musicMatchAttributes = musicPolicy.matchAttributes;
         }
 
         const job = orchestratorRepository.createJob({

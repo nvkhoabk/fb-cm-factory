@@ -24,8 +24,12 @@ function mapBatch(row: Record<string, unknown>) {
   return {
     id: String(row.id),
     batchType: String(row.batch_type),
+    workflowId: row.workflow_id ?? null,
+    workflowRunId: row.workflow_run_id ?? null,
     status: String(row.status),
-    usageStatus: String(row.usage_status)
+    usageStatus: String(row.usage_status),
+    attributes: jsonParse<Record<string, unknown>>(row.attributes_json, {}),
+    metadata: jsonParse<Record<string, unknown>>(row.metadata_json, {})
   };
 }
 
@@ -311,14 +315,28 @@ export const orchestratorRepository = {
       SELECT * FROM production_batches
       WHERE batch_type = 'MUSIC_TRACK'
         AND status = 'READY'
-        AND usage_status IN ('REUSABLE', 'AVAILABLE')
-      ORDER BY
-        CASE usage_status WHEN 'REUSABLE' THEN 0 ELSE 1 END,
-        created_at DESC
+        AND usage_status = 'REUSABLE'
+      ORDER BY RANDOM()
       LIMIT 1
     `).get();
 
     return row ? mapBatch(row as Record<string, unknown>) : null;
+  },
+
+  listReusableMusicTracks() {
+    return db.prepare(`
+      SELECT * FROM production_batches
+      WHERE batch_type = 'MUSIC_TRACK'
+        AND status = 'READY'
+        AND usage_status = 'REUSABLE'
+      ORDER BY created_at DESC
+    `).all().map((row) => mapBatch(row as Record<string, unknown>));
+  },
+
+  getWorkflowMusicPolicy(workflowId?: string | null) {
+    if (!workflowId) return {};
+    const row = db.prepare("SELECT music_policy_json FROM workflows WHERE id = ?").get(workflowId) as { music_policy_json?: unknown } | undefined;
+    return row ? jsonParse<Record<string, unknown>>(row.music_policy_json, {}) : {};
   },
 
   reserveBatch(id: string) {

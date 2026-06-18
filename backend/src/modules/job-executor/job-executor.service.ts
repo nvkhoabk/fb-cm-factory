@@ -53,6 +53,12 @@ function stringValue(value: unknown) {
   return typeof value === "string" && value ? value : undefined;
 }
 
+function metadataPick(source: Record<string, unknown>, keys: string[]) {
+  return Object.fromEntries(keys
+    .filter((key) => source[key] !== undefined)
+    .map((key) => [key, source[key]]));
+}
+
 export const jobExecutorService = {
   async executeMockJob(jobId: string) {
     let job = orchestratorRepository.getJob(jobId);
@@ -308,6 +314,14 @@ export const jobExecutorService = {
     if (!sourceBatch) {
       throw new AppError("SOURCE_BATCH_NOT_FOUND", "Source production batch not found", 404);
     }
+    const sourceMetadata = objectValue(sourceBatch.metadata);
+    const sourceAttributes = objectValue(sourceBatch.attributes);
+    const musicMetadata = outputBatchType === "MUSIC_TRACK"
+      ? {
+          ...metadataPick(sourceAttributes, ["mood", "tempo", "style", "scene", "emotion", "tags"]),
+          ...metadataPick(sourceMetadata, ["mood", "tempo", "style", "scene", "emotion", "tags"])
+        }
+      : {};
 
     const usageStatus: BatchUsageStatus = outputBatchType === "MUSIC_TRACK" ? "REUSABLE" : "AVAILABLE";
     const postContent = outputBatchType === "POST_CONTENT"
@@ -330,6 +344,8 @@ export const jobExecutorService = {
         sourceBatchId: job.sourceBatchId,
         targetStageType: job.targetStageType,
         mock: options.mock,
+        ...(sourceMetadata.musicPolicy ? { musicPolicy: sourceMetadata.musicPolicy } : {}),
+        ...musicMetadata,
         ...(postContent ?? {}),
         ...(options.managerTaskId ? { managerTaskId: options.managerTaskId } : {})
       }

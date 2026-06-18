@@ -624,6 +624,7 @@ export function migrate() {
   addColumnIfMissing("instances", "maintenance_reason", "TEXT");
   addColumnIfMissing("instances", "last_error_at", "TEXT");
   addColumnIfMissing("workflows", "capacity_config_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("workflows", "music_policy_json", "TEXT DEFAULT '{}'");
   addColumnIfMissing("workflow_runs", "capacity_config_json", "TEXT DEFAULT '{}'");
 
   db.prepare(`

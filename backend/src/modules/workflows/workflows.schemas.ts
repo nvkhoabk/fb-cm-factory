@@ -16,10 +16,16 @@ export const capacityConfigSchema = z.object({
   POST_CONTENT: z.number().int().min(0).optional()
 });
 
+export const musicPolicySchema = z.object({
+  mode: z.enum(["RANDOM_LIBRARY", "REQUIRE_MATCHED", "CREATE_DEDICATED"]).default("RANDOM_LIBRARY"),
+  matchAttributes: z.array(z.string()).default([])
+}).partial();
+
 export const createWorkflowSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
-  status: z.string().default("draft")
+  status: z.string().default("draft"),
+  musicPolicy: musicPolicySchema.optional()
 });
 
 export const updateWorkflowSchema = createWorkflowSchema.partial();

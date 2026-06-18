@@ -19,6 +19,7 @@ function mapWorkflow(row: Record<string, unknown>) {
     description: row.description ?? null,
     status: row.status,
     capacityConfig: jsonParse(row.capacity_config_json, {}),
+    musicPolicy: jsonParse(row.music_policy_json, {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -93,15 +94,16 @@ export const workflowsRepository = {
 
     db.prepare(`
       INSERT INTO workflows (
-        id, name, description, status, created_at, updated_at
+        id, name, description, status, music_policy_json, created_at, updated_at
       ) VALUES (
-        @id, @name, @description, @status, @createdAt, @updatedAt
+        @id, @name, @description, @status, @musicPolicyJson, @createdAt, @updatedAt
       )
     `).run({
       id,
       name: input.name,
       description: input.description ?? null,
       status: input.status,
+      musicPolicyJson: jsonString(input.musicPolicy ?? {}, {}),
       createdAt,
       updatedAt: createdAt
     });
@@ -118,6 +120,7 @@ export const workflowsRepository = {
       SET name = @name,
           description = @description,
           status = @status,
+          music_policy_json = @musicPolicyJson,
           updated_at = @updatedAt
       WHERE id = @id
     `).run({
@@ -125,6 +128,7 @@ export const workflowsRepository = {
       name: input.name ?? current.name,
       description: input.description ?? current.description,
       status: input.status ?? current.status,
+      musicPolicyJson: jsonString(input.musicPolicy ?? current.musicPolicy ?? {}, {}),
       updatedAt: now()
     });
 
