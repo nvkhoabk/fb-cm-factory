@@ -3,11 +3,15 @@ import { sendError } from "../shared/resource";
 import {
   createScriptSchema,
   createScriptVersionSchema,
-  runScriptSchema
+  runScriptSchema,
+  testRunScriptSchema,
+  updateScriptSchema,
+  updateScriptVersionSchema
 } from "./script-runtime.schemas";
 import { scriptRuntimeService } from "./script-runtime.service";
 
 export const scriptsRouter = Router();
+export const scriptVersionsRouter = Router();
 export const scriptRunsRouter = Router();
 
 scriptsRouter.get("/", (_req, res) => {
@@ -23,10 +27,69 @@ scriptsRouter.post("/", (req, res) => {
   }
 });
 
+scriptsRouter.get("/:id", (req, res) => {
+  try {
+    res.json({ ok: true, data: scriptRuntimeService.getScript(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+scriptsRouter.patch("/:id", (req, res) => {
+  try {
+    const input = updateScriptSchema.parse(req.body ?? {});
+    res.json({ ok: true, data: scriptRuntimeService.updateScript(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+scriptsRouter.get("/:id/versions", (req, res) => {
+  try {
+    res.json({ ok: true, data: scriptRuntimeService.listScriptVersions(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 scriptsRouter.post("/:id/versions", (req, res) => {
   try {
     const input = createScriptVersionSchema.parse(req.body ?? {});
     res.status(201).json({ ok: true, data: scriptRuntimeService.createScriptVersion(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+scriptsRouter.post("/:id/test-run", async (req, res) => {
+  try {
+    const input = testRunScriptSchema.parse(req.body ?? {});
+    res.status(201).json({ ok: true, data: await scriptRuntimeService.testRunScript(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+scriptVersionsRouter.get("/:id", (req, res) => {
+  try {
+    res.json({ ok: true, data: scriptRuntimeService.getScriptVersion(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+scriptVersionsRouter.patch("/:id", (req, res) => {
+  try {
+    const input = updateScriptVersionSchema.parse(req.body ?? {});
+    res.json({ ok: true, data: scriptRuntimeService.updateScriptVersion(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+scriptVersionsRouter.post("/:id/activate", (req, res) => {
+  try {
+    res.json({ ok: true, data: scriptRuntimeService.activateScriptVersion(req.params.id) });
   } catch (error) {
     sendError(res, error);
   }

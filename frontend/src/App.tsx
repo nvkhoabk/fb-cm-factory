@@ -153,8 +153,21 @@ type InstanceCapabilities = {
 type ScriptRecord = {
   id: string;
   name: string;
+  category?: string;
+  description?: string | null;
   status: string;
   createdAt?: string;
+};
+
+type ScriptVersionRecord = {
+  id: string;
+  scriptId: string;
+  versionNo: number;
+  status: string;
+  steps?: Array<Record<string, unknown>>;
+  variables?: Record<string, unknown>;
+  retryPolicy?: Record<string, unknown>;
+  detectionPolicy?: Record<string, unknown>;
 };
 
 type OrchestratorRule = {
@@ -286,6 +299,7 @@ const productionBatchTypeOptions = ["CHARACTER_GROUP", "IMAGE_BATCH", "VIDEO_BAT
 const promptCategoryOptions = ["image", "video", "music", "POST_CONTENT"];
 const musicPolicyModes = ["RANDOM_LIBRARY", "REQUIRE_MATCHED", "CREATE_DEDICATED"];
 const musicMatchAttributeOptions = ["mood", "tempo", "style", "scene", "emotion", "tags"];
+const scriptCategoryOptions = ["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT", "UTILITY"];
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -594,6 +608,7 @@ export function App() {
   const [jobs, setJobs] = useState<OrchestratorJob[]>([]);
   const [runtimeSessions, setRuntimeSessions] = useState<RuntimeSession[]>([]);
   const [scriptRuns, setScriptRuns] = useState<ScriptRun[]>([]);
+  const [scriptVersions, setScriptVersions] = useState<ScriptVersionRecord[]>([]);
   const [launchedJobs, setLaunchedJobs] = useState<OrchestratorJob[]>([]);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [attributeValues, setAttributeValues] = useState<Record<string, string>>({
@@ -657,6 +672,7 @@ export function App() {
   const [instanceCapabilityFilter, setInstanceCapabilityFilter] = useState("");
   const [instanceRuntimeFilter, setInstanceRuntimeFilter] = useState("");
   const [selectedScriptId, setSelectedScriptId] = useState("");
+  const [selectedScriptVersionId, setSelectedScriptVersionId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [selectedResourceId, setSelectedResourceId] = useState("");
@@ -666,7 +682,13 @@ export function App() {
   const [hostForm, setHostForm] = useState({ hostId: "", name: "", baseUrl: "http://localhost:3300", apiKey: "", status: "active" });
   const [poolForm, setPoolForm] = useState({ name: "", poolType: "IMAGE_EDIT", status: "active" });
   const [memberForm, setMemberForm] = useState({ instanceId: "", priority: "100", status: "ACTIVE", metadata: "{\n  \"hostId\": \"\",\n  \"localId\": \"\",\n  \"adbId\": \"\"\n}" });
-  const [scriptForm, setScriptForm] = useState({ name: "", status: "active", steps: "{\n  \"steps\": [\n    { \"type\": \"wait\", \"config\": { \"ms\": 500 } }\n  ]\n}" });
+  const [scriptForm, setScriptForm] = useState({
+    name: "",
+    category: "IMAGE_EDIT",
+    description: "",
+    status: "active",
+    steps: "{\n  \"steps\": [\n    { \"type\": \"wait\", \"config\": { \"ms\": 500 } },\n    { \"type\": \"screenshot\", \"config\": {} },\n    { \"type\": \"send-text\", \"config\": { \"text\": \"{{prompt.image}}\" } }\n  ]\n}"
+  });
   const [templateForm, setTemplateForm] = useState({ name: "", category: "image", status: "active", templateText: "Transform into a {scene} scene." });
   const [groupForm, setGroupForm] = useState({ name: "", description: "", status: "active", characterId: "", role: "member", attributeId: "", customValue: "" });
   const [batchForm, setBatchForm] = useState({ batchType: "IMAGE_BATCH", status: "NEW", usageStatus: "AVAILABLE", metadata: "{}" });
@@ -716,6 +738,14 @@ export function App() {
   const selectedScriptRun = useMemo(
     () => scriptRun ?? scriptRuns.find((run) => run.runtimeSessionId === selectedRuntime?.id) ?? null,
     [scriptRun, scriptRuns, selectedRuntime]
+  );
+  const selectedScript = useMemo(
+    () => scripts.find((script) => script.id === selectedScriptId) ?? null,
+    [scripts, selectedScriptId]
+  );
+  const latestSelectedScriptRuns = useMemo(
+    () => scriptRuns.filter((run) => !selectedScriptId || run.scriptId === selectedScriptId).slice(0, 8),
+    [scriptRuns, selectedScriptId]
   );
   const selectedHost = useMemo(
     () => hosts.find((host) => host.id === selectedHostId || host.hostId === selectedHostId) ?? hosts[0] ?? null,
@@ -868,6 +898,20 @@ export function App() {
   useEffect(() => {
     if (jobsPage > totalJobPages) setJobsPage(totalJobPages);
   }, [jobsPage, totalJobPages]);
+
+  useEffect(() => {
+    if (!selectedScriptId) {
+      setScriptVersions([]);
+      setSelectedScriptVersionId("");
+      return;
+    }
+    api<ScriptVersionRecord[]>(`/scripts/${selectedScriptId}/versions`)
+      .then((versions) => {
+        setScriptVersions(versions);
+        setSelectedScriptVersionId((current) => current || versions[0]?.id || "");
+      })
+      .catch((error) => setStatus(error instanceof Error ? error.message : "Could not load script versions"));
+  }, [selectedScriptId]);
 
   useEffect(() => {
     const config = selectedWorkflowRun?.capacityConfig && Object.values(selectedWorkflowRun.capacityConfig).some((value) => Number(value) > 0)
@@ -1257,6 +1301,111 @@ export function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function refreshScriptVersions(scriptId = selectedScriptId) {
+    if (!scriptId) return [];
+    const versions = await api<ScriptVersionRecord[]>(`/scripts/${scriptId}/versions`);
+    setScriptVersions(versions);
+    setSelectedScriptVersionId((current) => current || versions[0]?.id || "");
+    return versions;
+  }
+
+  async function saveScriptMetadata() {
+    if (!selectedScriptId) return;
+    return adminAction("Updating script", () => api(`/scripts/${selectedScriptId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: scriptForm.name || selectedScript?.name,
+        category: scriptForm.category,
+        description: scriptForm.description,
+        status: scriptForm.status
+      })
+    }));
+  }
+
+  async function createScriptVersion() {
+    if (!selectedScriptId) return;
+    return adminAction("Creating script version", async () => {
+      const parsed = parseJsonText(scriptForm.steps);
+      const version = await api<ScriptVersionRecord>(`/scripts/${selectedScriptId}/versions`, {
+        method: "POST",
+        body: JSON.stringify({
+          status: "draft",
+          steps: Array.isArray(parsed.steps) ? parsed.steps : [],
+          variables: parsed.variables ?? {},
+          retryPolicy: parsed.retryPolicy ?? {},
+          detectionPolicy: parsed.detectionPolicy ?? {}
+        })
+      });
+      await refreshScriptVersions(selectedScriptId);
+      setSelectedScriptVersionId(version.id);
+      return version;
+    });
+  }
+
+  async function updateScriptVersion() {
+    if (!selectedScriptVersionId) return;
+    return adminAction("Updating script version", async () => {
+      const parsed = parseJsonText(scriptForm.steps);
+      const version = await api<ScriptVersionRecord>(`/script-versions/${selectedScriptVersionId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          steps: Array.isArray(parsed.steps) ? parsed.steps : undefined,
+          variables: parsed.variables ?? {},
+          retryPolicy: parsed.retryPolicy ?? {},
+          detectionPolicy: parsed.detectionPolicy ?? {}
+        })
+      });
+      await refreshScriptVersions(selectedScriptId);
+      return version;
+    });
+  }
+
+  async function activateScriptVersion() {
+    if (!selectedScriptVersionId) return;
+    return adminAction("Activating script version", async () => {
+      const version = await api<ScriptVersionRecord>(`/script-versions/${selectedScriptVersionId}/activate`, { method: "POST" });
+      await refreshScriptVersions(selectedScriptId);
+      return version;
+    });
+  }
+
+  async function testRunSelectedScript() {
+    if (!selectedScriptId) return;
+    const selectedInstance = instances.find((instance) => instance.id === selectedInstanceId)
+      ?? instances.find((instance) => instance.id === hostInstanceId)
+      ?? null;
+    const host = selectedInstance ? hostForInstance(selectedInstance) : selectedHost;
+    const instanceId = selectedInstance?.id || hostInstanceId;
+    const adbId = selectedInstance?.adbId || hostAdbId;
+    if (!host || !instanceId || !adbId) {
+      setStatus("Select host, instance, and adbId");
+      return;
+    }
+    return adminAction("Testing script", () => api(`/scripts/${selectedScriptId}/test-run`, {
+      method: "POST",
+      body: JSON.stringify({
+        scriptVersionId: selectedScriptVersionId || undefined,
+        hostId: host.id,
+        instanceId,
+        adbId,
+        context: {
+          prompt: {
+            image: previews.image,
+            video: previews.video,
+            music: previews.music,
+            post: ""
+          },
+          group: {
+            name: groups.find((group) => group.id === selectedPrimaryGroup)?.name ?? ""
+          },
+          runtime: {
+            instanceId
+          }
+        }
+      })
+    }));
   }
 
   async function saveWorkflowCapacity(scope: "workflow" | "run") {
@@ -1786,15 +1935,59 @@ export function App() {
             <div className="adminGrid">
               <div className="adminForm">
                 <label>Name<input value={scriptForm.name} onChange={(event) => setScriptForm({ ...scriptForm, name: event.target.value })} /></label>
+                <label>Category<select value={scriptForm.category} onChange={(event) => setScriptForm({ ...scriptForm, category: event.target.value })}>{scriptCategoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+                <label>Description<input value={scriptForm.description} onChange={(event) => setScriptForm({ ...scriptForm, description: event.target.value })} /></label>
                 <label>Status<input value={scriptForm.status} onChange={(event) => setScriptForm({ ...scriptForm, status: event.target.value })} /></label>
-                <button onClick={() => adminAction("Creating script", () => api("/scripts", { method: "POST", body: JSON.stringify({ name: scriptForm.name, status: scriptForm.status }) }))}>Create Script</button>
-                <label>Script<select value={selectedScriptId} onChange={(event) => setSelectedScriptId(event.target.value)}>{scripts.map((script) => <option key={script.id} value={script.id}>{script.name}</option>)}</select></label>
+                <button onClick={() => adminAction("Creating script", () => api<ScriptRecord>("/scripts", { method: "POST", body: JSON.stringify({ name: scriptForm.name, category: scriptForm.category, description: scriptForm.description, status: scriptForm.status }) }).then((script) => { setSelectedScriptId(script.id); return script; }))}>Create Script</button>
+                <button disabled={!selectedScriptId} onClick={saveScriptMetadata}>Save Metadata</button>
+                <label>Script<select value={selectedScriptId} onChange={(event) => {
+                  const scriptId = event.target.value;
+                  const script = scripts.find((item) => item.id === scriptId);
+                  setSelectedScriptId(scriptId);
+                  if (script) setScriptForm({ ...scriptForm, name: script.name, category: script.category ?? "UTILITY", description: script.description ?? "", status: script.status });
+                }}>{scripts.map((script) => <option key={script.id} value={script.id}>{script.name} / {script.category ?? "UTILITY"}</option>)}</select></label>
+                <label>Version<select value={selectedScriptVersionId} onChange={(event) => {
+                  const versionId = event.target.value;
+                  const version = scriptVersions.find((item) => item.id === versionId);
+                  setSelectedScriptVersionId(versionId);
+                  if (version) setScriptForm({ ...scriptForm, steps: compactJson({ steps: version.steps ?? [], variables: version.variables ?? {}, retryPolicy: version.retryPolicy ?? {}, detectionPolicy: version.detectionPolicy ?? {} }) });
+                }}><option value="">Latest active</option>{scriptVersions.map((version) => <option key={version.id} value={version.id}>v{version.versionNo} / {version.status}</option>)}</select></label>
                 <label>Steps JSON<textarea value={scriptForm.steps} onChange={(event) => setScriptForm({ ...scriptForm, steps: event.target.value })} /></label>
-                <button disabled={!selectedScriptId} onClick={() => adminAction("Creating script version", () => api(`/scripts/${selectedScriptId}/versions`, { method: "POST", body: JSON.stringify({ status: "active", definition: parseJsonText(scriptForm.steps) }) }))}>Create Version</button>
-                <label>Runtime Session<select value={selectedRuntimeId} onChange={(event) => setSelectedRuntimeId(event.target.value)}><option value="">Select runtime</option>{runtimeSessions.map((session) => <option key={session.id} value={session.id}>{session.id}</option>)}</select></label>
-                <button disabled={!selectedRuntimeId || !selectedScriptId} onClick={() => adminAction("Testing script run", () => api(`/runtime-sessions/${selectedRuntimeId}/run-script`, { method: "POST", body: JSON.stringify({ scriptId: selectedScriptId, context: {} }) }))}>Test Run</button>
+                <button disabled={!selectedScriptId} onClick={createScriptVersion}>Create Version</button>
+                <button disabled={!selectedScriptVersionId} onClick={updateScriptVersion}>Save Version</button>
+                <button disabled={!selectedScriptVersionId} onClick={activateScriptVersion}>Activate Version</button>
+                <label>Host<select value={selectedHost?.id ?? ""} onChange={(event) => setSelectedHostId(event.target.value)}>{hosts.map((host) => <option key={host.id} value={host.id}>{host.name} / {host.hostId}</option>)}</select></label>
+                <label>Instance<select value={selectedInstanceId} onChange={(event) => {
+                  const instance = instances.find((item) => item.id === event.target.value);
+                  setSelectedInstanceId(event.target.value);
+                  setHostInstanceId(event.target.value);
+                  setHostAdbId(instance?.adbId ?? "");
+                }}><option value="">Select instance</option>{instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.id} / {instance.adbId ?? "no adb"}</option>)}</select></label>
+                <label>ADB ID<input value={hostAdbId} onChange={(event) => setHostAdbId(event.target.value)} /></label>
+                <button disabled={!selectedScriptId} onClick={testRunSelectedScript}>Test Run</button>
               </div>
-              <AdminSimpleList items={[...scripts, ...scriptRuns]} search={adminSearch} />
+              <div className="adminTable">
+                {scripts.filter((script) => compactJson(script).toLowerCase().includes(adminSearch.toLowerCase())).slice(0, 12).map((script) => (
+                  <div className="adminRow" key={script.id} onClick={() => {
+                    setSelectedScriptId(script.id);
+                    setScriptForm({ ...scriptForm, name: script.name, category: script.category ?? "UTILITY", description: script.description ?? "", status: script.status });
+                  }}>
+                    <b>{script.name}</b><span>{script.category ?? "UTILITY"}</span><span>{script.status}</span><small>{displayShortId(script.id)}</small>
+                    <span>{script.description ?? "-"}</span>
+                  </div>
+                ))}
+                {latestSelectedScriptRuns.map((run) => (
+                  <div className="adminRow" key={run.id}>
+                    <b>Run {displayShortId(run.id)}</b><span>{run.status}</span><span>Step {run.currentStepNo}</span><small>{displayShortId(run.runtimeSessionId)}</small>
+                    <button onClick={() => selectRuntimeSession(runtimeSessions.find((session) => session.id === run.runtimeSessionId) ?? { id: run.runtimeSessionId, status: run.status, currentStepNo: run.currentStepNo })}>View Timeline</button>
+                    {(run.steps ?? []).slice(0, 6).map((step) => (
+                      <div className="nestedRow" key={step.id}>
+                        <span>{step.stepNo}. {step.stepType}</span><span>{step.status}</span><span>{step.errorMessage ?? "-"}</span><small>{displayDateTime(step.finishedAt ?? undefined)}</small>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
             </div>
           ) : null}
 

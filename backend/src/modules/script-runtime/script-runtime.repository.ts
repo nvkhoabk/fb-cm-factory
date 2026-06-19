@@ -3,6 +3,8 @@ import { createId, jsonParse, jsonString, now } from "../shared/resource";
 import type {
   CreateScriptInput,
   CreateScriptVersionInput,
+  UpdateScriptInput,
+  UpdateScriptVersionInput,
   ScriptRunStatus
 } from "./script-runtime.schemas";
 
@@ -10,6 +12,8 @@ function mapScript(row: Record<string, unknown>) {
   return {
     id: row.id,
     name: row.name,
+    category: row.category ?? "UTILITY",
+    description: row.description ?? null,
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -17,12 +21,23 @@ function mapScript(row: Record<string, unknown>) {
 }
 
 function mapScriptVersion(row: Record<string, unknown>) {
+  const steps = jsonParse(row.steps_json, []);
+  const definition = jsonParse(row.definition_json, {});
+  const normalizedDefinition = Array.isArray(steps) && steps.length ? { steps } : definition;
   return {
     id: row.id,
     scriptId: row.script_id,
     versionNo: Number(row.version_no),
     status: row.status,
-    definition: jsonParse(row.definition_json, {}),
+    definition: normalizedDefinition,
+    steps: Array.isArray(steps) && steps.length
+      ? steps
+      : (normalizedDefinition && typeof normalizedDefinition === "object" && Array.isArray((normalizedDefinition as { steps?: unknown }).steps)
+          ? (normalizedDefinition as { steps: unknown[] }).steps
+          : []),
+    variables: jsonParse(row.variables_json, {}),
+    retryPolicy: jsonParse(row.retry_policy_json, {}),
+    detectionPolicy: jsonParse(row.detection_policy_json, {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -69,14 +84,40 @@ export const scriptRuntimeRepository = {
     const timestamp = now();
 
     db.prepare(`
-      INSERT INTO scripts (id, name, status, created_at, updated_at)
-      VALUES (@id, @name, @status, @createdAt, @updatedAt)
+      INSERT INTO scripts (id, name, category, description, status, created_at, updated_at)
+      VALUES (@id, @name, @category, @description, @status, @createdAt, @updatedAt)
     `).run({
       id,
       name: input.name,
+      category: input.category,
+      description: input.description ?? null,
       status: input.status,
       createdAt: timestamp,
       updatedAt: timestamp
+    });
+
+    return this.getScript(id);
+  },
+
+  updateScript(id: string, input: UpdateScriptInput) {
+    const current = this.getScript(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE scripts
+      SET name = @name,
+          category = @category,
+          description = @description,
+          status = @status,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      name: input.name ?? current.name,
+      category: input.category ?? current.category,
+      description: input.description === undefined ? current.description : input.description,
+      status: input.status ?? current.status,
+      updatedAt: now()
     });
 
     return this.getScript(id);
@@ -98,18 +139,27 @@ export const scriptRuntimeRepository = {
     const timestamp = now();
     const versionNo = input.versionNo ?? this.nextVersionNo(scriptId);
 
+    const steps = input.steps ?? input.definition?.steps ?? [];
+    const definition = input.definition ?? { steps };
+
     db.prepare(`
       INSERT INTO script_versions (
-        id, script_id, version_no, status, definition_json, created_at, updated_at
+        id, script_id, version_no, status, definition_json, steps_json,
+        variables_json, retry_policy_json, detection_policy_json, created_at, updated_at
       ) VALUES (
-        @id, @scriptId, @versionNo, @status, @definitionJson, @createdAt, @updatedAt
+        @id, @scriptId, @versionNo, @status, @definitionJson, @stepsJson,
+        @variablesJson, @retryPolicyJson, @detectionPolicyJson, @createdAt, @updatedAt
       )
     `).run({
       id,
       scriptId,
       versionNo,
       status: input.status,
-      definitionJson: jsonString(input.definition, {}),
+      definitionJson: jsonString(definition, {}),
+      stepsJson: jsonString(steps, []),
+      variablesJson: jsonString(input.variables, {}),
+      retryPolicyJson: jsonString(input.retryPolicy, {}),
+      detectionPolicyJson: jsonString(input.detectionPolicy, {}),
       createdAt: timestamp,
       updatedAt: timestamp
     });
@@ -120,6 +170,74 @@ export const scriptRuntimeRepository = {
   getScriptVersion(id: string) {
     const row = db.prepare("SELECT * FROM script_versions WHERE id = ?").get(id);
     return row ? mapScriptVersion(row as Record<string, unknown>) : null;
+  },
+
+  updateScriptVersion(id: string, input: UpdateScriptVersionInput) {
+    const current = this.getScriptVersion(id);
+    if (!current) return null;
+
+    const steps = input.steps ?? input.definition?.steps ?? current.steps;
+    const definition = input.definition ?? { steps };
+
+    db.prepare(`
+      UPDATE script_versions
+      SET status = @status,
+          definition_json = @definitionJson,
+          steps_json = @stepsJson,
+          variables_json = @variablesJson,
+          retry_policy_json = @retryPolicyJson,
+          detection_policy_json = @detectionPolicyJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      status: input.status ?? current.status,
+      definitionJson: jsonString(definition, {}),
+      stepsJson: jsonString(steps, []),
+      variablesJson: jsonString(input.variables ?? current.variables, {}),
+      retryPolicyJson: jsonString(input.retryPolicy ?? current.retryPolicy, {}),
+      detectionPolicyJson: jsonString(input.detectionPolicy ?? current.detectionPolicy, {}),
+      updatedAt: now()
+    });
+
+    return this.getScriptVersion(id);
+  },
+
+  activateScriptVersion(id: string) {
+    const version = this.getScriptVersion(id);
+    if (!version) return null;
+    const timestamp = now();
+
+    db.prepare(`
+      UPDATE script_versions
+      SET status = 'archived',
+          updated_at = @updatedAt
+      WHERE script_id = @scriptId AND id <> @id
+    `).run({
+      id,
+      scriptId: version.scriptId,
+      updatedAt: timestamp
+    });
+
+    db.prepare(`
+      UPDATE script_versions
+      SET status = 'active',
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      updatedAt: timestamp
+    });
+
+    return this.getScriptVersion(id);
+  },
+
+  listScriptVersions(scriptId: string) {
+    return db.prepare(`
+      SELECT * FROM script_versions
+      WHERE script_id = ?
+      ORDER BY version_no DESC
+    `).all(scriptId).map((row) => mapScriptVersion(row as Record<string, unknown>));
   },
 
   getLatestScriptVersion(scriptId: string) {

@@ -618,6 +618,14 @@ export function migrate() {
 
   addColumnIfMissing("instance_allocations", "created_at", "TEXT");
   addColumnIfMissing("instance_allocations", "updated_at", "TEXT");
+  addColumnIfMissing("scripts", "category", "TEXT DEFAULT 'UTILITY'");
+  addColumnIfMissing("scripts", "description", "TEXT");
+  addColumnIfMissing("scripts", "updated_at", "TEXT");
+  addColumnIfMissing("script_versions", "steps_json", "TEXT DEFAULT '[]'");
+  addColumnIfMissing("script_versions", "variables_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("script_versions", "retry_policy_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("script_versions", "detection_policy_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("script_versions", "updated_at", "TEXT");
   addColumnIfMissing("instances", "capabilities_json", "TEXT DEFAULT '{}'");
   addColumnIfMissing("instances", "current_pool_type", "TEXT DEFAULT 'AVAILABLE'");
   addColumnIfMissing("instances", "current_workflow_run_id", "TEXT");

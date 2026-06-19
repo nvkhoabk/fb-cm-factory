@@ -8,7 +8,10 @@ import type {
   CreateScriptInput,
   CreateScriptVersionInput,
   RunScriptInput,
-  ScriptStepDefinition
+  ScriptStepDefinition,
+  TestRunScriptInput,
+  UpdateScriptInput,
+  UpdateScriptVersionInput
 } from "./script-runtime.schemas";
 
 type NormalizedScriptStep = ScriptStepDefinition & {
@@ -26,6 +29,17 @@ function mergeContext(...values: unknown[]) {
     {},
     ...values.map((value) => value && typeof value === "object" ? value : {})
   ) as Record<string, unknown>;
+}
+
+function runtimeContext(input: TestRunScriptInput) {
+  return mergeContext(input.context, {
+    adbId: input.adbId,
+    runtime: {
+      instanceId: input.instanceId,
+      hostId: input.hostId,
+      adbId: input.adbId
+    }
+  });
 }
 
 function getPathValue(source: Record<string, unknown>, path: string) {
@@ -105,10 +119,46 @@ export const scriptRuntimeService = {
     return scriptRuntimeRepository.createScript(input);
   },
 
+  getScript(id: string) {
+    const script = scriptRuntimeRepository.getScript(id);
+    if (!script) throw new AppError("SCRIPT_NOT_FOUND", "Script not found", 404);
+    return script;
+  },
+
+  updateScript(id: string, input: UpdateScriptInput) {
+    const script = scriptRuntimeRepository.updateScript(id, input);
+    if (!script) throw new AppError("SCRIPT_NOT_FOUND", "Script not found", 404);
+    return script;
+  },
+
   createScriptVersion(scriptId: string, input: CreateScriptVersionInput) {
     const script = scriptRuntimeRepository.getScript(scriptId);
     if (!script) throw new AppError("SCRIPT_NOT_FOUND", "Script not found", 404);
     return scriptRuntimeRepository.createScriptVersion(scriptId, input);
+  },
+
+  listScriptVersions(scriptId: string) {
+    const script = scriptRuntimeRepository.getScript(scriptId);
+    if (!script) throw new AppError("SCRIPT_NOT_FOUND", "Script not found", 404);
+    return scriptRuntimeRepository.listScriptVersions(scriptId);
+  },
+
+  getScriptVersion(id: string) {
+    const version = scriptRuntimeRepository.getScriptVersion(id);
+    if (!version) throw new AppError("SCRIPT_VERSION_NOT_FOUND", "Script version not found", 404);
+    return version;
+  },
+
+  updateScriptVersion(id: string, input: UpdateScriptVersionInput) {
+    const version = scriptRuntimeRepository.updateScriptVersion(id, input);
+    if (!version) throw new AppError("SCRIPT_VERSION_NOT_FOUND", "Script version not found", 404);
+    return version;
+  },
+
+  activateScriptVersion(id: string) {
+    const version = scriptRuntimeRepository.activateScriptVersion(id);
+    if (!version) throw new AppError("SCRIPT_VERSION_NOT_FOUND", "Script version not found", 404);
+    return version;
   },
 
   listScriptRuns: () => scriptRuntimeRepository.listScriptRuns(),
@@ -122,6 +172,53 @@ export const scriptRuntimeService = {
   listScriptRunSteps(id: string) {
     this.getScriptRun(id);
     return scriptRuntimeRepository.listScriptRunSteps(id);
+  },
+
+  async testRunScript(scriptId: string, input: TestRunScriptInput) {
+    const script = scriptRuntimeRepository.getScript(scriptId);
+    if (!script) throw new AppError("SCRIPT_NOT_FOUND", "Script not found", 404);
+
+    const version = input.scriptVersionId
+      ? scriptRuntimeRepository.getScriptVersion(input.scriptVersionId)
+      : scriptRuntimeRepository.getLatestScriptVersion(scriptId);
+
+    if (!version || version.scriptId !== scriptId) {
+      throw new AppError("SCRIPT_VERSION_NOT_FOUND", "Script version not found", 404);
+    }
+
+    const context = runtimeContext(input);
+    const session = runtimeSessionsService.createRuntimeSession({
+      hostId: input.hostId,
+      instanceId: input.instanceId,
+      scriptId,
+      status: "PENDING",
+      currentStepNo: 0,
+      context,
+      checkpoint: {
+        currentStepNo: 0,
+        context,
+        instanceId: input.instanceId,
+        hostId: input.hostId,
+        adbId: input.adbId
+      }
+    });
+
+    if (!session) throw new AppError("RUNTIME_SESSION_CREATE_FAILED", "Could not create runtime session");
+
+    const run = this.createScriptRun(String(session.id), {
+      scriptId,
+      scriptVersionId: String(version.id),
+      context
+    });
+    if (!run) throw new AppError("SCRIPT_RUN_CREATE_FAILED", "Could not create script run");
+
+    const completedRun = await this.executeScriptRun(String(run.id));
+    return {
+      runtimeSessionId: session.id,
+      scriptRunId: run.id,
+      runtimeSession: runtimeSessionsService.getSession(String(session.id)),
+      scriptRun: completedRun
+    };
   },
 
   createScriptRun(runtimeSessionId: string, input: RunScriptInput) {
@@ -251,11 +348,14 @@ export const scriptRuntimeService = {
 
     try {
       const output = await this.dispatchStep(session, step.stepType, input, context);
+      const outputRecord = output && typeof output === "object"
+        ? output as Record<string, unknown>
+        : { value: output };
       scriptRuntimeRepository.updateScriptRunStep(String(stepRow?.id), {
         status: "COMPLETED",
-        output
+        output: outputRecord
       });
-      return output;
+      return outputRecord;
     } catch (error) {
       scriptRuntimeRepository.updateScriptRunStep(String(stepRow?.id), {
         status: "FAILED",
@@ -351,7 +451,7 @@ export const scriptRuntimeService = {
       };
     }
 
-    if (stepType === "download-result") {
+    if (stepType === "download-result" || stepType === "download-latest") {
       return hostAgentService.downloadLatest(session.hostId, {
         instanceId: session.instanceId,
         adbId: resolveAdbId(input, _context),
@@ -359,6 +459,39 @@ export const scriptRuntimeService = {
         extensions: Array.isArray(input.extensions) ? input.extensions.map(String) : undefined,
         targetFolder: typeof input.targetFolder === "string" ? input.targetFolder : undefined
       });
+    }
+
+    if (stepType === "upload-file") {
+      return {
+        skipped: true,
+        reason: "upload-file is reserved for host-agent implementations that expose upload APIs"
+      };
+    }
+
+    if (stepType === "wait-screen") {
+      const timeoutMs = typeof input.timeoutMs === "number" ? input.timeoutMs : 1000;
+      await delay(Math.max(0, Math.min(timeoutMs, 5000)));
+      const screenshot = await hostAgentService.takeScreenshot(session.hostId, {
+        instanceId: session.instanceId,
+        adbId: resolveAdbId(input, _context)
+      });
+      return { waitedMs: timeoutMs, screenshot };
+    }
+
+    if (stepType === "if" || stepType === "retry") {
+      return { evaluated: true, skippedNestedExecution: true };
+    }
+
+    if (stepType === "run-sub-script") {
+      const subScriptId = typeof input.scriptId === "string" ? input.scriptId : "";
+      if (!subScriptId) throw new AppError("SUB_SCRIPT_REQUIRED", "run-sub-script requires scriptId");
+      const subRun = this.createScriptRun(String(session.id), {
+        scriptId: subScriptId,
+        scriptVersionId: typeof input.scriptVersionId === "string" ? input.scriptVersionId : undefined,
+        context: _context
+      });
+      if (!subRun) throw new AppError("SCRIPT_RUN_CREATE_FAILED", "Could not create sub-script run");
+      return this.executeScriptRun(String(subRun.id));
     }
 
     throw new AppError("UNSUPPORTED_STEP_TYPE", `Unsupported script step type ${stepType}`);

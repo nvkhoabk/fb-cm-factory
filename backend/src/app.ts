@@ -21,7 +21,7 @@ import { managerBridgeRouter } from "./modules/manager-bridge/manager-bridge.rou
 import { runtimeSessionsRouter } from "./modules/runtime-sessions/runtime-sessions.routes";
 import { runtimeRecoveryRouter } from "./modules/runtime-recovery/runtime-recovery.routes";
 import { hostAgentRouter } from "./modules/host-agent-adapter/host-agent.routes";
-import { scriptRunsRouter, scriptsRouter } from "./modules/script-runtime/script-runtime.routes";
+import { scriptRunsRouter, scriptVersionsRouter, scriptsRouter } from "./modules/script-runtime/script-runtime.routes";
 import { assetsRouter } from "./modules/assets/assets.routes";
 
 export const app = express();
@@ -52,6 +52,7 @@ function mountRoutes(prefix = "") {
   app.use(`${prefix}/runtime-sessions`, runtimeRecoveryRouter);
   app.use(`${prefix}/hosts`, hostAgentRouter);
   app.use(`${prefix}/scripts`, scriptsRouter);
+  app.use(`${prefix}/script-versions`, scriptVersionsRouter);
   app.use(`${prefix}/script-runs`, scriptRunsRouter);
   app.use(`${prefix}/assets`, assetsRouter);
 }
