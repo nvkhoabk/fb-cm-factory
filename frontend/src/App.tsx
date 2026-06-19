@@ -89,6 +89,11 @@ type WorkflowRecord = {
   description?: string | null;
   status: string;
   capacityConfig?: CapacityConfig;
+  musicPolicy?: Record<string, unknown>;
+  postContentPolicy?: Record<string, unknown>;
+  resourceRules?: Array<Record<string, unknown>>;
+  scriptMapping?: Record<string, unknown>;
+  promptMapping?: Record<string, unknown>;
 };
 
 type WorkflowRunRecord = {
@@ -667,6 +672,13 @@ export function App() {
     VIDEO_COMPOSE: 0,
     POST_CONTENT: 0
   });
+  const [workflowTemplateJson, setWorkflowTemplateJson] = useState({
+    resourceRules: "[]",
+    scriptMapping: "{}",
+    promptMapping: "{}",
+    musicPolicy: "{}",
+    postContentPolicy: "{}"
+  });
   const [capacityResult, setCapacityResult] = useState<WorkflowCapacityResponse | null>(null);
   const [instancePoolStateFilter, setInstancePoolStateFilter] = useState("");
   const [instanceCapabilityFilter, setInstanceCapabilityFilter] = useState("");
@@ -922,6 +934,16 @@ export function App() {
       ...Object.fromEntries(capacityStageOptions.map((stageType) => [stageType, Number(config[stageType] ?? 0)]))
     }));
   }, [selectedWorkflow, selectedWorkflowRun]);
+
+  useEffect(() => {
+    setWorkflowTemplateJson({
+      resourceRules: JSON.stringify(selectedWorkflow?.resourceRules ?? [], null, 2),
+      scriptMapping: JSON.stringify(selectedWorkflow?.scriptMapping ?? {}, null, 2),
+      promptMapping: JSON.stringify(selectedWorkflow?.promptMapping ?? {}, null, 2),
+      musicPolicy: JSON.stringify(selectedWorkflow?.musicPolicy ?? {}, null, 2),
+      postContentPolicy: JSON.stringify(selectedWorkflow?.postContentPolicy ?? {}, null, 2)
+    });
+  }, [selectedWorkflow]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1432,6 +1454,30 @@ export function App() {
     });
   }
 
+  async function saveWorkflowTemplateField(
+    key: keyof typeof workflowTemplateJson,
+    path: string,
+    label: string
+  ) {
+    if (!selectedWorkflow) {
+      setStatus("Select a workflow");
+      return;
+    }
+
+    let body: unknown;
+    try {
+      body = JSON.parse(workflowTemplateJson[key]);
+    } catch {
+      setStatus(`${label} must be valid JSON`);
+      return;
+    }
+
+    await adminAction(`Saving ${label}`, async () => api<WorkflowRecord>(`/workflows/${selectedWorkflow.id}/${path}`, {
+      method: "PATCH",
+      body: JSON.stringify(body)
+    }));
+  }
+
   async function loadWorkflowRunCapacity() {
     if (!selectedWorkflowRun) {
       setStatus("Select a workflow run");
@@ -1825,6 +1871,16 @@ export function App() {
                 <button disabled={!selectedWorkflowRun} onClick={() => saveWorkflowCapacity("run")}>Save Run Capacity</button>
                 <button disabled={!selectedWorkflowRun} onClick={() => allocateWorkflowCapacity()}>Allocate Capacity</button>
                 <button disabled={!selectedWorkflowRun} onClick={loadWorkflowRunCapacity}>Refresh Capacity</button>
+                <label>Resource Rules<textarea rows={10} value={workflowTemplateJson.resourceRules} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, resourceRules: event.target.value })} /></label>
+                <button disabled={!selectedWorkflow} onClick={() => saveWorkflowTemplateField("resourceRules", "resource-rules", "Resource Rules")}>Save Resource Rules</button>
+                <label>Script Mapping<textarea rows={6} value={workflowTemplateJson.scriptMapping} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, scriptMapping: event.target.value })} /></label>
+                <button disabled={!selectedWorkflow} onClick={() => saveWorkflowTemplateField("scriptMapping", "script-mapping", "Script Mapping")}>Save Script Mapping</button>
+                <label>Prompt Mapping<textarea rows={6} value={workflowTemplateJson.promptMapping} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, promptMapping: event.target.value })} /></label>
+                <button disabled={!selectedWorkflow} onClick={() => saveWorkflowTemplateField("promptMapping", "prompt-mapping", "Prompt Mapping")}>Save Prompt Mapping</button>
+                <label>Music Policy<textarea rows={5} value={workflowTemplateJson.musicPolicy} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, musicPolicy: event.target.value })} /></label>
+                <button disabled={!selectedWorkflow} onClick={() => saveWorkflowTemplateField("musicPolicy", "music-policy", "Music Policy")}>Save Music Policy</button>
+                <label>Post Content Policy<textarea rows={5} value={workflowTemplateJson.postContentPolicy} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, postContentPolicy: event.target.value })} /></label>
+                <button disabled={!selectedWorkflow} onClick={() => saveWorkflowTemplateField("postContentPolicy", "post-content-policy", "Post Content Policy")}>Save Post Content Policy</button>
               </div>
               <div className="adminTable">
                 {workflows.filter((workflow) => compactJson(workflow).toLowerCase().includes(adminSearch.toLowerCase())).slice(0, 12).map((workflow) => (
@@ -1836,6 +1892,13 @@ export function App() {
                   }}>
                     <b>{workflow.name}</b><span>{workflow.status}</span><span>{displayShortId(workflow.id)}</span><span>{workflow.description ?? "-"}</span>
                     <pre>{compactJson(workflow.capacityConfig ?? {})}</pre>
+                    <pre>{compactJson({
+                      resourceRules: workflow.resourceRules ?? [],
+                      scriptMapping: workflow.scriptMapping ?? {},
+                      promptMapping: workflow.promptMapping ?? {},
+                      musicPolicy: workflow.musicPolicy ?? {},
+                      postContentPolicy: workflow.postContentPolicy ?? {}
+                    })}</pre>
                     {workflowRuns.filter((run) => run.workflowId === workflow.id).slice(0, 4).map((run) => (
                       <div className="nestedRow" key={run.id}>
                         <span>{displayShortId(run.id)}</span><span>{run.status}</span><span>{run.currentStageNo ?? 0}</span><small>{displayDateTime(run.createdAt)}</small>

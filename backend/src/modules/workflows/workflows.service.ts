@@ -8,8 +8,13 @@ import type {
   CreateWorkflowRunInput,
   CreateWorkflowStageInput,
   FailWorkflowStageRunInput,
+  MusicPolicyInput,
+  PostContentPolicyInput,
   UpdateWorkflowInput,
-  UpdateWorkflowStageInput
+  UpdateWorkflowStageInput,
+  WorkflowPromptMappingInput,
+  WorkflowResourceRulesInput,
+  WorkflowScriptMappingInput
 } from "./workflows.schemas";
 
 const capacityStageTypes = [
@@ -52,6 +57,56 @@ export const workflowsService = {
 
   updateCapacity(id: string, input: CapacityConfigInput) {
     const workflow = workflowsRepository.updateCapacity(id, normalizeCapacityConfig(input));
+    if (!workflow) throw new AppError("WORKFLOW_NOT_FOUND", "Workflow not found", 404);
+    return workflow;
+  },
+
+  getResourceRules(id: string) {
+    return this.get(id).resourceRules ?? [];
+  },
+
+  updateResourceRules(id: string, input: WorkflowResourceRulesInput) {
+    const workflow = workflowsRepository.updateResourceRules(id, input);
+    if (!workflow) throw new AppError("WORKFLOW_NOT_FOUND", "Workflow not found", 404);
+    return workflow;
+  },
+
+  getScriptMapping(id: string) {
+    return this.get(id).scriptMapping ?? {};
+  },
+
+  updateScriptMapping(id: string, input: WorkflowScriptMappingInput) {
+    const workflow = workflowsRepository.updateScriptMapping(id, input);
+    if (!workflow) throw new AppError("WORKFLOW_NOT_FOUND", "Workflow not found", 404);
+    return workflow;
+  },
+
+  getPromptMapping(id: string) {
+    return this.get(id).promptMapping ?? {};
+  },
+
+  updatePromptMapping(id: string, input: WorkflowPromptMappingInput) {
+    const workflow = workflowsRepository.updatePromptMapping(id, input);
+    if (!workflow) throw new AppError("WORKFLOW_NOT_FOUND", "Workflow not found", 404);
+    return workflow;
+  },
+
+  getMusicPolicy(id: string) {
+    return this.get(id).musicPolicy ?? {};
+  },
+
+  updateMusicPolicy(id: string, input: MusicPolicyInput) {
+    const workflow = workflowsRepository.updateMusicPolicy(id, input);
+    if (!workflow) throw new AppError("WORKFLOW_NOT_FOUND", "Workflow not found", 404);
+    return workflow;
+  },
+
+  getPostContentPolicy(id: string) {
+    return this.get(id).postContentPolicy ?? {};
+  },
+
+  updatePostContentPolicy(id: string, input: PostContentPolicyInput) {
+    const workflow = workflowsRepository.updatePostContentPolicy(id, input);
     if (!workflow) throw new AppError("WORKFLOW_NOT_FOUND", "Workflow not found", 404);
     return workflow;
   },

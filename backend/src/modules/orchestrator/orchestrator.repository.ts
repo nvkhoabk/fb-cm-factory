@@ -310,6 +310,16 @@ export const orchestratorRepository = {
     `).all(batchType, status).map((row) => mapBatch(row as Record<string, unknown>));
   },
 
+  listWorkflowLinkedAvailableBatches() {
+    return db.prepare(`
+      SELECT * FROM production_batches
+      WHERE workflow_id IS NOT NULL
+        AND workflow_id != ''
+        AND usage_status = 'AVAILABLE'
+      ORDER BY created_at ASC
+    `).all().map((row) => mapBatch(row as Record<string, unknown>));
+  },
+
   getReusableOrAvailableMusic() {
     const row = db.prepare(`
       SELECT * FROM production_batches
@@ -337,6 +347,12 @@ export const orchestratorRepository = {
     if (!workflowId) return {};
     const row = db.prepare("SELECT music_policy_json FROM workflows WHERE id = ?").get(workflowId) as { music_policy_json?: unknown } | undefined;
     return row ? jsonParse<Record<string, unknown>>(row.music_policy_json, {}) : {};
+  },
+
+  getWorkflowResourceRules(workflowId?: string | null) {
+    if (!workflowId) return [];
+    const row = db.prepare("SELECT resource_rules_json FROM workflows WHERE id = ?").get(workflowId) as { resource_rules_json?: unknown } | undefined;
+    return row ? jsonParse<Record<string, unknown>[]>(row.resource_rules_json, []) : [];
   },
 
   reserveBatch(id: string) {

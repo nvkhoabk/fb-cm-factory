@@ -79,6 +79,61 @@ function selectMusicForPolicy(sourceBatch: ReturnType<typeof orchestratorReposit
   return musicTracks.find((music) => musicMatches(sourceBatch, music, policy.matchAttributes)) ?? null;
 }
 
+type TriggerBatch = ReturnType<typeof orchestratorRepository.listTriggerBatches>[number];
+type ActiveRule = ReturnType<typeof orchestratorRepository.listActiveRules>[number];
+
+type ResourceDrivenRule = {
+  id?: string | null;
+  targetStageType: string;
+  config: Record<string, unknown>;
+  resourceRule?: Record<string, unknown>;
+  ruleSource: "GLOBAL" | "WORKFLOW_RESOURCE";
+};
+
+function parseRuleTrigger(trigger: unknown) {
+  const [batchType, status] = String(trigger ?? "").split(".");
+  if (!batchType || !status) return null;
+  return { batchType, status };
+}
+
+function normalizeWorkflowResourceRule(resourceRule: Record<string, unknown>): ResourceDrivenRule | null {
+  const targetStageType = String(resourceRule.targetJobType ?? "").trim();
+  if (!targetStageType) return null;
+  const requires = Array.isArray(resourceRule.requires)
+    ? resourceRule.requires.map((item) => String(item))
+    : [];
+  return {
+    id: null,
+    targetStageType,
+    resourceRule,
+    ruleSource: "WORKFLOW_RESOURCE",
+    config: {
+      ...resourceRule,
+      requiresMusic: requires.includes("MUSIC_TRACK") ? true : resourceRule.requiresMusic
+    }
+  };
+}
+
+function workflowRulesForBatch(sourceBatch: TriggerBatch) {
+  if (typeof sourceBatch.workflowId !== "string" || !sourceBatch.workflowId) return [];
+  return orchestratorRepository.getWorkflowResourceRules(sourceBatch.workflowId)
+    .filter((rule) => {
+      const trigger = parseRuleTrigger(rule.trigger);
+      return trigger?.batchType === sourceBatch.batchType && trigger.status === sourceBatch.status;
+    })
+    .map(normalizeWorkflowResourceRule)
+    .filter((rule): rule is ResourceDrivenRule => Boolean(rule));
+}
+
+function globalRuleForScan(rule: ActiveRule): ResourceDrivenRule {
+  return {
+    id: rule.id,
+    targetStageType: rule.targetStageType,
+    config: rule.config,
+    ruleSource: "GLOBAL"
+  };
+}
+
 export const orchestratorService = {
   listJobs: () => orchestratorRepository.listJobs(),
 
@@ -112,8 +167,95 @@ export const orchestratorService = {
   scan() {
     orchestratorRepository.seedDefaultRulesIfEmpty();
 
-    const createdJobs = [];
+    const createdJobs: Array<NonNullable<ReturnType<typeof orchestratorRepository.createJob>>> = [];
     const activeRules = orchestratorRepository.listActiveRules();
+    const workflowHandledBatchIds = new Set<string>();
+
+    const createJobForRule = (rule: ResourceDrivenRule, sourceBatch: TriggerBatch) => {
+      const existing = orchestratorRepository.getJobBySourceAndStage(
+        sourceBatch.id,
+        rule.targetStageType
+      );
+      if (existing) return null;
+
+      const payload: Record<string, unknown> = {
+        ruleId: rule.id ?? null,
+        ruleSource: rule.ruleSource,
+        sourceBatchId: sourceBatch.id,
+        sourceBatchType: sourceBatch.batchType,
+        workflowId: sourceBatch.workflowId ?? undefined,
+        workflowRunId: sourceBatch.workflowRunId ?? undefined
+      };
+
+      if (rule.resourceRule) {
+        payload.resourceRule = rule.resourceRule;
+        payload.outputBatchType = rule.resourceRule.outputBatchType;
+        payload.scriptCategory = rule.resourceRule.scriptCategory;
+        payload.promptCategory = rule.resourceRule.promptCategory;
+      }
+
+      const requiresMusic = rule.targetStageType === "VIDEO_COMPOSE" && rule.config.requiresMusic !== false;
+
+      if (requiresMusic) {
+        const musicPolicy = resolveMusicPolicy(sourceBatch);
+        const musicBatch = selectMusicForPolicy(sourceBatch, musicPolicy);
+        if (!musicBatch) {
+          if (musicPolicy.mode === "CREATE_DEDICATED") {
+            const existingMusicJob = orchestratorRepository.getJobBySourceAndStage(sourceBatch.id, "MUSIC_GENERATE");
+            if (!existingMusicJob) {
+              const musicJob = orchestratorRepository.createJob({
+                ruleId: rule.id,
+                sourceBatchId: sourceBatch.id,
+                targetStageType: "MUSIC_GENERATE",
+                payload: {
+                  ruleId: rule.id ?? null,
+                  ruleSource: rule.ruleSource,
+                  sourceBatchId: sourceBatch.id,
+                  sourceBatchType: sourceBatch.batchType,
+                  workflowId: sourceBatch.workflowId ?? undefined,
+                  workflowRunId: sourceBatch.workflowRunId ?? undefined,
+                  musicPolicy,
+                  requestedForStageType: "VIDEO_COMPOSE"
+                }
+              });
+              if (musicJob) createdJobs.push(musicJob);
+            }
+          }
+          return null;
+        }
+
+        payload.musicBatchId = musicBatch.id;
+        payload.musicUsageStatus = musicBatch.usageStatus;
+        payload.musicPolicy = musicPolicy;
+        payload.musicMatchAttributes = musicPolicy.matchAttributes;
+      }
+
+      const job = orchestratorRepository.createJob({
+        ruleId: rule.id,
+        sourceBatchId: sourceBatch.id,
+        targetStageType: rule.targetStageType,
+        payload
+      });
+
+      orchestratorRepository.reserveBatch(sourceBatch.id);
+
+      if (typeof payload.musicBatchId === "string" && payload.musicUsageStatus === "AVAILABLE") {
+        orchestratorRepository.reserveBatch(payload.musicBatchId);
+      }
+
+      if (job) createdJobs.push(job);
+      return job;
+    };
+
+    for (const sourceBatch of orchestratorRepository.listWorkflowLinkedAvailableBatches()) {
+      const workflowRules = workflowRulesForBatch(sourceBatch);
+      if (workflowRules.length === 0) continue;
+
+      for (const workflowRule of workflowRules) {
+        createJobForRule(workflowRule, sourceBatch);
+      }
+      workflowHandledBatchIds.add(sourceBatch.id);
+    }
 
     for (const rule of activeRules) {
       const sourceBatches = orchestratorRepository.listTriggerBatches(
@@ -122,65 +264,18 @@ export const orchestratorService = {
       );
 
       for (const sourceBatch of sourceBatches) {
-        const existing = orchestratorRepository.getJobBySourceAndStage(
-          sourceBatch.id,
-          rule.targetStageType
-        );
-        if (existing) continue;
+        if (workflowHandledBatchIds.has(sourceBatch.id)) continue;
 
-        const payload: Record<string, unknown> = {
-          ruleId: rule.id,
-          sourceBatchId: sourceBatch.id,
-          sourceBatchType: sourceBatch.batchType
-        };
-
-        const requiresMusic = rule.targetStageType === "VIDEO_COMPOSE" && rule.config.requiresMusic !== false;
-
-        if (requiresMusic) {
-          const musicPolicy = resolveMusicPolicy(sourceBatch);
-          const musicBatch = selectMusicForPolicy(sourceBatch, musicPolicy);
-          if (!musicBatch) {
-            if (musicPolicy.mode === "CREATE_DEDICATED") {
-              const existingMusicJob = orchestratorRepository.getJobBySourceAndStage(sourceBatch.id, "MUSIC_GENERATE");
-              if (!existingMusicJob) {
-                const musicJob = orchestratorRepository.createJob({
-                  ruleId: rule.id,
-                  sourceBatchId: sourceBatch.id,
-                  targetStageType: "MUSIC_GENERATE",
-                  payload: {
-                    ruleId: rule.id,
-                    sourceBatchId: sourceBatch.id,
-                    sourceBatchType: sourceBatch.batchType,
-                    musicPolicy,
-                    requestedForStageType: "VIDEO_COMPOSE"
-                  }
-                });
-                createdJobs.push(musicJob);
-              }
-            }
-            continue;
+        const workflowRules = workflowRulesForBatch(sourceBatch);
+        if (workflowRules.length > 0) {
+          for (const workflowRule of workflowRules) {
+            createJobForRule(workflowRule, sourceBatch);
           }
-
-          payload.musicBatchId = musicBatch.id;
-          payload.musicUsageStatus = musicBatch.usageStatus;
-          payload.musicPolicy = musicPolicy;
-          payload.musicMatchAttributes = musicPolicy.matchAttributes;
+          workflowHandledBatchIds.add(sourceBatch.id);
+          continue;
         }
 
-        const job = orchestratorRepository.createJob({
-          ruleId: rule.id,
-          sourceBatchId: sourceBatch.id,
-          targetStageType: rule.targetStageType,
-          payload
-        });
-
-        orchestratorRepository.reserveBatch(sourceBatch.id);
-
-        if (typeof payload.musicBatchId === "string" && payload.musicUsageStatus === "AVAILABLE") {
-          orchestratorRepository.reserveBatch(payload.musicBatchId);
-        }
-
-        createdJobs.push(job);
+        createJobForRule(globalRuleForScan(rule), sourceBatch);
       }
     }
 

@@ -633,6 +633,10 @@ export function migrate() {
   addColumnIfMissing("instances", "last_error_at", "TEXT");
   addColumnIfMissing("workflows", "capacity_config_json", "TEXT DEFAULT '{}'");
   addColumnIfMissing("workflows", "music_policy_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("workflows", "post_content_policy_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("workflows", "resource_rules_json", "TEXT DEFAULT '[]'");
+  addColumnIfMissing("workflows", "script_mapping_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("workflows", "prompt_mapping_json", "TEXT DEFAULT '{}'");
   addColumnIfMissing("workflow_runs", "capacity_config_json", "TEXT DEFAULT '{}'");
 
   db.prepare(`

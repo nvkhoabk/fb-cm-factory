@@ -21,11 +21,30 @@ export const musicPolicySchema = z.object({
   matchAttributes: z.array(z.string()).default([])
 }).partial();
 
+export const postContentPolicySchema = z.record(z.string(), z.unknown()).default({});
+
+export const workflowResourceRuleSchema = z.object({
+  trigger: z.string().min(1),
+  targetJobType: z.string().min(1),
+  outputBatchType: z.string().optional(),
+  requires: z.array(z.string()).optional(),
+  scriptCategory: z.string().optional(),
+  promptCategory: z.string().optional()
+}).passthrough();
+
+export const workflowResourceRulesSchema = z.array(workflowResourceRuleSchema).default([]);
+export const workflowScriptMappingSchema = z.record(z.string(), z.unknown()).default({});
+export const workflowPromptMappingSchema = z.record(z.string(), z.unknown()).default({});
+
 export const createWorkflowSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   status: z.string().default("draft"),
-  musicPolicy: musicPolicySchema.optional()
+  musicPolicy: musicPolicySchema.optional(),
+  postContentPolicy: postContentPolicySchema.optional(),
+  resourceRules: workflowResourceRulesSchema.optional(),
+  scriptMapping: workflowScriptMappingSchema.optional(),
+  promptMapping: workflowPromptMappingSchema.optional()
 });
 
 export const updateWorkflowSchema = createWorkflowSchema.partial();
@@ -72,3 +91,8 @@ export type CreateWorkflowRunInput = z.infer<typeof createWorkflowRunSchema>;
 export type CompleteWorkflowStageRunInput = z.infer<typeof completeWorkflowStageRunSchema>;
 export type FailWorkflowStageRunInput = z.infer<typeof failWorkflowStageRunSchema>;
 export type CapacityConfigInput = z.infer<typeof capacityConfigSchema>;
+export type MusicPolicyInput = z.infer<typeof musicPolicySchema>;
+export type PostContentPolicyInput = z.infer<typeof postContentPolicySchema>;
+export type WorkflowResourceRulesInput = z.infer<typeof workflowResourceRulesSchema>;
+export type WorkflowScriptMappingInput = z.infer<typeof workflowScriptMappingSchema>;
+export type WorkflowPromptMappingInput = z.infer<typeof workflowPromptMappingSchema>;

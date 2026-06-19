@@ -9,7 +9,12 @@ import type {
   UpdateWorkflowInput,
   UpdateWorkflowStageInput,
   CapacityConfigInput,
-  WorkflowRunStatus
+  MusicPolicyInput,
+  PostContentPolicyInput,
+  WorkflowPromptMappingInput,
+  WorkflowResourceRulesInput,
+  WorkflowRunStatus,
+  WorkflowScriptMappingInput
 } from "./workflows.schemas";
 
 function mapWorkflow(row: Record<string, unknown>) {
@@ -20,6 +25,10 @@ function mapWorkflow(row: Record<string, unknown>) {
     status: row.status,
     capacityConfig: jsonParse(row.capacity_config_json, {}),
     musicPolicy: jsonParse(row.music_policy_json, {}),
+    postContentPolicy: jsonParse(row.post_content_policy_json, {}),
+    resourceRules: jsonParse(row.resource_rules_json, []),
+    scriptMapping: jsonParse(row.script_mapping_json, {}),
+    promptMapping: jsonParse(row.prompt_mapping_json, {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -94,9 +103,11 @@ export const workflowsRepository = {
 
     db.prepare(`
       INSERT INTO workflows (
-        id, name, description, status, music_policy_json, created_at, updated_at
+        id, name, description, status, music_policy_json, post_content_policy_json,
+        resource_rules_json, script_mapping_json, prompt_mapping_json, created_at, updated_at
       ) VALUES (
-        @id, @name, @description, @status, @musicPolicyJson, @createdAt, @updatedAt
+        @id, @name, @description, @status, @musicPolicyJson, @postContentPolicyJson,
+        @resourceRulesJson, @scriptMappingJson, @promptMappingJson, @createdAt, @updatedAt
       )
     `).run({
       id,
@@ -104,6 +115,10 @@ export const workflowsRepository = {
       description: input.description ?? null,
       status: input.status,
       musicPolicyJson: jsonString(input.musicPolicy ?? {}, {}),
+      postContentPolicyJson: jsonString(input.postContentPolicy ?? {}, {}),
+      resourceRulesJson: jsonString(input.resourceRules ?? [], []),
+      scriptMappingJson: jsonString(input.scriptMapping ?? {}, {}),
+      promptMappingJson: jsonString(input.promptMapping ?? {}, {}),
       createdAt,
       updatedAt: createdAt
     });
@@ -121,6 +136,10 @@ export const workflowsRepository = {
           description = @description,
           status = @status,
           music_policy_json = @musicPolicyJson,
+          post_content_policy_json = @postContentPolicyJson,
+          resource_rules_json = @resourceRulesJson,
+          script_mapping_json = @scriptMappingJson,
+          prompt_mapping_json = @promptMappingJson,
           updated_at = @updatedAt
       WHERE id = @id
     `).run({
@@ -129,6 +148,10 @@ export const workflowsRepository = {
       description: input.description ?? current.description,
       status: input.status ?? current.status,
       musicPolicyJson: jsonString(input.musicPolicy ?? current.musicPolicy ?? {}, {}),
+      postContentPolicyJson: jsonString(input.postContentPolicy ?? current.postContentPolicy ?? {}, {}),
+      resourceRulesJson: jsonString(input.resourceRules ?? current.resourceRules ?? [], []),
+      scriptMappingJson: jsonString(input.scriptMapping ?? current.scriptMapping ?? {}, {}),
+      promptMappingJson: jsonString(input.promptMapping ?? current.promptMapping ?? {}, {}),
       updatedAt: now()
     });
 
@@ -147,6 +170,96 @@ export const workflowsRepository = {
     `).run({
       id,
       capacityConfigJson: jsonString(capacityConfig, {}),
+      updatedAt: now()
+    });
+
+    return this.get(id);
+  },
+
+  updateMusicPolicy(id: string, musicPolicy: MusicPolicyInput) {
+    const current = this.get(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE workflows
+      SET music_policy_json = @musicPolicyJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      musicPolicyJson: jsonString(musicPolicy, {}),
+      updatedAt: now()
+    });
+
+    return this.get(id);
+  },
+
+  updatePostContentPolicy(id: string, postContentPolicy: PostContentPolicyInput) {
+    const current = this.get(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE workflows
+      SET post_content_policy_json = @postContentPolicyJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      postContentPolicyJson: jsonString(postContentPolicy, {}),
+      updatedAt: now()
+    });
+
+    return this.get(id);
+  },
+
+  updateResourceRules(id: string, resourceRules: WorkflowResourceRulesInput) {
+    const current = this.get(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE workflows
+      SET resource_rules_json = @resourceRulesJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      resourceRulesJson: jsonString(resourceRules, []),
+      updatedAt: now()
+    });
+
+    return this.get(id);
+  },
+
+  updateScriptMapping(id: string, scriptMapping: WorkflowScriptMappingInput) {
+    const current = this.get(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE workflows
+      SET script_mapping_json = @scriptMappingJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      scriptMappingJson: jsonString(scriptMapping, {}),
+      updatedAt: now()
+    });
+
+    return this.get(id);
+  },
+
+  updatePromptMapping(id: string, promptMapping: WorkflowPromptMappingInput) {
+    const current = this.get(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE workflows
+      SET prompt_mapping_json = @promptMappingJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      promptMappingJson: jsonString(promptMapping, {}),
       updatedAt: now()
     });
 
