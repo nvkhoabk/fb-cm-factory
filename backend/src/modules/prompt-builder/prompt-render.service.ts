@@ -123,6 +123,13 @@ function objectValue(value: unknown) {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};
 }
 
+function charactersFromBatchMetadata(metadata: Record<string, unknown>) {
+  const groupBatch = objectValue(metadata.characterGroupBatch);
+  const sourceAssetsSnapshot = objectValue(metadata.sourceAssetsSnapshot ?? groupBatch.sourceAssetsSnapshot);
+  const characters = sourceAssetsSnapshot.characters;
+  return Array.isArray(characters) ? characters.map((item) => objectValue(item)) : [];
+}
+
 export const promptRenderService = {
   getGroupPromptContext(groupId: string) {
     const group = getGroup(groupId);
@@ -185,10 +192,15 @@ export const promptRenderService = {
     const workflow = getWorkflow(input.workflowId);
     const attributes = groupAttributeValues(input.groupId);
     const finalVideoMetadata = input.finalVideoMetadata ?? {};
+    const characters = charactersFromBatchMetadata(finalVideoMetadata);
     const values: Record<string, string> = {
       ...attributes,
       "group.name": String(group.name ?? ""),
       "group.size": String(groupSize(input.groupId)),
+      "character.names": characters.map((item) => {
+        const character = objectValue(item.character);
+        return String(character.name ?? "");
+      }).filter(Boolean).join(", "),
       "workflow.name": workflow ? String(workflow.name ?? "") : "",
       "finalVideo.title": String(finalVideoMetadata.title ?? finalVideoMetadata.name ?? ""),
       "finalVideo.caption": String(finalVideoMetadata.caption ?? ""),
@@ -218,7 +230,12 @@ export const promptRenderService = {
       prompt: replacePlaceholders(templateVersion.template_text, values),
       templateVersionId: templateVersion.id,
       values,
-      hashtags
+      hashtags,
+      inputs: {
+        characterMetadata: characters.map((item) => item.character).filter(Boolean),
+        groupAttributes: attributes,
+        finalVideoMetadata
+      }
     };
   },
 
@@ -262,7 +279,12 @@ export const promptRenderService = {
       hashtags,
       title,
       cta: String(metadata.cta ?? "Watch now"),
-      platform: String(metadata.platform ?? "facebook")
+      platform: String(metadata.platform ?? "facebook"),
+      inputs: {
+        characterMetadata: charactersFromBatchMetadata(metadata).map((item) => item.character).filter(Boolean),
+        groupAttributes: typeof batch.attributes === "object" && batch.attributes ? batch.attributes : {},
+        finalVideoMetadata: metadata
+      }
     };
   },
 

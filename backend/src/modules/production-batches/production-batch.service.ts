@@ -1,6 +1,7 @@
 import { AppError } from "../shared/resource";
 import { orchestratorRepository } from "../orchestrator/orchestrator.repository";
 import { orchestratorService } from "../orchestrator/orchestrator.service";
+import { characterSourceAssetsService } from "../character-assets/character-source-assets.service";
 import { productionBatchRepository } from "./production-batch.repository";
 import type {
   BatchType,
@@ -9,6 +10,10 @@ import type {
   CreateProductionBatchItemInput,
   UpdateProductionBatchInput
 } from "./production-batch.schemas";
+
+function objectValue(value: unknown) {
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
 
 export const productionBatchService = {
   list: () => productionBatchRepository.list(),
@@ -21,7 +26,27 @@ export const productionBatchService = {
     return batch;
   },
 
-  create: (input: CreateProductionBatchInput) => productionBatchRepository.create(input),
+  create(input: CreateProductionBatchInput) {
+    if (!input.sourceGroupId) return productionBatchRepository.create(input);
+
+    const sourceAssets = characterSourceAssetsService.resolveCharacterGroupSourceAssets(input.sourceGroupId);
+    const metadata = objectValue(input.metadata);
+    return productionBatchRepository.create({
+      ...input,
+      metadata: {
+        ...metadata,
+        groupId: input.sourceGroupId,
+        characterIds: sourceAssets.characterIds,
+        sourceAssetsSnapshot: sourceAssets,
+        characterGroupBatch: {
+          groupId: input.sourceGroupId,
+          characterIds: sourceAssets.characterIds,
+          attributesSnapshot: sourceAssets.attributesSnapshot,
+          sourceAssetsSnapshot: sourceAssets
+        }
+      }
+    });
+  },
 
   update(id: string, input: UpdateProductionBatchInput) {
     const batch = productionBatchRepository.update(id, input);

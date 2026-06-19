@@ -23,6 +23,7 @@ function mapWorkflow(row: Record<string, unknown>) {
     name: row.name,
     description: row.description ?? null,
     status: row.status,
+    mode: "RESOURCE_DRIVEN",
     capacityConfig: jsonParse(row.capacity_config_json, {}),
     musicPolicy: jsonParse(row.music_policy_json, {}),
     postContentPolicy: jsonParse(row.post_content_policy_json, {}),

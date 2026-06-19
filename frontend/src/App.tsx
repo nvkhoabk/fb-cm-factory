@@ -88,6 +88,7 @@ type WorkflowRecord = {
   name: string;
   description?: string | null;
   status: string;
+  mode?: string;
   capacityConfig?: CapacityConfig;
   musicPolicy?: Record<string, unknown>;
   postContentPolicy?: Record<string, unknown>;
@@ -199,6 +200,70 @@ type ProductionBatch = {
   createdAt: string;
 };
 
+type AssetRecord = {
+  id: string;
+  name: string;
+  assetType?: string | null;
+  assetCategory?: string | null;
+  assetSubType?: string | null;
+  mediaType?: string | null;
+  groupId?: string | null;
+  characterId?: string | null;
+  versionGroupId?: string | null;
+  versionNo?: number;
+  isBestVersion?: boolean;
+  publicUrl?: string | null;
+  previewUrl?: string | null;
+  filePath?: string | null;
+  usageStatus?: string | null;
+  usagePolicy?: string | null;
+  qualityStatus?: string | null;
+  status?: string | null;
+  tags?: string[];
+  attributes?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  sourceAssetId?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+type AssetCategory = {
+  id: string;
+  label: string;
+  subTypes?: string[];
+};
+
+type CharacterImportFile = {
+  fileName: string;
+  dataUrl?: string;
+  publicUrl?: string;
+  filePath?: string;
+  mimeType?: string;
+  size?: number;
+};
+
+type CharacterImportPairPreview = {
+  name: string;
+  status: "alive" | "rip" | null;
+  age: number | null;
+  young: CharacterImportFile | null;
+  old: CharacterImportFile | null;
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  existingCharacter?: Record<string, unknown> | null;
+  existingAssetCount?: number;
+};
+
+type CharacterImportResult = {
+  importedCount: number;
+  skippedCount: number;
+  preview?: CharacterImportPairPreview[];
+  imported?: Array<Record<string, unknown>>;
+  skipped?: Array<Record<string, unknown>>;
+  history?: Record<string, unknown>;
+};
+
 type OrchestratorJob = {
   id: string;
   sourceBatchId: string;
@@ -269,11 +334,12 @@ type ManagementSection =
   | "scripts"
   | "prompt-templates"
   | "character-groups"
+  | "character-import"
   | "production-resources"
   | "orchestrator-rules"
   | "jobs"
   | "runtime-sessions";
-type AppPage = "control-center" | "studio" | "production-jobs" | "management";
+type AppPage = "control-center" | "studio" | "asset-center" | "production-jobs" | "management";
 
 type PromptPreviews = Record<PromptKind, string>;
 type PromptSelections = Record<PromptKind, string>;
@@ -303,6 +369,13 @@ const pageSizeOptions = [10, 20, 50];
 const instancePoolStateOptions = ["AVAILABLE", "STANDBY", "WORKFLOW", "MAINTENANCE", "DISABLED", "RETIRED"];
 const capacityStageOptions = ["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT"];
 const productionBatchTypeOptions = ["CHARACTER_GROUP", "IMAGE_BATCH", "VIDEO_BATCH", "MUSIC_TRACK", "FINAL_VIDEO", "POST_CONTENT"];
+const assetCategoryTabs = [
+  { id: "CHARACTER_IMAGE", label: "Character Images" },
+  { id: "PROMPT_TEMPLATE", label: "Prompt Templates" },
+  { id: "MUSIC_TRACK", label: "Music Library" },
+  { id: "VIDEO_TEMPLATE", label: "Video Templates" },
+  { id: "POST_TEMPLATE", label: "Post Templates" }
+];
 const jobBoardStatusOptions = ["PENDING", "ALLOCATED", "RUNNING", "COMPLETED", "FAILED"];
 const promptCategoryOptions = ["image", "video", "music", "POST_CONTENT"];
 const musicPolicyModes = ["RANDOM_LIBRARY", "REQUIRE_MATCHED", "CREATE_DEDICATED"];
@@ -389,6 +462,15 @@ function displayJobPool(job: OrchestratorJob, pools: InstancePool[]) {
   return stageTypeToPoolType[job.targetStageType] ?? "-";
 }
 
+function adbMappingConfidence(instance?: InstanceRecord | null) {
+  const confidence = instance?.metadata?.adbMappingConfidence;
+  return typeof confidence === "string" ? confidence : "";
+}
+
+function hasUnknownAdbMapping(instance?: InstanceRecord | null) {
+  return !instance?.adbId || adbMappingConfidence(instance) === "unknown";
+}
+
 function getJobPoolType(job: OrchestratorJob, pools: InstancePool[]) {
   const payload = getRecord(job.payload);
   const poolId = getString(payload.poolId);
@@ -462,6 +544,25 @@ function parseJsonText(value: string, fallback: Record<string, unknown> = {}) {
   } catch {
     return fallback;
   }
+}
+
+function fileToImportFile(file: File): Promise<CharacterImportFile> {
+  return new Promise((resolve) => {
+    const objectUrl = URL.createObjectURL(file);
+    const base = {
+      fileName: file.name,
+      publicUrl: objectUrl,
+      mimeType: file.type,
+      size: file.size
+    };
+    const reader = new FileReader();
+    reader.onload = () => resolve({
+      ...base,
+      dataUrl: typeof reader.result === "string" ? reader.result : undefined
+    });
+    reader.onerror = () => resolve(base);
+    reader.readAsDataURL(file);
+  });
 }
 
 function postContentMetadata(batch: ProductionBatch) {
@@ -613,6 +714,8 @@ export function App() {
   const [pools, setPools] = useState<InstancePool[]>([]);
   const [instances, setInstances] = useState<InstanceRecord[]>([]);
   const [batches, setBatches] = useState<ProductionBatch[]>([]);
+  const [assets, setAssets] = useState<AssetRecord[]>([]);
+  const [assetCategories, setAssetCategories] = useState<AssetCategory[]>([]);
   const [jobs, setJobs] = useState<OrchestratorJob[]>([]);
   const [runtimeSessions, setRuntimeSessions] = useState<RuntimeSession[]>([]);
   const [scriptRuns, setScriptRuns] = useState<ScriptRun[]>([]);
@@ -692,6 +795,33 @@ export function App() {
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [selectedResourceId, setSelectedResourceId] = useState("");
   const [resourceTypeFilter, setResourceTypeFilter] = useState("");
+  const [assetTab, setAssetTab] = useState("CHARACTER_IMAGE");
+  const [assetSearch, setAssetSearch] = useState("");
+  const [assetTagFilter, setAssetTagFilter] = useState("");
+  const [assetAttributeFilter, setAssetAttributeFilter] = useState("");
+  const [selectedAssetId, setSelectedAssetId] = useState("");
+  const [assetForm, setAssetForm] = useState({
+    name: "",
+    assetCategory: "CHARACTER_IMAGE",
+    assetSubType: "YOUNG_ORIGINAL_IMAGE",
+    mediaType: "image",
+    groupId: "",
+    characterId: "",
+    publicUrl: "",
+    filePath: "",
+    tags: "",
+    attributes: "{}",
+    metadata: "{}",
+    sourceAssetId: "",
+    usageStatus: "available",
+    usagePolicy: "reusable",
+    qualityStatus: "draft"
+  });
+  const [characterImportMode, setCharacterImportMode] = useState<"pair" | "bulk">("pair");
+  const [characterImportFiles, setCharacterImportFiles] = useState<CharacterImportFile[]>([]);
+  const [characterImportPreview, setCharacterImportPreview] = useState<CharacterImportPairPreview[]>([]);
+  const [characterImportResult, setCharacterImportResult] = useState<CharacterImportResult | null>(null);
+  const [createCharacterGroupCandidates, setCreateCharacterGroupCandidates] = useState(false);
   const [adminSearch, setAdminSearch] = useState("");
   const [adminJson, setAdminJson] = useState("{}");
   const [hostForm, setHostForm] = useState({ hostId: "", name: "", baseUrl: "http://localhost:3300", apiKey: "", status: "active" });
@@ -837,6 +967,38 @@ export function App() {
     const directJobs = jobs.filter((job) => job.sourceBatchId === selectedBatch.id);
     return batches.filter((batch) => directJobs.some((job) => batchMatchesJob(batch, job)));
   }, [batches, jobs, selectedBatch]);
+  const selectedAsset = useMemo(
+    () => assets.find((asset) => asset.id === selectedAssetId) ?? null,
+    [assets, selectedAssetId]
+  );
+  const assetTagOptions = useMemo(
+    () => [...new Set(assets.flatMap((asset) => asset.tags ?? []))].sort(),
+    [assets]
+  );
+  const assetAttributeOptions = useMemo(
+    () => [...new Set(assets.flatMap((asset) => Object.keys(asset.attributes ?? {})))].sort(),
+    [assets]
+  );
+  const filteredAssets = useMemo(() => {
+    const search = assetSearch.toLowerCase();
+    return assets.filter((asset) => {
+      const haystack = compactJson(asset).toLowerCase();
+      return (asset.assetCategory ?? asset.assetType) === assetTab
+        && (!assetSearch || haystack.includes(search))
+        && (!assetTagFilter || (asset.tags ?? []).includes(assetTagFilter))
+        && (!assetAttributeFilter || Object.keys(asset.attributes ?? {}).includes(assetAttributeFilter));
+    });
+  }, [assetAttributeFilter, assetSearch, assetTab, assetTagFilter, assets]);
+  const selectedAssetVersions = useMemo(
+    () => selectedAsset ? assets.filter((asset) => (asset.versionGroupId ?? asset.id) === (selectedAsset.versionGroupId ?? selectedAsset.id)) : [],
+    [assets, selectedAsset]
+  );
+  const selectedAssetLineage = useMemo(
+    () => selectedAsset
+      ? assets.filter((asset) => asset.sourceAssetId === selectedAsset.id || asset.id === selectedAsset.sourceAssetId)
+      : [],
+    [assets, selectedAsset]
+  );
 
   const loadData = useCallback(async () => {
     setStatus("Loading studio data");
@@ -850,6 +1012,8 @@ export function App() {
       instanceData,
       poolData,
       batchData,
+      assetData,
+      assetCategoryData,
       jobData,
       sessionData,
       scriptRunData,
@@ -865,6 +1029,8 @@ export function App() {
       api<InstanceRecord[]>("/instances"),
       api<InstancePool[]>("/instance-pools"),
       api<ProductionBatch[]>("/production-batches"),
+      api<AssetRecord[]>("/assets"),
+      api<AssetCategory[]>("/assets/categories"),
       api<OrchestratorJob[]>("/orchestrator/jobs"),
       api<RuntimeSession[]>("/runtime-sessions"),
       api<ScriptRun[]>("/script-runs"),
@@ -885,6 +1051,8 @@ export function App() {
 
     setPools(poolDetails);
     setBatches(batchData);
+    setAssets(assetData);
+    setAssetCategories(assetCategoryData);
     setJobs(jobData);
     setRuntimeSessions(sessionData);
     setScriptRuns(scriptRunData);
@@ -899,6 +1067,7 @@ export function App() {
     setSelectedScriptId((current) => current || scriptData[0]?.id || "");
     setSelectedTemplateId((current) => current || templateData[0]?.id || "");
     setSelectedGroupId((current) => current || groupData[0]?.id || "");
+    setSelectedAssetId((current) => current || assetData[0]?.id || "");
 
     const nextSelections = { image: "", video: "", music: "" };
     for (const template of templateData) {
@@ -978,6 +1147,27 @@ export function App() {
   }, [selectedWorkflow]);
 
   useEffect(() => {
+    if (!selectedAsset) return;
+    setAssetForm({
+      name: selectedAsset.name ?? "",
+      assetCategory: selectedAsset.assetCategory ?? selectedAsset.assetType ?? assetTab,
+      assetSubType: selectedAsset.assetSubType ?? "",
+      mediaType: selectedAsset.mediaType ?? "unknown",
+      groupId: selectedAsset.groupId ?? "",
+      characterId: selectedAsset.characterId ?? "",
+      publicUrl: selectedAsset.publicUrl ?? selectedAsset.previewUrl ?? "",
+      filePath: selectedAsset.filePath ?? "",
+      tags: (selectedAsset.tags ?? []).join(", "),
+      attributes: JSON.stringify(selectedAsset.attributes ?? {}, null, 2),
+      metadata: JSON.stringify(selectedAsset.metadata ?? {}, null, 2),
+      sourceAssetId: selectedAsset.sourceAssetId ?? "",
+      usageStatus: selectedAsset.usageStatus ?? "available",
+      usagePolicy: selectedAsset.usagePolicy ?? "reusable",
+      qualityStatus: selectedAsset.qualityStatus ?? "draft"
+    });
+  }, [assetTab, selectedAsset]);
+
+  useEffect(() => {
     let cancelled = false;
     async function renderAll() {
       if (!selectedPrimaryGroup) return;
@@ -1048,6 +1238,162 @@ export function App() {
     );
   }
 
+  function assetPayload(overrides: Partial<typeof assetForm> = {}) {
+    const form = { ...assetForm, ...overrides };
+    return {
+      name: form.name,
+      assetCategory: form.assetCategory,
+      assetType: form.assetCategory,
+      assetSubType: form.assetSubType || undefined,
+      mediaType: form.mediaType,
+      groupId: form.assetCategory === "CHARACTER_IMAGE" ? undefined : form.groupId || undefined,
+      characterId: form.characterId || undefined,
+      publicUrl: form.publicUrl || undefined,
+      previewUrl: form.publicUrl || undefined,
+      filePath: form.filePath || undefined,
+      tags: form.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+      attributes: parseJsonText(form.attributes, {}),
+      metadata: parseJsonText(form.metadata, {}),
+      sourceAssetId: form.sourceAssetId || undefined,
+      usageStatus: form.usageStatus,
+      usagePolicy: form.usagePolicy,
+      qualityStatus: form.qualityStatus,
+      status: "available"
+    };
+  }
+
+  async function createAsset() {
+    await adminAction("Creating asset", async () => {
+      const asset = await api<AssetRecord>("/assets", {
+        method: "POST",
+        body: JSON.stringify(assetPayload())
+      });
+      setSelectedAssetId(asset.id);
+      return asset;
+    });
+  }
+
+  async function updateSelectedAsset() {
+    if (!selectedAsset) {
+      setStatus("Select an asset");
+      return;
+    }
+    await adminAction("Updating asset", () => api<AssetRecord>(`/assets/${selectedAsset.id}`, {
+      method: "PATCH",
+      body: JSON.stringify(assetPayload())
+    }));
+  }
+
+  async function createAssetVersion() {
+    if (!selectedAsset) {
+      setStatus("Select an asset");
+      return;
+    }
+    await adminAction("Creating asset version", async () => {
+      const version = await api<AssetRecord>("/assets", {
+        method: "POST",
+        body: JSON.stringify({
+          ...assetPayload({
+            name: assetForm.name || `${selectedAsset.name} v${(selectedAssetVersions.length || 1) + 1}`,
+            sourceAssetId: selectedAsset.id
+          }),
+          versionGroupId: selectedAsset.versionGroupId ?? selectedAsset.id,
+          versionNo: Math.max(0, ...selectedAssetVersions.map((asset) => Number(asset.versionNo ?? 0))) + 1,
+          isBestVersion: false
+        })
+      });
+      setSelectedAssetId(version.id);
+      return version;
+    });
+  }
+
+  async function setBestAsset(assetId = selectedAssetId) {
+    if (!assetId) return;
+    await adminAction("Setting best version", () => api<AssetRecord>(`/assets/${assetId}/set-best`, { method: "POST" }));
+  }
+
+  async function deleteSelectedAsset() {
+    if (!selectedAsset) return;
+    await adminAction("Deleting asset", () => api(`/assets/${selectedAsset.id}`, { method: "DELETE" }));
+    setSelectedAssetId("");
+  }
+
+  async function addCharacterImportFiles(fileList: FileList | File[]) {
+    const next = await Promise.all(Array.from(fileList).map(fileToImportFile));
+    setCharacterImportFiles((current) => [...current, ...next]);
+    setCharacterImportPreview([]);
+    setCharacterImportResult(null);
+  }
+
+  function clearCharacterImportFiles() {
+    setCharacterImportFiles([]);
+    setCharacterImportPreview([]);
+    setCharacterImportResult(null);
+  }
+
+  async function previewCharacterImport() {
+    if (!characterImportFiles.length) {
+      setStatus("Select character image files");
+      return;
+    }
+    const payload = characterImportMode === "pair"
+      ? {
+          young: characterImportFiles[0],
+          old: characterImportFiles[1],
+          dryRun: true,
+          createGroupCandidates: createCharacterGroupCandidates
+        }
+      : {
+          files: characterImportFiles,
+          dryRun: true,
+          createGroupCandidates: createCharacterGroupCandidates
+        };
+    if (characterImportMode === "pair" && (!payload.young || !payload.old)) {
+      setStatus("Single Pair Upload needs two files");
+      return;
+    }
+    await adminAction("Previewing character import", async () => {
+      const result = await api<CharacterImportResult>(characterImportMode === "pair" ? "/character-import/pair" : "/character-import/bulk", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      setCharacterImportPreview(result.preview ?? []);
+      setCharacterImportResult(result);
+      return result;
+    });
+  }
+
+  async function importCharacters() {
+    if (!characterImportFiles.length) {
+      setStatus("Select character image files");
+      return;
+    }
+    const payload = characterImportMode === "pair"
+      ? {
+          young: characterImportFiles[0],
+          old: characterImportFiles[1],
+          createGroupCandidates: createCharacterGroupCandidates
+        }
+      : {
+          files: characterImportFiles,
+          createGroupCandidates: createCharacterGroupCandidates
+        };
+    if (characterImportMode === "pair" && (!payload.young || !payload.old)) {
+      setStatus("Single Pair Upload needs two files");
+      return;
+    }
+    await adminAction("Importing character images", async () => {
+      const result = await api<CharacterImportResult>(characterImportMode === "pair" ? "/character-import/pair" : "/character-import/bulk", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      setCharacterImportResult(result);
+      setCharacterImportPreview((result.skipped as CharacterImportPairPreview[] | undefined) ?? characterImportPreview);
+      await loadData();
+      return result;
+    });
+  }
+
   async function createProductionBatches() {
     if (!selectedGroups.length) {
       setStatus("Select at least one character group");
@@ -1102,13 +1448,14 @@ export function App() {
   }
 
   async function refreshQueue() {
-    const [latestHosts, latestWorkflows, latestWorkflowRuns, latestInstances, latestPools, latestBatches, latestJobs, latestSessions, latestScriptRuns, latestScripts, latestRules] = await Promise.all([
+    const [latestHosts, latestWorkflows, latestWorkflowRuns, latestInstances, latestPools, latestBatches, latestAssets, latestJobs, latestSessions, latestScriptRuns, latestScripts, latestRules] = await Promise.all([
       api<HostRecord[]>("/hosts"),
       api<WorkflowRecord[]>("/workflows"),
       api<WorkflowRunRecord[]>("/workflow-runs"),
       api<InstanceRecord[]>("/instances"),
       api<InstancePool[]>("/instance-pools"),
       api<ProductionBatch[]>("/production-batches"),
+      api<AssetRecord[]>("/assets"),
       api<OrchestratorJob[]>("/orchestrator/jobs"),
       api<RuntimeSession[]>("/runtime-sessions"),
       api<ScriptRun[]>("/script-runs"),
@@ -1125,6 +1472,7 @@ export function App() {
 
     setPools(latestPoolDetails);
     setBatches(latestBatches);
+    setAssets(latestAssets);
     setJobs(latestJobs);
     setRuntimeSessions(latestSessions);
     setScriptRuns(latestScriptRuns);
@@ -1132,6 +1480,7 @@ export function App() {
     setOrchestratorRules(latestRules);
     return {
       batches: latestBatches,
+      assets: latestAssets,
       jobs: latestJobs,
       hosts: latestHosts,
       workflows: latestWorkflows,
@@ -1297,6 +1646,11 @@ export function App() {
   async function runHostAction(action: "health" | "devices" | "screenshot" | "tap" | "send-text" | "download-latest") {
     if (!selectedHost) {
       setStatus("Select a host");
+      return;
+    }
+    if (!["health", "devices"].includes(action) && !hostAdbId) {
+      setHostResult({ error: "ADB_ID_REQUIRED", message: "Select an instance with a known adbId before running this command" });
+      setStatus("ADB mapping unknown");
       return;
     }
 
@@ -1559,6 +1913,10 @@ export function App() {
     const host = hostForInstance(instance);
     if (!host) throw new Error("Host not found for instance");
     if (action === "screenshot") {
+      if (!instance.adbId) {
+        setStatus("ADB mapping unknown");
+        return;
+      }
       return adminAction("Testing instance screenshot", () => api(`/hosts/${host.id}/screenshot`, {
         method: "POST",
         body: JSON.stringify({ instanceId: instance.id, adbId: instance.adbId })
@@ -1718,7 +2076,9 @@ export function App() {
               ? "Factory Control Center"
               : page === "production-jobs"
                 ? "Production Jobs"
-                : "Production Studio"}
+                : page === "asset-center"
+                  ? "Asset Center"
+                  : "Production Studio"}
           </h1>
         </div>
         <div className="statusLine">
@@ -1738,6 +2098,10 @@ export function App() {
         <button className={page === "production-jobs" ? "active" : ""} onClick={() => setPage("production-jobs")}>
           <ClipboardList size={16} />
           Production Jobs
+        </button>
+        <button className={page === "asset-center" ? "active" : ""} onClick={() => setPage("asset-center")}>
+          <Image size={16} />
+          Asset Center
         </button>
         <button className={page === "studio" ? "active" : ""} onClick={() => setPage("studio")}>
           <Sparkles size={16} />
@@ -1761,6 +2125,7 @@ export function App() {
             ["scripts", "Scripts"],
             ["prompt-templates", "Prompt Templates"],
             ["character-groups", "Character Groups"],
+            ["character-import", "Character Import"],
             ["production-resources", "Production Resources"],
             ["orchestrator-rules", "Orchestrator Rules"],
             ["jobs", "Jobs"],
@@ -1812,7 +2177,7 @@ export function App() {
                       <button onClick={() => adminAction("Testing host health", () => api(`/hosts/${host.id}/health`))}>Health</button>
                       <button onClick={() => syncHostInstances(host)}>Sync Instances</button>
                       <button onClick={() => adminAction("Testing ADB devices", () => hostApi(host.baseUrl, "/adb/devices"))}>ADB Devices</button>
-                      <button onClick={() => adminAction("Testing screenshot", () => api(`/hosts/${host.id}/screenshot`, { method: "POST", body: JSON.stringify({ instanceId: hostInstanceId, adbId: hostAdbId }) }))}>Screenshot</button>
+                      <button disabled={!hostAdbId} onClick={() => adminAction("Testing screenshot", () => api(`/hosts/${host.id}/screenshot`, { method: "POST", body: JSON.stringify({ instanceId: hostInstanceId, adbId: hostAdbId }) }))}>Screenshot</button>
                       <button onClick={() => setSelectedHostDrawerId(host.id)}>View Instances</button>
                       <button
                         className="dangerButton"
@@ -1865,10 +2230,11 @@ export function App() {
                             <span>{instance.runtimeStatus}</span>
                             <span>{instance.currentPoolType ?? "AVAILABLE"}</span>
                             <span className="poolBadgeList">{renderCapabilityBadges(instance)}</span>
+                            {hasUnknownAdbMapping(instance) ? <span className="poolBadge warningBadge">ADB mapping unknown</span> : null}
                             <span>{instance.maintenanceReason ?? "-"}</span>
                             <span className="poolBadgeList">{renderPoolBadges(instance.id)}</span>
                             <div>
-                              <button onClick={() => instanceHostAction(instance, "screenshot")}>Screenshot</button>
+                              <button disabled={!instance.adbId} onClick={() => instanceHostAction(instance, "screenshot")}>Screenshot</button>
                               <button onClick={() => instanceHostAction(instance, "start")}>Start</button>
                               <button onClick={() => instanceHostAction(instance, "stop")}>Stop</button>
                               <button onClick={() => instanceHostAction(instance, "restart")}>Restart</button>
@@ -1896,6 +2262,10 @@ export function App() {
                   setCapacityResult(null);
                 }}><option value="">Select workflow</option>{workflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}</select></label>
                 <label>Workflow Run<select value={selectedWorkflowRun?.id ?? ""} onChange={(event) => { setSelectedWorkflowRunId(event.target.value); setCapacityResult(null); }}><option value="">Select run</option>{workflowRuns.filter((run) => !selectedWorkflow || run.workflowId === selectedWorkflow.id).map((run) => <option key={run.id} value={run.id}>{displayShortId(run.id)} / {run.status}</option>)}</select></label>
+                <div className="adminNotice">
+                  <strong>Resource-Driven Workflow Template</strong>
+                  <span>New workflows default to resource-driven rules. Legacy Sequential Stages are kept only for compatibility.</span>
+                </div>
                 {capacityStageOptions.map((stageType) => (
                   <label key={stageType}>{stageType}<input type="number" min="0" value={capacityForm[stageType] ?? 0} onChange={(event) => setCapacityForm({ ...capacityForm, [stageType]: Number(event.target.value) })} /></label>
                 ))}
@@ -1903,8 +2273,12 @@ export function App() {
                 <button disabled={!selectedWorkflowRun} onClick={() => saveWorkflowCapacity("run")}>Save Run Capacity</button>
                 <button disabled={!selectedWorkflowRun} onClick={() => allocateWorkflowCapacity()}>Allocate Capacity</button>
                 <button disabled={!selectedWorkflowRun} onClick={loadWorkflowRunCapacity}>Refresh Capacity</button>
-                <label>Resource Rules<textarea rows={10} value={workflowTemplateJson.resourceRules} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, resourceRules: event.target.value })} /></label>
-                <button disabled={!selectedWorkflow} onClick={() => saveWorkflowTemplateField("resourceRules", "resource-rules", "Resource Rules")}>Save Resource Rules</button>
+                <label>Resource-Driven Rules (Recommended)<textarea rows={10} value={workflowTemplateJson.resourceRules} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, resourceRules: event.target.value })} /></label>
+                <button disabled={!selectedWorkflow} onClick={() => saveWorkflowTemplateField("resourceRules", "resource-rules", "Resource-Driven Rules")}>Save Resource-Driven Rules</button>
+                <div className="adminNotice muted">
+                  <strong>Legacy Sequential Stages</strong>
+                  <span>workflow_stages remains available for older workflow runs and APIs, but should not be used for new production templates.</span>
+                </div>
                 <label>Script Mapping<textarea rows={6} value={workflowTemplateJson.scriptMapping} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, scriptMapping: event.target.value })} /></label>
                 <button disabled={!selectedWorkflow} onClick={() => saveWorkflowTemplateField("scriptMapping", "script-mapping", "Script Mapping")}>Save Script Mapping</button>
                 <label>Prompt Mapping<textarea rows={6} value={workflowTemplateJson.promptMapping} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, promptMapping: event.target.value })} /></label>
@@ -1978,9 +2352,10 @@ export function App() {
                       <b>{instance.id}</b><span>{instance.name ?? "-"}</span><span>{instance.adbId ?? "-"}</span><span>{instance.status} / {instance.runtimeStatus}</span><small>{displayDateTime(instance.lastSeenAt ?? undefined)}</small>
                       <span className="statusPill">{instance.currentPoolType ?? "AVAILABLE"}</span>
                       <span className="poolBadgeList">{renderCapabilityBadges(instance)}</span>
+                      {hasUnknownAdbMapping(instance) ? <span className="poolBadge warningBadge">ADB mapping unknown</span> : null}
                       <span>{instance.maintenanceReason ?? "-"}</span>
                       <span className="poolBadgeList">{renderPoolBadges(instance.id)}</span>
-                      <button onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "screenshot"); }}>Screenshot</button>
+                      <button disabled={!instance.adbId} onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "screenshot"); }}>Screenshot</button>
                       <button onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "start"); }}>Start</button>
                       <button onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "stop"); }}>Stop</button>
                       <button onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "restart"); }}>Restart</button>
@@ -2118,6 +2493,73 @@ export function App() {
                 <button disabled={!selectedGroupId} onClick={() => adminAction("Creating production batch", () => api("/production-batches", { method: "POST", body: JSON.stringify({ batchType: "CHARACTER_GROUP", sourceGroupId: selectedGroupId, status: "READY", usageStatus: "AVAILABLE", metadata: { createdFrom: "Management" } }) }))}>Create Batch</button>
               </div>
               <AdminSimpleList items={groups} search={adminSearch} />
+            </div>
+          ) : null}
+
+          {managementSection === "character-import" ? (
+            <div className="characterImportPanel">
+              <div className="adminForm">
+                <div className="adminNotice">
+                  <strong>Character Import Center</strong>
+                  <span>Young: Merle Oberon.png. Old: Merle Oberon r68.jpg or Audrey Hepburn a95.jpg.</span>
+                </div>
+                <div className="assetTabs">
+                  <button className={characterImportMode === "pair" ? "active" : ""} onClick={() => setCharacterImportMode("pair")}>Single Pair Upload</button>
+                  <button className={characterImportMode === "bulk" ? "active" : ""} onClick={() => setCharacterImportMode("bulk")}>Bulk Folder Upload</button>
+                </div>
+                <label className="toggleControl">
+                  <input type="checkbox" checked={createCharacterGroupCandidates} onChange={(event) => setCreateCharacterGroupCandidates(event.target.checked)} />
+                  Create Character Group Candidates
+                </label>
+                <div
+                  className="dropZone"
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    addCharacterImportFiles(event.dataTransfer.files);
+                  }}
+                >
+                  <strong>Drag & Drop</strong>
+                  <span>{characterImportMode === "pair" ? "Drop exactly two matching files." : "Drop a folder selection or multiple image pairs."}</span>
+                  <input type="file" accept="image/*" multiple={characterImportMode === "bulk"} onChange={(event) => event.target.files && addCharacterImportFiles(event.target.files)} />
+                </div>
+                <div className="controlActions">
+                  <button onClick={previewCharacterImport} disabled={busy || !characterImportFiles.length}>Preview Validate</button>
+                  <button onClick={importCharacters} disabled={busy || !characterImportFiles.length}>Import Valid Pairs</button>
+                  <button onClick={clearCharacterImportFiles} disabled={busy || !characterImportFiles.length}>Clear</button>
+                </div>
+                <div className="importFileList">
+                  {characterImportFiles.map((file) => (
+                    <span key={`${file.fileName}-${file.size}`}>{file.fileName}</span>
+                  ))}
+                  {!characterImportFiles.length ? <span>No files selected.</span> : null}
+                </div>
+              </div>
+
+              <div className="importPreviewArea">
+                <div className="importSummary panel">
+                  <strong>Import Result</strong>
+                  <span>Imported: {characterImportResult?.importedCount ?? 0}</span>
+                  <span>Skipped: {characterImportResult?.skippedCount ?? 0}</span>
+                  <pre className="jsonBlock">{compactJson(characterImportResult?.history ?? characterImportResult)}</pre>
+                </div>
+                <div className="importGrid">
+                  {characterImportPreview.map((pair) => (
+                    <article className={`importCard ${pair.valid ? "valid" : "invalid"}`} key={`${pair.name}-${pair.young?.fileName}-${pair.old?.fileName}`}>
+                      <div className="importThumbs">
+                        <div>{pair.young?.publicUrl || pair.young?.dataUrl ? <img src={pair.young.publicUrl ?? pair.young.dataUrl} alt="Young" /> : <span>Young missing</span>}</div>
+                        <div>{pair.old?.publicUrl || pair.old?.dataUrl ? <img src={pair.old.publicUrl ?? pair.old.dataUrl} alt="Old" /> : <span>Old missing</span>}</div>
+                      </div>
+                      <strong>{pair.name}</strong>
+                      <span>{pair.status ?? "-"} / {pair.age ?? "-"}</span>
+                      <small>{pair.valid ? "Valid" : "Invalid"}</small>
+                      {pair.errors.length ? <em>{pair.errors.join(", ")}</em> : null}
+                      {pair.warnings.length ? <em className="warningText">{pair.warnings.join(", ")}</em> : null}
+                    </article>
+                  ))}
+                  {!characterImportPreview.length ? <p className="emptyDetail">Preview validation results will appear here.</p> : null}
+                </div>
+              </div>
             </div>
           ) : null}
 
@@ -2341,6 +2783,7 @@ export function App() {
                     <small>{instance.hostId}</small>
                     <small>{instance.adbId ?? "-"}</small>
                     <span className="poolBadgeList">{renderCapabilityBadges(instance)}</span>
+                    {hasUnknownAdbMapping(instance) ? <span className="poolBadge warningBadge">ADB mapping unknown</span> : null}
                     <small>{instance.runtimeStatus ?? "-"}</small>
                     <span className="miniActions">
                       <span onClick={(event) => { event.stopPropagation(); moveInstance(instance, "move-standby"); }}>standby</span>
@@ -2430,9 +2873,9 @@ export function App() {
             <div className="controlActions">
               <button onClick={() => runHostAction("health")} disabled={busy}>Health</button>
               <button onClick={() => runHostAction("devices")} disabled={busy || !selectedHost}>ADB Devices</button>
-              <button onClick={() => runHostAction("screenshot")} disabled={busy}>Screenshot</button>
-              <button onClick={() => runHostAction("send-text")} disabled={busy}>Send Text</button>
-              <button onClick={() => runHostAction("download-latest")} disabled={busy}>Download Latest</button>
+              <button onClick={() => runHostAction("screenshot")} disabled={busy || !hostAdbId}>Screenshot</button>
+              <button onClick={() => runHostAction("send-text")} disabled={busy || !hostAdbId}>Send Text</button>
+              <button onClick={() => runHostAction("download-latest")} disabled={busy || !hostAdbId}>Download Latest</button>
             </div>
             {adbDevices.length ? (
               <div className="deviceList">
@@ -2468,6 +2911,142 @@ export function App() {
               </div>
             </>
           ) : null}
+        </div>
+      </section>
+      ) : page === "asset-center" ? (
+      <section className="assetCenter">
+        <div className="assetToolbar panel">
+          <div>
+            <strong>Production Asset Center</strong>
+            <small>Catalog source images, prompts, music, templates, versions, and lineage</small>
+          </div>
+          <button className="secondaryButton" onClick={() => refreshQueue()} disabled={busy}>
+            <RefreshCcw size={15} />
+            Refresh
+          </button>
+        </div>
+
+        <div className="assetTabs">
+          {assetCategoryTabs.map((tab) => (
+            <button
+              key={tab.id}
+              className={assetTab === tab.id ? "active" : ""}
+              onClick={() => {
+                setAssetTab(tab.id);
+                setAssetForm((current) => ({
+                  ...current,
+                  assetCategory: tab.id,
+                  assetSubType: assetCategories.find((category) => category.id === tab.id)?.subTypes?.[0] ?? ""
+                }));
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="assetLayout">
+          <aside className="panel assetFormPanel">
+            <div className="panelHeader compact">
+              <Image size={18} />
+              <h2>{selectedAsset ? "Edit Asset" : "Register Asset"}</h2>
+            </div>
+            <label>Name<input value={assetForm.name} onChange={(event) => setAssetForm({ ...assetForm, name: event.target.value })} /></label>
+            <label>Subtype<select value={assetForm.assetSubType} onChange={(event) => setAssetForm({ ...assetForm, assetSubType: event.target.value })}>
+              <option value="">No subtype</option>
+              {(assetCategories.find((category) => category.id === assetForm.assetCategory)?.subTypes ?? []).map((subType) => <option key={subType} value={subType}>{subType}</option>)}
+            </select></label>
+            <label>Media Type<input value={assetForm.mediaType} onChange={(event) => setAssetForm({ ...assetForm, mediaType: event.target.value })} /></label>
+            <label>Character Group<select disabled={assetForm.assetCategory === "CHARACTER_IMAGE"} value={assetForm.groupId} onChange={(event) => setAssetForm({ ...assetForm, groupId: event.target.value })}><option value="">No group</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+            {assetForm.assetCategory === "CHARACTER_IMAGE" ? <small className="emptyDetail">Character source images attach to Character, not Character Group.</small> : null}
+            <label>Character ID<input value={assetForm.characterId} onChange={(event) => setAssetForm({ ...assetForm, characterId: event.target.value })} /></label>
+            <label>Public or Preview URL<input value={assetForm.publicUrl} onChange={(event) => setAssetForm({ ...assetForm, publicUrl: event.target.value })} /></label>
+            <label>File Path<input value={assetForm.filePath} onChange={(event) => setAssetForm({ ...assetForm, filePath: event.target.value })} /></label>
+            <label>Tags<input value={assetForm.tags} onChange={(event) => setAssetForm({ ...assetForm, tags: event.target.value })} placeholder="portrait, young, reusable" /></label>
+            <label>Attributes JSON<textarea rows={5} value={assetForm.attributes} onChange={(event) => setAssetForm({ ...assetForm, attributes: event.target.value })} /></label>
+            <label>Metadata JSON<textarea rows={5} value={assetForm.metadata} onChange={(event) => setAssetForm({ ...assetForm, metadata: event.target.value })} /></label>
+            <label>Source Asset<select value={assetForm.sourceAssetId} onChange={(event) => setAssetForm({ ...assetForm, sourceAssetId: event.target.value })}><option value="">No source asset</option>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name} / {displayShortId(asset.id)}</option>)}</select></label>
+            <div className="assetMiniGrid">
+              <label>Usage Status<input value={assetForm.usageStatus} onChange={(event) => setAssetForm({ ...assetForm, usageStatus: event.target.value })} /></label>
+              <label>Usage Policy<input value={assetForm.usagePolicy} onChange={(event) => setAssetForm({ ...assetForm, usagePolicy: event.target.value })} /></label>
+              <label>Quality<input value={assetForm.qualityStatus} onChange={(event) => setAssetForm({ ...assetForm, qualityStatus: event.target.value })} /></label>
+            </div>
+            <div className="controlActions">
+              <button onClick={createAsset} disabled={busy || !assetForm.name}>Upload/Register</button>
+              <button onClick={updateSelectedAsset} disabled={busy || !selectedAsset}>Save</button>
+              <button onClick={createAssetVersion} disabled={busy || !selectedAsset}>Create Version</button>
+              <button onClick={() => setBestAsset()} disabled={busy || !selectedAsset}>Set Best Version</button>
+              <button className="dangerButton" onClick={deleteSelectedAsset} disabled={busy || !selectedAsset}>Delete</button>
+            </div>
+          </aside>
+
+          <section className="panel assetMainPanel">
+            <div className="assetFilters">
+              <label>Search<input value={assetSearch} onChange={(event) => setAssetSearch(event.target.value)} placeholder="Search names, tags, metadata" /></label>
+              <label>Tag<select value={assetTagFilter} onChange={(event) => setAssetTagFilter(event.target.value)}><option value="">All tags</option>{assetTagOptions.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label>
+              <label>Attribute<select value={assetAttributeFilter} onChange={(event) => setAssetAttributeFilter(event.target.value)}><option value="">All attributes</option>{assetAttributeOptions.map((attribute) => <option key={attribute} value={attribute}>{attribute}</option>)}</select></label>
+            </div>
+
+            <div className="assetWorkspace">
+              <div className="assetList">
+                {filteredAssets.slice(0, 80).map((asset) => {
+                  const group = groups.find((item) => item.id === asset.groupId);
+                  return (
+                    <button className={`assetCard ${selectedAssetId === asset.id ? "selected" : ""}`} key={asset.id} onClick={() => setSelectedAssetId(asset.id)}>
+                      <div className="assetPreview">
+                        {asset.previewUrl || asset.publicUrl ? <img src={asset.previewUrl ?? asset.publicUrl ?? ""} alt={asset.name} /> : <span>{asset.assetCategory ?? asset.assetType}</span>}
+                      </div>
+                      <strong>{asset.name}</strong>
+                      <small>{group?.name ?? asset.characterId ?? "Ungrouped"}</small>
+                      <span>{asset.assetSubType ?? asset.mediaType}</span>
+                      <small>v{asset.versionNo ?? 1} {asset.isBestVersion ? "/ Best" : ""}</small>
+                      <span className="poolBadgeList">{(asset.tags ?? []).slice(0, 4).map((tag) => <span className="poolBadge" key={tag}>{tag}</span>)}</span>
+                    </button>
+                  );
+                })}
+                {!filteredAssets.length ? <p className="emptyDetail">No assets in this tab yet.</p> : null}
+              </div>
+
+              <aside className="assetInspector">
+                <div className="panelHeader compact">
+                  <Search size={18} />
+                  <h2>Preview</h2>
+                </div>
+                {selectedAsset ? (
+                  <>
+                    <div className="assetHeroPreview">
+                      {selectedAsset.previewUrl || selectedAsset.publicUrl ? <img src={selectedAsset.previewUrl ?? selectedAsset.publicUrl ?? ""} alt={selectedAsset.name} /> : <pre>{compactJson(selectedAsset.metadata)}</pre>}
+                    </div>
+                    <div className="detailList">
+                      <span>ID <b>{displayShortId(selectedAsset.id)}</b></span>
+                      <span>Category <b>{selectedAsset.assetCategory ?? selectedAsset.assetType}</b></span>
+                      <span>Subtype <b>{selectedAsset.assetSubType ?? "-"}</b></span>
+                      <span>Version <b>{selectedAsset.versionNo ?? 1}</b></span>
+                      <span>Status <b>{selectedAsset.status ?? "-"}</b></span>
+                    </div>
+                    <div className="assetSection">
+                      <strong>Version History</strong>
+                      {selectedAssetVersions.map((asset) => (
+                        <button key={asset.id} onClick={() => setSelectedAssetId(asset.id)}>
+                          v{asset.versionNo ?? 1} / {asset.name} {asset.isBestVersion ? "/ Best" : ""}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="assetSection">
+                      <strong>Lineage</strong>
+                      {selectedAsset.sourceAssetId ? <span>Source: {displayShortId(selectedAsset.sourceAssetId)}</span> : null}
+                      {selectedAssetLineage.map((asset) => <button key={asset.id} onClick={() => setSelectedAssetId(asset.id)}>{asset.name} / {displayShortId(asset.id)}</button>)}
+                      {!selectedAssetLineage.length && !selectedAsset.sourceAssetId ? <span>No lineage yet.</span> : null}
+                    </div>
+                    <div className="assetSection">
+                      <strong>Raw JSON</strong>
+                      <pre className="jsonBlock">{compactJson(selectedAsset)}</pre>
+                    </div>
+                  </>
+                ) : <p className="emptyDetail">Select an asset to inspect.</p>}
+              </aside>
+            </div>
+          </section>
         </div>
       </section>
       ) : page === "studio" ? (

@@ -3,7 +3,8 @@ import { createId, getRow, jsonParse, jsonString, listRows, now } from "../share
 import type {
   CreateAssetInput,
   CreateAssetRelationInput,
-  CreateAssetReservationInput
+  CreateAssetReservationInput,
+  UpdateAssetInput
 } from "./assets.schemas";
 
 function text(row: Record<string, unknown>, key: string) {
@@ -22,6 +23,8 @@ function mapAsset(row: Record<string, unknown>) {
     groupId: text(row, "group_id"),
     groupMemberId: text(row, "group_member_id"),
     assetType: text(row, "asset_type"),
+    assetCategory: text(row, "asset_category") ?? text(row, "asset_type"),
+    assetSubType: text(row, "asset_sub_type"),
     mediaType: text(row, "media_type"),
     versionGroupId: text(row, "version_group_id"),
     versionNo: Number(row.version_no ?? 1),
@@ -38,6 +41,10 @@ function mapAsset(row: Record<string, unknown>) {
     usageStatus: text(row, "usage_status"),
     usagePolicy: text(row, "usage_policy"),
     qualityStatus: text(row, "quality_status"),
+    tags: jsonParse<string[]>(row.tags_json, []),
+    attributes: jsonParse<Record<string, unknown>>(row.attributes_json, {}),
+    previewUrl: text(row, "preview_url") ?? text(row, "public_url"),
+    sourceAssetId: text(row, "source_asset_id"),
     metadata: jsonParse(row.metadata_json, {}),
     createdByWorkflowRunId: text(row, "created_by_workflow_run_id"),
     createdByStageRunId: text(row, "created_by_stage_run_id"),
@@ -79,12 +86,22 @@ function mapReservation(row: Record<string, unknown>) {
 }
 
 export const assetsService = {
+  categories: () => [
+    { id: "CHARACTER_IMAGE", label: "Character Images", subTypes: ["YOUNG_ORIGINAL_IMAGE", "OLD_ORIGINAL_IMAGE", "EDITED_IMAGE", "FACE_CROP", "BEST_EDITED_VERSION"] },
+    { id: "PROMPT_TEMPLATE", label: "Prompt Templates", subTypes: ["Image Prompt", "Video Prompt", "Music Prompt", "Post Content Prompt"] },
+    { id: "MUSIC_TRACK", label: "Music Library", subTypes: ["Reusable Track", "Dedicated Track"] },
+    { id: "VIDEO_TEMPLATE", label: "Video Templates", subTypes: ["Composition Template", "Intro", "Outro"] },
+    { id: "POST_TEMPLATE", label: "Post Templates", subTypes: ["Facebook Post", "CTA", "Hashtags"] }
+  ],
+
   list: (query: Record<string, unknown>) =>
     listRows("assets", mapAsset, query, {
       workspaceId: "workspace_id",
       characterId: "character_id",
       groupId: "group_id",
       assetType: "asset_type",
+      assetCategory: "asset_category",
+      assetSubType: "asset_sub_type",
       mediaType: "media_type",
       qualityStatus: "quality_status",
       usageStatus: "usage_status"
@@ -95,30 +112,34 @@ export const assetsService = {
   create(payload: CreateAssetInput) {
     const createdAt = now();
     const id = createId("asset");
+    const assetCategory = payload.assetCategory ?? payload.assetType ?? "CHARACTER_IMAGE";
+    const assetType = payload.assetType ?? assetCategory;
 
     db.prepare(`
       INSERT INTO assets (
         id, workspace_id, character_id, group_id, group_member_id, asset_type,
-        media_type, version_group_id, version_no, is_best_version, name,
+        asset_category, asset_sub_type, media_type, version_group_id, version_no, is_best_version, name,
         storage_provider, storage_key, file_path, public_url, mime_type,
         file_size, checksum, status, usage_status, usage_policy, quality_status,
-        metadata_json, created_by_workflow_run_id, created_by_stage_run_id,
+        tags_json, attributes_json, preview_url, source_asset_id, metadata_json, created_by_workflow_run_id, created_by_stage_run_id,
         created_by_task_run_id, created_by_task_attempt_id, created_at, updated_at
       ) VALUES (
         @id, @workspaceId, @characterId, @groupId, @groupMemberId, @assetType,
-        @mediaType, @versionGroupId, @versionNo, @isBestVersion, @name,
+        @assetCategory, @assetSubType, @mediaType, @versionGroupId, @versionNo, @isBestVersion, @name,
         @storageProvider, @storageKey, @filePath, @publicUrl, @mimeType,
         @fileSize, @checksum, @status, @usageStatus, @usagePolicy, @qualityStatus,
-        @metadataJson, @createdByWorkflowRunId, @createdByStageRunId,
+        @tagsJson, @attributesJson, @previewUrl, @sourceAssetId, @metadataJson, @createdByWorkflowRunId, @createdByStageRunId,
         @createdByTaskRunId, @createdByTaskAttemptId, @createdAt, @updatedAt
       )
     `).run({
       id,
       workspaceId: payload.workspaceId ?? null,
       characterId: payload.characterId ?? null,
-      groupId: payload.groupId ?? null,
+      groupId: assetCategory === "CHARACTER_IMAGE" ? null : payload.groupId ?? null,
       groupMemberId: payload.groupMemberId ?? null,
-      assetType: payload.assetType,
+      assetType,
+      assetCategory,
+      assetSubType: payload.assetSubType ?? null,
       mediaType: payload.mediaType,
       versionGroupId: payload.versionGroupId ?? id,
       versionNo: payload.versionNo,
@@ -135,6 +156,10 @@ export const assetsService = {
       usageStatus: payload.usageStatus,
       usagePolicy: payload.usagePolicy,
       qualityStatus: payload.qualityStatus,
+      tagsJson: jsonString(payload.tags, []),
+      attributesJson: jsonString(payload.attributes, {}),
+      previewUrl: payload.previewUrl ?? payload.publicUrl ?? null,
+      sourceAssetId: payload.sourceAssetId ?? null,
       metadataJson: jsonString(payload.metadata, {}),
       createdByWorkflowRunId: payload.createdByWorkflowRunId ?? null,
       createdByStageRunId: payload.createdByStageRunId ?? null,
@@ -144,6 +169,97 @@ export const assetsService = {
       updatedAt: createdAt
     });
 
+    return this.get(id);
+  },
+
+  update(id: string, payload: UpdateAssetInput) {
+    const current = this.get(id);
+    if (!current) return null;
+    const updatedAt = now();
+    const assetCategory = payload.assetCategory ?? payload.assetType ?? current.assetCategory ?? current.assetType ?? "CHARACTER_IMAGE";
+    const assetType = payload.assetType ?? current.assetType ?? assetCategory;
+
+    db.prepare(`
+      UPDATE assets
+      SET workspace_id = @workspaceId,
+          character_id = @characterId,
+          group_id = @groupId,
+          group_member_id = @groupMemberId,
+          asset_type = @assetType,
+          asset_category = @assetCategory,
+          asset_sub_type = @assetSubType,
+          media_type = @mediaType,
+          version_group_id = @versionGroupId,
+          version_no = @versionNo,
+          is_best_version = @isBestVersion,
+          name = @name,
+          storage_provider = @storageProvider,
+          storage_key = @storageKey,
+          file_path = @filePath,
+          public_url = @publicUrl,
+          mime_type = @mimeType,
+          file_size = @fileSize,
+          checksum = @checksum,
+          status = @status,
+          usage_status = @usageStatus,
+          usage_policy = @usagePolicy,
+          quality_status = @qualityStatus,
+          tags_json = @tagsJson,
+          attributes_json = @attributesJson,
+          preview_url = @previewUrl,
+          source_asset_id = @sourceAssetId,
+          metadata_json = @metadataJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      workspaceId: payload.workspaceId ?? current.workspaceId ?? null,
+      characterId: payload.characterId ?? current.characterId ?? null,
+      groupId: assetCategory === "CHARACTER_IMAGE" ? null : payload.groupId ?? current.groupId ?? null,
+      groupMemberId: payload.groupMemberId ?? current.groupMemberId ?? null,
+      assetType,
+      assetCategory,
+      assetSubType: payload.assetSubType ?? current.assetSubType ?? null,
+      mediaType: payload.mediaType ?? current.mediaType ?? "unknown",
+      versionGroupId: payload.versionGroupId ?? current.versionGroupId ?? id,
+      versionNo: payload.versionNo ?? current.versionNo ?? 1,
+      isBestVersion: payload.isBestVersion ?? current.isBestVersion ? 1 : 0,
+      name: payload.name ?? current.name,
+      storageProvider: payload.storageProvider ?? current.storageProvider ?? "local",
+      storageKey: payload.storageKey ?? current.storageKey ?? null,
+      filePath: payload.filePath ?? current.filePath ?? null,
+      publicUrl: payload.publicUrl ?? current.publicUrl ?? null,
+      mimeType: payload.mimeType ?? current.mimeType ?? null,
+      fileSize: payload.fileSize ?? current.fileSize ?? 0,
+      checksum: payload.checksum ?? current.checksum ?? null,
+      status: payload.status ?? current.status ?? "available",
+      usageStatus: payload.usageStatus ?? current.usageStatus ?? "available",
+      usagePolicy: payload.usagePolicy ?? current.usagePolicy ?? "reusable",
+      qualityStatus: payload.qualityStatus ?? current.qualityStatus ?? "draft",
+      tagsJson: jsonString(payload.tags ?? current.tags, []),
+      attributesJson: jsonString(payload.attributes ?? current.attributes, {}),
+      previewUrl: payload.previewUrl ?? current.previewUrl ?? payload.publicUrl ?? current.publicUrl ?? null,
+      sourceAssetId: payload.sourceAssetId ?? current.sourceAssetId ?? null,
+      metadataJson: jsonString(payload.metadata ?? current.metadata, {}),
+      updatedAt
+    });
+
+    return this.get(id);
+  },
+
+  delete(id: string) {
+    return db.prepare("DELETE FROM assets WHERE id = ?").run(id).changes > 0;
+  },
+
+  setBest(id: string) {
+    const asset = this.get(id);
+    if (!asset) return null;
+    const versionGroupId = asset.versionGroupId ?? asset.id;
+    const updatedAt = now();
+    db.transaction(() => {
+      db.prepare("UPDATE assets SET is_best_version = 0, updated_at = ? WHERE version_group_id = ?").run(updatedAt, versionGroupId);
+      db.prepare("UPDATE assets SET is_best_version = 1, version_group_id = ?, updated_at = ? WHERE id = ?").run(versionGroupId, updatedAt, id);
+    })();
     return this.get(id);
   },
 
@@ -214,4 +330,3 @@ export const assetsService = {
     return getRow("asset_reservations", id, mapReservation);
   }
 };
-

@@ -59,6 +59,14 @@ function metadataPick(source: Record<string, unknown>, keys: string[]) {
     .map((key) => [key, source[key]]));
 }
 
+function sourceAssetsSnapshotFromMetadata(metadata: Record<string, unknown>) {
+  const direct = metadata.sourceAssetsSnapshot;
+  if (direct && typeof direct === "object") return direct as Record<string, unknown>;
+  const groupBatch = objectValue(metadata.characterGroupBatch);
+  const nested = groupBatch.sourceAssetsSnapshot;
+  return nested && typeof nested === "object" ? nested as Record<string, unknown> : {};
+}
+
 export const jobExecutorService = {
   async executeMockJob(jobId: string) {
     let job = orchestratorRepository.getJob(jobId);
@@ -118,6 +126,9 @@ export const jobExecutorService = {
     return orchestratorService.completeJob(jobId, output);
   },
 
+  /**
+   * @deprecated Use Host Agent V2 direct execution.
+   */
   async executeV1Job(jobId: string) {
     const job = orchestratorRepository.getJob(jobId);
     if (!job) throw new AppError("ORCHESTRATOR_JOB_NOT_FOUND", "Orchestrator job not found", 404);
@@ -201,9 +212,15 @@ export const jobExecutorService = {
       : { prompt: "" };
 
     const group = groupId ? promptRenderService.getGroupPromptContext(groupId) : null;
+    const sourceAssetsSnapshot = sourceAssetsSnapshotFromMetadata(metadata);
     const context = {
       group,
       attributes: sourceBatch.attributes,
+      sourceAssetsSnapshot,
+      imageEditInputs: {
+        sourceAssetMode: "ORIGINAL_SOURCE_IMAGES",
+        sourceAssetsSnapshot
+      },
       prompt: {
         image: renderedPrompt.prompt
       },
@@ -255,7 +272,9 @@ export const jobExecutorService = {
         runtimeSessionId: runtimeSession.id,
         prompt: renderedPrompt.prompt,
         sourceBatchId: sourceBatch.id,
-        targetStageType: "IMAGE_EDIT"
+        targetStageType: "IMAGE_EDIT",
+        imageEditInputMode: "ORIGINAL_SOURCE_IMAGES",
+        sourceAssetsSnapshot
       }
     });
 
@@ -344,6 +363,8 @@ export const jobExecutorService = {
         sourceBatchId: job.sourceBatchId,
         targetStageType: job.targetStageType,
         mock: options.mock,
+        ...(sourceMetadata.sourceAssetsSnapshot ? { sourceAssetsSnapshot: sourceMetadata.sourceAssetsSnapshot } : {}),
+        ...(sourceMetadata.characterGroupBatch ? { characterGroupBatch: sourceMetadata.characterGroupBatch } : {}),
         ...(sourceMetadata.musicPolicy ? { musicPolicy: sourceMetadata.musicPolicy } : {}),
         ...musicMetadata,
         ...(postContent ?? {}),

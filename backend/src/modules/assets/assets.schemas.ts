@@ -1,12 +1,22 @@
 import { z } from "zod";
 
+export const assetCategorySchema = z.enum([
+  "CHARACTER_IMAGE",
+  "PROMPT_TEMPLATE",
+  "MUSIC_TRACK",
+  "VIDEO_TEMPLATE",
+  "POST_TEMPLATE"
+]);
+
 export const createAssetSchema = z.object({
   workspaceId: z.string().optional(),
   characterId: z.string().optional(),
   groupId: z.string().optional(),
   groupMemberId: z.string().optional(),
-  assetType: z.string().min(1),
-  mediaType: z.string().min(1),
+  assetType: z.string().min(1).optional(),
+  assetCategory: assetCategorySchema.optional(),
+  assetSubType: z.string().optional(),
+  mediaType: z.string().min(1).default("unknown"),
   versionGroupId: z.string().optional(),
   versionNo: z.number().int().positive().default(1),
   isBestVersion: z.boolean().default(false),
@@ -22,12 +32,18 @@ export const createAssetSchema = z.object({
   usageStatus: z.string().default("available"),
   usagePolicy: z.string().default("reusable"),
   qualityStatus: z.string().default("draft"),
+  tags: z.array(z.string()).default([]),
+  attributes: z.record(z.string(), z.unknown()).default({}),
+  previewUrl: z.string().optional(),
+  sourceAssetId: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).default({}),
   createdByWorkflowRunId: z.string().optional(),
   createdByStageRunId: z.string().optional(),
   createdByTaskRunId: z.string().optional(),
   createdByTaskAttemptId: z.string().optional()
 });
+
+export const updateAssetSchema = createAssetSchema.partial();
 
 export const createAssetRelationSchema = z.object({
   sourceAssetId: z.string().min(1),
@@ -50,6 +66,6 @@ export const createAssetReservationSchema = z.object({
 });
 
 export type CreateAssetInput = z.infer<typeof createAssetSchema>;
+export type UpdateAssetInput = z.infer<typeof updateAssetSchema>;
 export type CreateAssetRelationInput = z.infer<typeof createAssetRelationSchema>;
 export type CreateAssetReservationInput = z.infer<typeof createAssetReservationSchema>;
-

@@ -7,8 +7,10 @@ export const instanceRouter = Router();
 
 function sendError(res: import("express").Response, error: unknown) {
   const message = error instanceof Error ? error.message : "INSTANCE_COMMAND_ERROR";
-  const code = message.includes("adbId") ? "ADB_ID_REQUIRED" : "INSTANCE_COMMAND_ERROR";
-  res.status(code === "ADB_ID_REQUIRED" ? 400 : 500).json({ ok: false, error: { code, message } });
+  const code = error instanceof Error && error.name === "NO_MATCHING_FILE_FOUND"
+    ? "NO_MATCHING_FILE_FOUND"
+    : message.includes("adbId") ? "ADB_ID_REQUIRED" : "INSTANCE_COMMAND_ERROR";
+  res.status(code === "ADB_ID_REQUIRED" || code === "NO_MATCHING_FILE_FOUND" ? 400 : 500).json({ ok: false, error: { code, message } });
 }
 
 function numberBody(value: unknown, key: string) {

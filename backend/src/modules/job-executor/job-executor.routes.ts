@@ -18,6 +18,9 @@ jobExecutorRouter.post("/jobs/:id/execute-mock", async (req, res) => {
   }
 });
 
+/**
+ * @deprecated Use Host Agent V2 direct execution.
+ */
 jobExecutorRouter.post("/jobs/:id/execute-v1", async (req, res) => {
   try {
     const params = executeV1JobParamsSchema.parse(req.params);

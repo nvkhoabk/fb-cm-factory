@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+/**
+ * @deprecated Use Host Agent V2 direct execution.
+ */
 export const managerBridgeBatchParamsSchema = z.object({
   batchId: z.string().min(1)
 });

@@ -15,6 +15,7 @@ import { groupAttributesRouter } from "./modules/group-attributes/group-attribut
 import { promptTemplateVersionsRouter, promptTemplatesRouter, promptsRouter } from "./modules/prompt-builder/prompt-builder.routes";
 import { promptRenderRouter } from "./modules/prompt-builder/prompt-render.routes";
 import { productionBatchRouter } from "./modules/production-batches/production-batch.routes";
+import { characterImportRouter } from "./modules/character-import/character-import.routes";
 import { orchestratorRouter } from "./modules/orchestrator/orchestrator.routes";
 import { jobExecutorRouter } from "./modules/job-executor/job-executor.routes";
 import { managerBridgeRouter } from "./modules/manager-bridge/manager-bridge.routes";
@@ -45,6 +46,7 @@ function mountRoutes(prefix = "") {
   app.use(`${prefix}/prompt-builder`, promptRenderRouter);
   app.use(`${prefix}/prompts`, promptsRouter);
   app.use(`${prefix}/production-batches`, productionBatchRouter);
+  app.use(`${prefix}/character-import`, characterImportRouter);
   app.use(`${prefix}/orchestrator`, orchestratorRouter);
   app.use(`${prefix}/job-executor`, jobExecutorRouter);
   app.use(`${prefix}/manager-bridge`, managerBridgeRouter);

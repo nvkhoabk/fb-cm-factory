@@ -44,11 +44,8 @@ function normalizeHostInstances(value: unknown) {
   return instances.map((item) => item as Record<string, unknown>);
 }
 
-function normalizeAdbDevices(value: unknown) {
-  if (!value || typeof value !== "object") return [];
-  const devices = (value as { devices?: unknown }).devices;
-  if (!Array.isArray(devices)) return [];
-  return devices.map((item) => item as Record<string, unknown>);
+function directAdbId(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 export const hostAgentService = {
@@ -140,24 +137,20 @@ export const hostAgentService = {
 
   async syncInstances(hostId: string) {
     const { host, target } = this.targetForHost(hostId);
-    const [instancePayload, adbPayload] = await Promise.all([
-      hostAgentClient.listInstances(target),
-      hostAgentClient.listAdbDevices(target).catch(() => ({ devices: [] }))
-    ]);
+    const instancePayload = await hostAgentClient.listInstances(target);
     const discovered = normalizeHostInstances(instancePayload);
-    const devices = normalizeAdbDevices(adbPayload);
     const timestamp = now();
 
     const synced = discovered.map((item, index) => {
       const localId = String(item.localId ?? item.index ?? item.id ?? index);
-      const adbDevice = devices[index];
-      const adbId = typeof item.adbId === "string"
-        ? item.adbId
-        : typeof adbDevice?.adbId === "string"
-          ? adbDevice.adbId
-          : null;
+      const id = canonicalInstanceId(String(host.hostId), localId);
+      const existing = instancesRepository.get(id);
+      const direct = directAdbId(item.adbId);
+      const preserved = direct ? null : directAdbId(existing?.adbId);
+      const adbId = direct ?? preserved;
+      const adbMappingConfidence = direct ? "direct" : preserved ? "preserved" : "unknown";
       return instancesRepository.upsert({
-        id: canonicalInstanceId(String(host.hostId), localId),
+        id,
         hostId: String(host.hostId),
         localId,
         name: typeof item.name === "string" ? item.name : `LDPlayer ${localId}`,
@@ -165,8 +158,9 @@ export const hostAgentService = {
         status: adbId ? "ONLINE" : "DISCOVERED",
         runtimeStatus: "IDLE",
         metadata: {
+          ...(existing?.metadata && typeof existing.metadata === "object" ? existing.metadata : {}),
           raw: item,
-          adbDevice: adbDevice ?? null,
+          adbMappingConfidence,
           hostDbId: host.id
         },
         lastSeenAt: timestamp

@@ -45,6 +45,8 @@ Key fields:
 
 ## Workflow Engine
 
+Current implementation note: workflow templates are resource-driven. Prefer `workflows.resource_rules_json`, `script_mapping_json`, `prompt_mapping_json`, capacity config, music policy, and post content policy for new production templates. `workflow_stages` is legacy compatibility for older sequential workflow APIs and must remain available, but it is not the preferred model for new work.
+
 ### workflows
 
 User-facing workflow container.

@@ -284,6 +284,16 @@ export function migrate() {
       FOREIGN KEY (asset_id) REFERENCES assets(id)
     );
 
+    CREATE TABLE IF NOT EXISTS character_import_runs (
+      id TEXT PRIMARY KEY,
+      mode TEXT NOT NULL,
+      status TEXT NOT NULL,
+      imported_count INTEGER DEFAULT 0,
+      skipped_count INTEGER DEFAULT 0,
+      summary_json TEXT DEFAULT '{}',
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_workflows_workspace ON workflows(workspace_id, status);
     CREATE INDEX IF NOT EXISTS idx_workflow_runs_status ON workflow_runs(status, priority);
     CREATE INDEX IF NOT EXISTS idx_instance_slots_pool ON instance_slots(pool_id, status, health_status);
@@ -631,6 +641,12 @@ export function migrate() {
   addColumnIfMissing("instances", "current_workflow_run_id", "TEXT");
   addColumnIfMissing("instances", "maintenance_reason", "TEXT");
   addColumnIfMissing("instances", "last_error_at", "TEXT");
+  addColumnIfMissing("assets", "asset_category", "TEXT");
+  addColumnIfMissing("assets", "asset_sub_type", "TEXT");
+  addColumnIfMissing("assets", "tags_json", "TEXT DEFAULT '[]'");
+  addColumnIfMissing("assets", "attributes_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("assets", "preview_url", "TEXT");
+  addColumnIfMissing("assets", "source_asset_id", "TEXT");
   addColumnIfMissing("workflows", "capacity_config_json", "TEXT DEFAULT '{}'");
   addColumnIfMissing("workflows", "music_policy_json", "TEXT DEFAULT '{}'");
   addColumnIfMissing("workflows", "post_content_policy_json", "TEXT DEFAULT '{}'");

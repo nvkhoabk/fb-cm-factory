@@ -7,6 +7,7 @@ import {
   updateCharacterGroupSchema
 } from "./character-groups.schemas";
 import { characterGroupsService } from "./character-groups.service";
+import { characterSourceAssetsService } from "../character-assets/character-source-assets.service";
 
 export const characterGroupsRouter = Router();
 
@@ -26,6 +27,14 @@ characterGroupsRouter.post("/", (req, res) => {
 characterGroupsRouter.get("/:id", (req, res) => {
   try {
     res.json({ ok: true, data: characterGroupsService.get(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+characterGroupsRouter.get("/:id/source-assets", (req, res) => {
+  try {
+    res.json({ ok: true, data: characterSourceAssetsService.resolveCharacterGroupSourceAssets(req.params.id) });
   } catch (error) {
     sendError(res, error);
   }
