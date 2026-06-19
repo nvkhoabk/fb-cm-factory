@@ -307,6 +307,11 @@ export function migrate() {
   addColumnIfMissing("character_groups", "updated_at", "TEXT");
   addColumnIfMissing("character_group_members", "role", "TEXT DEFAULT 'subject'");
   addColumnIfMissing("character_group_members", "sort_order", "INTEGER DEFAULT 0");
+  addColumnIfMissing("assets", "thumbnail_file_path", "TEXT");
+  addColumnIfMissing("assets", "thumbnail_public_url", "TEXT");
+  addColumnIfMissing("assets", "thumbnail_width", "INTEGER");
+  addColumnIfMissing("assets", "thumbnail_height", "INTEGER");
+  addColumnIfMissing("assets", "thumbnail_status", "TEXT DEFAULT 'PENDING'");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS group_attributes (

@@ -18,10 +18,10 @@ assetsRouter.get("/categories", (_req, res) => {
   res.json({ ok: true, data: assetsService.categories() });
 });
 
-assetsRouter.post("/", (req, res) => {
+assetsRouter.post("/", async (req, res) => {
   try {
     const payload = createAssetSchema.parse(req.body);
-    res.status(201).json({ ok: true, data: assetsService.create(payload) });
+    res.status(201).json({ ok: true, data: await assetsService.create(payload) });
   } catch (error) {
     sendError(res, error);
   }
@@ -33,10 +33,10 @@ assetsRouter.get("/:id", (req, res) => {
   return res.json({ ok: true, data });
 });
 
-assetsRouter.patch("/:id", (req, res) => {
+assetsRouter.patch("/:id", async (req, res) => {
   try {
     const payload = updateAssetSchema.parse(req.body ?? {});
-    const data = assetsService.update(req.params.id, payload);
+    const data = await assetsService.update(req.params.id, payload);
     if (!data) return res.status(404).json({ ok: false, error: { code: "ASSET_NOT_FOUND", message: "Asset not found" } });
     return res.json({ ok: true, data });
   } catch (error) {
@@ -44,8 +44,8 @@ assetsRouter.patch("/:id", (req, res) => {
   }
 });
 
-assetsRouter.delete("/:id", (req, res) => {
-  if (!assetsService.delete(req.params.id)) {
+assetsRouter.delete("/:id", async (req, res) => {
+  if (!(await assetsService.delete(req.params.id))) {
     return res.status(404).json({ ok: false, error: { code: "ASSET_NOT_FOUND", message: "Asset not found" } });
   }
   return res.json({ ok: true, data: { deleted: true } });

@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import { config } from "./config";
 import { healthRouter } from "./modules/health/health.routes";
 import {
   workflowRunsRouter,
@@ -11,6 +12,7 @@ import { instancePoolsRouter } from "./modules/instance-pools/instance-pools.rou
 import { instancesRouter } from "./modules/instances/instances.routes";
 import { instanceSchedulerRouter } from "./modules/instance-scheduler/instance-scheduler.routes";
 import { characterGroupsRouter } from "./modules/character-groups/character-groups.routes";
+import { charactersRouter } from "./modules/characters/characters.routes";
 import { groupAttributesRouter } from "./modules/group-attributes/group-attributes.routes";
 import { promptTemplateVersionsRouter, promptTemplatesRouter, promptsRouter } from "./modules/prompt-builder/prompt-builder.routes";
 import { promptRenderRouter } from "./modules/prompt-builder/prompt-render.routes";
@@ -28,7 +30,8 @@ import { assetsRouter } from "./modules/assets/assets.routes";
 export const app = express();
 
 app.use(cors());
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT ?? "100mb" }));
+app.use("/storage", express.static(config.storageRoot));
 
 function mountRoutes(prefix = "") {
   app.use(`${prefix}/health`, healthRouter);
@@ -40,6 +43,7 @@ function mountRoutes(prefix = "") {
   app.use(`${prefix}/instances`, instancesRouter);
   app.use(`${prefix}/instance-allocations`, instanceSchedulerRouter);
   app.use(`${prefix}/character-groups`, characterGroupsRouter);
+  app.use(`${prefix}/characters`, charactersRouter);
   app.use(`${prefix}/group-attributes`, groupAttributesRouter);
   app.use(`${prefix}/prompt-templates`, promptTemplatesRouter);
   app.use(`${prefix}/prompt-template-versions`, promptTemplateVersionsRouter);
@@ -66,6 +70,20 @@ mountRoutes("/api/v2");
 app.use("/api/v2/prompt-builder/templates", promptTemplatesRouter);
 app.use("/api/v2/prompt-builder", promptsRouter);
 app.use("/api/v2/workflows/runs", workflowRunsRouter);
+
+app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const payloadError = error as { type?: string; status?: number; message?: string };
+  if (payloadError?.type === "entity.too.large" || payloadError?.status === 413) {
+    return res.status(413).json({
+      ok: false,
+      error: {
+        code: "PAYLOAD_TOO_LARGE",
+        message: `Request body is too large. Current JSON_BODY_LIMIT is ${process.env.JSON_BODY_LIMIT ?? "100mb"}.`
+      }
+    });
+  }
+  return next(error);
+});
 
 app.use((req, res) => {
   res.status(404).json({

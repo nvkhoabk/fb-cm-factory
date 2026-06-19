@@ -2,15 +2,23 @@ import {
   Boxes,
   Check,
   ClipboardList,
+  Copy,
   Dices,
+  Edit3,
+  Eye,
+  Languages,
   Image,
   Loader2,
   Music,
+  PackagePlus,
   Play,
   Rocket,
   RefreshCcw,
+  Archive,
   Search,
+  Shuffle,
   Sparkles,
+  Trash2,
   Users,
   Video
 } from "lucide-react";
@@ -34,6 +42,100 @@ type CharacterGroup = {
   status?: string;
   memberCount?: number;
   attributesSummary?: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  readiness?: GroupReadiness;
+  membersPreview?: CharacterGroupMemberSummary[];
+  productionBatchCount?: number;
+};
+
+type GroupReadiness = {
+  code: string;
+  label: string;
+  ready: boolean;
+  missingImages?: number;
+  missingAttributes?: number;
+};
+
+type CharacterGroupMemberSummary = {
+  memberId?: string | null;
+  role?: string | null;
+  sortOrder?: number;
+  character: CharacterRecord;
+  youngThumbnailUrl?: string | null;
+  oldThumbnailUrl?: string | null;
+  hasYoungOriginal?: boolean;
+  hasOldOriginal?: boolean;
+  youngOriginalImage?: AssetRecord | null;
+  oldOriginalImage?: AssetRecord | null;
+};
+
+type CharacterGroupDetail = {
+  group: CharacterGroup;
+  members: CharacterGroupMemberSummary[];
+  attributes: Array<{
+    id?: string | null;
+    attributeId?: string | null;
+    attributeKey?: string | null;
+    attributeName?: string | null;
+    valueId?: string | null;
+    value?: string | null;
+    label?: string | null;
+    customValue?: string | null;
+  }>;
+  readiness: GroupReadiness;
+  productionHistory: {
+    batches: ProductionBatch[];
+    jobs: OrchestratorJob[];
+  };
+  sourceAssets?: Record<string, unknown>;
+};
+
+type CharacterRecord = {
+  id: string;
+  name: string;
+  status?: string | null;
+  age?: number | null;
+  metadata?: Record<string, unknown>;
+  sourceImages?: {
+    youngOriginalImage?: AssetRecord | null;
+    oldOriginalImage?: AssetRecord | null;
+  };
+  groupCount?: number;
+  relatedAssetCount?: number;
+  tags?: string[];
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+type CharacterDetail = {
+  character: CharacterRecord;
+  sourceImages: {
+    youngOriginalImage?: AssetRecord | null;
+    oldOriginalImage?: AssetRecord | null;
+  };
+  groups: Array<CharacterGroup & {
+    memberId?: string | null;
+    role?: string | null;
+    memberCount?: number;
+    attributesSummary?: string;
+    createdAt?: string | null;
+  }>;
+  relatedAssets: {
+    originalImages: AssetRecord[];
+    editedImages: AssetRecord[];
+    videoTransitions: ProductionBatch[];
+    finalVideos: ProductionBatch[];
+    postContent: ProductionBatch[];
+    all?: {
+      assets?: AssetRecord[];
+      batches?: ProductionBatch[];
+    };
+  };
+  relatedJobs: {
+    grouped: Record<string, OrchestratorJob[]>;
+    all: OrchestratorJob[];
+  };
 };
 
 type GroupAttribute = {
@@ -47,7 +149,22 @@ type PromptTemplate = {
   id: string;
   name: string;
   category: string;
+  description?: string | null;
   status?: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  versions?: PromptTemplateVersion[];
+  activeVersion?: PromptTemplateVersion | null;
+};
+
+type PromptTemplateVersion = {
+  id: string;
+  promptTemplateId: string;
+  versionNo: number;
+  templateText: string;
+  status: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 };
 
 type HostRecord = {
@@ -214,6 +331,11 @@ type AssetRecord = {
   isBestVersion?: boolean;
   publicUrl?: string | null;
   previewUrl?: string | null;
+  thumbnailFilePath?: string | null;
+  thumbnailPublicUrl?: string | null;
+  thumbnailWidth?: number | null;
+  thumbnailHeight?: number | null;
+  thumbnailStatus?: string | null;
   filePath?: string | null;
   usageStatus?: string | null;
   usagePolicy?: string | null;
@@ -326,6 +448,7 @@ type ScriptRun = {
 };
 
 type PromptKind = "image" | "video" | "music";
+type LanguageCode = "en" | "vi";
 type ManagementSection =
   | "hosts"
   | "workflows"
@@ -333,6 +456,7 @@ type ManagementSection =
   | "instance-pools"
   | "scripts"
   | "prompt-templates"
+  | "characters"
   | "character-groups"
   | "character-import"
   | "production-resources"
@@ -377,10 +501,83 @@ const assetCategoryTabs = [
   { id: "POST_TEMPLATE", label: "Post Templates" }
 ];
 const jobBoardStatusOptions = ["PENDING", "ALLOCATED", "RUNNING", "COMPLETED", "FAILED"];
-const promptCategoryOptions = ["image", "video", "music", "POST_CONTENT"];
+const promptCategoryOptions = ["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT", "UTILITY"];
+const promptVariableHelpers = [
+  { group: "Character / Group", values: ["{{group.name}}", "{{group.size}}", "{{character.name}}", "{{character.status}}", "{{character.age}}"] },
+  { group: "Attributes", values: ["{scene}", "{emotion}", "{outfit}", "{mood}", "{style}", "{tempo}"] },
+  { group: "Assets", values: ["{{batch.id}}", "{{asset.publicUrl}}", "{{finalVideo.title}}"] },
+  { group: "Prompt", values: ["{{prompt.image}}", "{{prompt.video}}", "{{prompt.music}}", "{{prompt.post}}"] }
+];
 const musicPolicyModes = ["RANDOM_LIBRARY", "REQUIRE_MATCHED", "CREATE_DEDICATED"];
 const musicMatchAttributeOptions = ["mood", "tempo", "style", "scene", "emotion", "tags"];
 const scriptCategoryOptions = ["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT", "UTILITY"];
+
+const translations: Record<LanguageCode, Record<string, string>> = {
+  en: {
+    "app.controlCenter": "Factory Control Center",
+    "app.productionJobs": "Production Jobs",
+    "app.assetCenter": "Asset Center",
+    "app.productionStudio": "Production Studio",
+    "app.management": "Management",
+    "app.language": "Language",
+    "app.refresh": "Refresh",
+    "management.subtitle": "Simple CRUD tools for operators",
+    "management.characters": "Characters",
+    "management.characterImport": "Character Import",
+    "management.characterGroups": "Character Groups",
+    "management.promptTemplates": "Prompt Templates",
+    "management.productionResources": "Production Resources",
+    "management.scripts": "Scripts",
+    "management.jobs": "Jobs",
+    "management.workflows": "Workflows",
+    "management.runtimeSessions": "Runtime Sessions",
+    "management.orchestratorRules": "Orchestrator Rules",
+    "management.hosts": "Hosts",
+    "management.instances": "Instances",
+    "management.instancePools": "Instance Pools",
+    "management.search": "Search/filter"
+  },
+  vi: {
+    "app.controlCenter": "Trung Tâm Điều Khiển Factory",
+    "app.productionJobs": "Công Việc Sản Xuất",
+    "app.assetCenter": "Trung Tâm Tài Sản",
+    "app.productionStudio": "Studio Sản Xuất",
+    "app.management": "Quản Lý",
+    "app.language": "Ngôn ngữ",
+    "app.refresh": "Làm mới",
+    "management.subtitle": "Công cụ quản trị nhanh cho operator",
+    "management.characters": "Character",
+    "management.characterImport": "Nhập Character",
+    "management.characterGroups": "Nhóm Character",
+    "management.promptTemplates": "Mẫu Prompt",
+    "management.productionResources": "Tài Nguyên Sản Xuất",
+    "management.scripts": "Scripts",
+    "management.jobs": "Jobs",
+    "management.workflows": "Workflows",
+    "management.runtimeSessions": "Phiên Runtime",
+    "management.orchestratorRules": "Luật Orchestrator",
+    "management.hosts": "Hosts",
+    "management.instances": "Instances",
+    "management.instancePools": "Instance Pools",
+    "management.search": "Tìm kiếm/lọc"
+  }
+};
+
+const managementMenuItems: Array<{ id: ManagementSection; labelKey: string }> = [
+  { id: "characters", labelKey: "management.characters" },
+  { id: "character-import", labelKey: "management.characterImport" },
+  { id: "character-groups", labelKey: "management.characterGroups" },
+  { id: "prompt-templates", labelKey: "management.promptTemplates" },
+  { id: "production-resources", labelKey: "management.productionResources" },
+  { id: "scripts", labelKey: "management.scripts" },
+  { id: "jobs", labelKey: "management.jobs" },
+  { id: "workflows", labelKey: "management.workflows" },
+  { id: "runtime-sessions", labelKey: "management.runtimeSessions" },
+  { id: "orchestrator-rules", labelKey: "management.orchestratorRules" },
+  { id: "hosts", labelKey: "management.hosts" },
+  { id: "instances", labelKey: "management.instances" },
+  { id: "instance-pools", labelKey: "management.instancePools" }
+];
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -427,6 +624,63 @@ function applyWorkingAttributes(prompt: string, attributes: Record<string, strin
       : value;
     return text.split(`{${key}}`).join(display);
   }, prompt);
+}
+
+function normalizePromptCategory(category?: string | null) {
+  const raw = String(category ?? "").toUpperCase();
+  if (raw.includes("IMAGE")) return "IMAGE_EDIT";
+  if (raw.includes("VIDEO_COMPOSE") || raw.includes("COMPOSE")) return "VIDEO_COMPOSE";
+  if (raw.includes("VIDEO")) return "VIDEO_GENERATE";
+  if (raw.includes("MUSIC")) return "MUSIC_GENERATE";
+  if (raw.includes("POST")) return "POST_CONTENT";
+  return raw || "UTILITY";
+}
+
+function detectPromptVariables(text: string) {
+  return [...new Set([
+    ...Array.from(text.matchAll(/\{\{([^}]+)\}\}/g)).map((match) => `{{${match[1].trim()}}}`),
+    ...Array.from(text.matchAll(/\{([a-zA-Z0-9_.-]+)\}/g)).map((match) => `{${match[1].trim()}}`)
+  ])].sort();
+}
+
+function flattenContext(value: unknown, prefix = ""): Record<string, string> {
+  if (!value || typeof value !== "object") return {};
+  const output: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (item && typeof item === "object" && !Array.isArray(item)) {
+      Object.assign(output, flattenContext(item, path));
+    } else if (Array.isArray(item)) {
+      output[path] = item.join(", ");
+    } else if (item != null) {
+      output[path] = String(item);
+    }
+  }
+  return output;
+}
+
+function renderPromptLocally(templateText: string, context: Record<string, unknown>) {
+  const flat = flattenContext(context);
+  const replaced: string[] = [];
+  const missing = new Set<string>();
+  let rendered = templateText.replace(/\{\{([^}]+)\}\}/g, (match, expression: string) => {
+    const key = expression.trim();
+    if (flat[key] != null) {
+      replaced.push(match);
+      return flat[key];
+    }
+    missing.add(match);
+    return "";
+  });
+  rendered = rendered.replace(/\{([a-zA-Z0-9_.-]+)\}/g, (match, key: string) => {
+    if (flat[key] != null) {
+      replaced.push(match);
+      return flat[key];
+    }
+    missing.add(match);
+    return match;
+  });
+  return { rendered, replaced: [...new Set(replaced)], missing: [...missing] };
 }
 
 function batchReadyLabel(batch: ProductionBatch) {
@@ -485,12 +739,57 @@ function displayDateTime(value?: string) {
   return date.toLocaleString();
 }
 
+function groupTimestampParts(date = new Date()) {
+  const yy = String(date.getFullYear()).slice(-2);
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+  return { date: `${yy}${mm}${dd}`, time: `${hh}${mi}` };
+}
+
+function defaultGroupDraft() {
+  const stamp = groupTimestampParts();
+  return {
+    name: `Nhóm ${stamp.date} ${stamp.time}`,
+    description: `Nhóm tạo ngày ${stamp.date} vào lúc ${stamp.time}`,
+    status: "draft"
+  };
+}
+
 function getRecord(value: unknown) {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};
 }
 
 function getString(value: unknown) {
   return typeof value === "string" && value ? value : "";
+}
+
+function mediaUrl(value?: string | null) {
+  if (!value) return "";
+  if (/^(https?:|data:|blob:)/i.test(value)) return value;
+  if (value.startsWith("/")) return `${API_BASE.replace(/\/+$/, "")}${value}`;
+  return value;
+}
+
+function listImageUrl(asset?: AssetRecord | null) {
+  return mediaUrl(asset?.thumbnailPublicUrl);
+}
+
+function originalImageUrl(asset?: AssetRecord | null) {
+  return mediaUrl(asset?.publicUrl || asset?.previewUrl || asset?.thumbnailPublicUrl);
+}
+
+function thumbnailPairUrl(asset?: AssetRecord | null, fallback?: string | null) {
+  return mediaUrl(asset?.thumbnailPublicUrl || fallback);
+}
+
+function groupReadinessClass(readiness?: GroupReadiness) {
+  const code = readiness?.code ?? "";
+  if (code === "READY") return "ready";
+  if (code === "MISSING_IMAGES") return "warning";
+  if (code === "MISSING_ATTRIBUTES") return "muted";
+  return "danger";
 }
 
 function getJobWorkflowRunId(job?: OrchestratorJob | null) {
@@ -548,10 +847,8 @@ function parseJsonText(value: string, fallback: Record<string, unknown> = {}) {
 
 function fileToImportFile(file: File): Promise<CharacterImportFile> {
   return new Promise((resolve) => {
-    const objectUrl = URL.createObjectURL(file);
     const base = {
       fileName: file.name,
-      publicUrl: objectUrl,
       mimeType: file.type,
       size: file.size
     };
@@ -563,6 +860,22 @@ function fileToImportFile(file: File): Promise<CharacterImportFile> {
     reader.onerror = () => resolve(base);
     reader.readAsDataURL(file);
   });
+}
+
+function characterImportMetadataOnly(file: CharacterImportFile): CharacterImportFile {
+  return {
+    fileName: file.fileName,
+    mimeType: file.mimeType,
+    size: file.size
+  };
+}
+
+function characterImportUploadPayload(file: CharacterImportFile): CharacterImportFile {
+  const publicUrl = file.publicUrl?.startsWith("blob:") ? undefined : file.publicUrl;
+  return {
+    ...file,
+    publicUrl
+  };
 }
 
 function postContentMetadata(batch: ProductionBatch) {
@@ -705,6 +1018,11 @@ function AdminRuntimePanel({
 
 export function App() {
   const [page, setPage] = useState<AppPage>("control-center");
+  const [language, setLanguage] = useState<LanguageCode>(() => {
+    const saved = window.localStorage.getItem("fbcm-language");
+    return saved === "vi" || saved === "en" ? saved : "en";
+  });
+  const [characters, setCharacters] = useState<CharacterRecord[]>([]);
   const [groups, setGroups] = useState<CharacterGroup[]>([]);
   const [attributes, setAttributes] = useState<GroupAttribute[]>([]);
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
@@ -761,7 +1079,7 @@ export function App() {
   const [hostSendText, setHostSendText] = useState("hello");
   const [hostResult, setHostResult] = useState<unknown>(null);
   const [adbDevices, setAdbDevices] = useState<AdbDevice[]>([]);
-  const [managementSection, setManagementSection] = useState<ManagementSection>("hosts");
+  const [managementSection, setManagementSection] = useState<ManagementSection>("characters");
   const [scripts, setScripts] = useState<ScriptRecord[]>([]);
   const [orchestratorRules, setOrchestratorRules] = useState<OrchestratorRule[]>([]);
   const [selectedPoolId, setSelectedPoolId] = useState("");
@@ -792,6 +1110,29 @@ export function App() {
   const [selectedScriptId, setSelectedScriptId] = useState("");
   const [selectedScriptVersionId, setSelectedScriptVersionId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [selectedPromptCategory, setSelectedPromptCategory] = useState("IMAGE_EDIT");
+  const [promptStatusFilter, setPromptStatusFilter] = useState("");
+  const [promptHasVariableFilter, setPromptHasVariableFilter] = useState("");
+  const [promptRecentFilter, setPromptRecentFilter] = useState("");
+  const [promptDrawerTab, setPromptDrawerTab] = useState<"overview" | "versions" | "editor" | "preview">("overview");
+  const [promptDetail, setPromptDetail] = useState<PromptTemplate | null>(null);
+  const [promptEditorText, setPromptEditorText] = useState("");
+  const [promptPreviewContext, setPromptPreviewContext] = useState(JSON.stringify({
+    group: { name: "Ballroom Icons", size: 2 },
+    character: { name: "Merle Oberon", status: "rip", age: 68 },
+    scene: "ballroom",
+    emotion: "nostalgic",
+    outfit: "formal",
+    mood: "romantic",
+    style: "classic cinema",
+    tempo: "slow",
+    batch: { id: "pb_sample" },
+    asset: { publicUrl: "https://example.com/source.png" },
+    finalVideo: { title: "A Nostalgic Ballroom Reveal" },
+    prompt: { image: "image prompt", video: "video prompt", music: "music prompt", post: "post prompt" }
+  }, null, 2));
+  const [promptPreviewResult, setPromptPreviewResult] = useState<{ rendered: string; replaced: string[]; missing: string[] }>({ rendered: "", replaced: [], missing: [] });
+  const [showPromptCreateModal, setShowPromptCreateModal] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [selectedResourceId, setSelectedResourceId] = useState("");
   const [resourceTypeFilter, setResourceTypeFilter] = useState("");
@@ -822,6 +1163,23 @@ export function App() {
   const [characterImportPreview, setCharacterImportPreview] = useState<CharacterImportPairPreview[]>([]);
   const [characterImportResult, setCharacterImportResult] = useState<CharacterImportResult | null>(null);
   const [createCharacterGroupCandidates, setCreateCharacterGroupCandidates] = useState(false);
+  const [selectedCharacterId, setSelectedCharacterId] = useState("");
+  const [characterDetail, setCharacterDetail] = useState<CharacterDetail | null>(null);
+  const [characterFilters, setCharacterFilters] = useState({
+    status: "",
+    ageMin: "",
+    ageMax: "",
+    hasYoung: false,
+    hasOld: false,
+    groupState: "",
+    tag: ""
+  });
+  const [characterForm, setCharacterForm] = useState({
+    name: "",
+    status: "alive",
+    age: "",
+    metadata: "{}"
+  });
   const [adminSearch, setAdminSearch] = useState("");
   const [adminJson, setAdminJson] = useState("{}");
   const [hostForm, setHostForm] = useState({ hostId: "", name: "", baseUrl: "http://localhost:3300", apiKey: "", status: "active" });
@@ -834,14 +1192,47 @@ export function App() {
     status: "active",
     steps: "{\n  \"steps\": [\n    { \"type\": \"wait\", \"config\": { \"ms\": 500 } },\n    { \"type\": \"screenshot\", \"config\": {} },\n    { \"type\": \"send-text\", \"config\": { \"text\": \"{{prompt.image}}\" } }\n  ]\n}"
   });
-  const [templateForm, setTemplateForm] = useState({ name: "", category: "image", status: "active", templateText: "Transform into a {scene} scene." });
+  const [templateForm, setTemplateForm] = useState({ name: "", category: "IMAGE_EDIT", description: "", status: "active", templateText: "Transform into a {scene} scene." });
   const [groupForm, setGroupForm] = useState({ name: "", description: "", status: "active", characterId: "", role: "member", attributeId: "", customValue: "" });
+  const [groupFilters, setGroupFilters] = useState({
+    status: "",
+    size: "",
+    customSize: "",
+    missingImages: false,
+    hasAttributes: false,
+    productionUse: "",
+    recent: false,
+    characterSearch: "",
+    characterStatus: "",
+    ageMin: "",
+    ageMax: "",
+    hasYoung: false,
+    hasOld: false,
+    notSelected: false
+  });
+  const [selectedGroupDetail, setSelectedGroupDetail] = useState<CharacterGroupDetail | null>(null);
+  const [groupDrawerTab, setGroupDrawerTab] = useState<"overview" | "members" | "attributes" | "history" | "debug">("overview");
+  const [showGroupCreate, setShowGroupCreate] = useState(false);
+  const [groupCreateMemberIds, setGroupCreateMemberIds] = useState<string[]>([]);
+  const [groupCreateSize, setGroupCreateSize] = useState("5");
+  const [groupCreateMode, setGroupCreateMode] = useState<"manual" | "partial-random" | "random">("manual");
+  const [draggedGroupMemberId, setDraggedGroupMemberId] = useState("");
   const [batchForm, setBatchForm] = useState({ batchType: "IMAGE_BATCH", status: "NEW", usageStatus: "AVAILABLE", metadata: "{}" });
   const [ruleForm, setRuleForm] = useState({ name: "", triggerBatchType: "IMAGE_BATCH", triggerStatus: "READY", targetStageType: "VIDEO_GENERATE", priority: "100", config: "{}" });
   const [status, setStatus] = useState("Loading studio data");
   const [busy, setBusy] = useState(false);
 
   const selectedPrimaryGroup = selectedGroups[0] ?? "";
+  const t = useCallback((key: string) => translations[language][key] ?? translations.en[key] ?? key, [language]);
+  const pageTitle = page === "control-center"
+    ? t("app.controlCenter")
+    : page === "production-jobs"
+      ? t("app.productionJobs")
+      : page === "asset-center"
+        ? t("app.assetCenter")
+        : page === "management"
+          ? t("app.management")
+          : t("app.productionStudio");
   const selectedJob = useMemo(
     () => jobs.find((job) => job.id === selectedJobId) ?? null,
     [jobs, selectedJobId]
@@ -999,10 +1390,106 @@ export function App() {
       : [],
     [assets, selectedAsset]
   );
+  const characterTagOptions = useMemo(
+    () => [...new Set(characters.flatMap((character) => character.tags ?? []))].sort(),
+    [characters]
+  );
+  const filteredCharacters = useMemo(() => {
+    const search = adminSearch.toLowerCase();
+    return characters.filter((character) => {
+      const statusValue = String(character.status ?? "").toLowerCase();
+      const hasYoung = Boolean(character.sourceImages?.youngOriginalImage);
+      const hasOld = Boolean(character.sourceImages?.oldOriginalImage);
+      const age = Number(character.age ?? 0);
+      return (!adminSearch || compactJson(character).toLowerCase().includes(search))
+        && (!characterFilters.status || statusValue === characterFilters.status)
+        && (!characterFilters.ageMin || age >= Number(characterFilters.ageMin))
+        && (!characterFilters.ageMax || age <= Number(characterFilters.ageMax))
+        && (!characterFilters.hasYoung || hasYoung)
+        && (!characterFilters.hasOld || hasOld)
+        && (!characterFilters.groupState || (characterFilters.groupState === "in-group" ? Number(character.groupCount ?? 0) > 0 : Number(character.groupCount ?? 0) === 0))
+        && (!characterFilters.tag || (character.tags ?? []).includes(characterFilters.tag));
+    });
+  }, [adminSearch, characterFilters, characters]);
+  const filteredGroupCards = useMemo(() => {
+    const search = adminSearch.toLowerCase();
+    const recentCutoff = Date.now() - 1000 * 60 * 60 * 24 * 7;
+    return groups.filter((group) => {
+      const size = Number(group.memberCount ?? 0);
+      const targetSize = groupFilters.size === "custom" ? Number(groupFilters.customSize || 0) : Number(groupFilters.size || 0);
+      const updatedAt = group.updatedAt ? new Date(group.updatedAt).getTime() : 0;
+      return (!adminSearch || `${group.name} ${group.description ?? ""} ${group.attributesSummary ?? ""}`.toLowerCase().includes(search))
+        && (!groupFilters.status || String(group.status ?? "").toLowerCase() === groupFilters.status)
+        && (!targetSize || size === targetSize)
+        && (!groupFilters.missingImages || group.readiness?.code === "MISSING_IMAGES")
+        && (!groupFilters.hasAttributes || Boolean(group.attributesSummary))
+        && (!groupFilters.productionUse || (groupFilters.productionUse === "used" ? Number(group.productionBatchCount ?? 0) > 0 : Number(group.productionBatchCount ?? 0) === 0))
+        && (!groupFilters.recent || updatedAt >= recentCutoff);
+    });
+  }, [adminSearch, groupFilters, groups]);
+  const groupKpis = useMemo(() => {
+    const totalMembers = groups.reduce((sum, group) => sum + Number(group.memberCount ?? 0), 0);
+    return {
+      total: groups.length,
+      active: groups.filter((group) => String(group.status ?? "").toLowerCase() === "active").length,
+      averageSize: groups.length ? Math.round((totalMembers / groups.length) * 10) / 10 : 0,
+      ready: groups.filter((group) => group.readiness?.code === "READY").length,
+      missingImages: groups.filter((group) => group.readiness?.code === "MISSING_IMAGES").length
+    };
+  }, [groups]);
+  const groupPickerCharacters = useMemo(() => {
+    const search = groupFilters.characterSearch.toLowerCase();
+    const selected = new Set(groupCreateMemberIds);
+    return characters.filter((character) => {
+      const statusValue = String(character.status ?? "").toLowerCase();
+      const age = Number(character.age ?? 0);
+      const hasYoung = Boolean(character.sourceImages?.youngOriginalImage);
+      const hasOld = Boolean(character.sourceImages?.oldOriginalImage);
+      return (!search || String(character.name ?? "").toLowerCase().includes(search))
+        && (!groupFilters.characterStatus || statusValue === groupFilters.characterStatus)
+        && (!groupFilters.ageMin || age >= Number(groupFilters.ageMin))
+        && (!groupFilters.ageMax || age <= Number(groupFilters.ageMax))
+        && (!groupFilters.hasYoung || hasYoung)
+        && (!groupFilters.hasOld || hasOld)
+        && (!groupFilters.notSelected || !selected.has(character.id));
+    });
+  }, [characters, groupCreateMemberIds, groupFilters]);
+  const promptCards = useMemo(() => templates.map((template) => {
+    const versions = template.versions ?? [];
+    const activeVersion = template.activeVersion ?? versions.find((version) => version.status === "active") ?? versions[0] ?? null;
+    const templateText = activeVersion?.templateText ?? "";
+    return {
+      ...template,
+      normalizedCategory: normalizePromptCategory(template.category),
+      versions,
+      activeVersion,
+      variables: detectPromptVariables(templateText),
+      preview: templateText.split(/\r?\n/).slice(0, 3).join("\n")
+    };
+  }), [templates]);
+  const promptCategoryCounts = useMemo(() => {
+    const counts: Record<string, number> = Object.fromEntries(promptCategoryOptions.map((category) => [category, 0]));
+    for (const card of promptCards) counts[card.normalizedCategory] = (counts[card.normalizedCategory] ?? 0) + 1;
+    return counts;
+  }, [promptCards]);
+  const filteredPromptCards = useMemo(() => {
+    const search = adminSearch.toLowerCase();
+    const recentCutoff = Date.now() - 1000 * 60 * 60 * 24 * 7;
+    return promptCards.filter((card) => {
+      const haystack = `${card.name} ${card.description ?? ""} ${card.preview}`.toLowerCase();
+      const updatedAt = card.updatedAt ? new Date(card.updatedAt).getTime() : 0;
+      return (!selectedPromptCategory || card.normalizedCategory === selectedPromptCategory)
+        && (!adminSearch || haystack.includes(search))
+        && (!promptStatusFilter || card.status === promptStatusFilter)
+        && (!promptHasVariableFilter || (promptHasVariableFilter === "yes" ? card.variables.length > 0 : card.variables.length === 0))
+        && (!promptRecentFilter || updatedAt >= recentCutoff);
+    });
+  }, [adminSearch, promptCards, promptHasVariableFilter, promptRecentFilter, promptStatusFilter, selectedPromptCategory]);
 
   const loadData = useCallback(async () => {
     setStatus("Loading studio data");
     const [
+      characterData,
       groupData,
       attributeData,
       templateData,
@@ -1020,6 +1507,7 @@ export function App() {
       scriptData,
       ruleData
     ] = await Promise.all([
+      api<CharacterRecord[]>("/characters"),
       api<CharacterGroup[]>("/character-groups"),
       api<GroupAttribute[]>("/group-attributes"),
       api<PromptTemplate[]>("/prompt-templates"),
@@ -1038,6 +1526,7 @@ export function App() {
       api<OrchestratorRule[]>("/orchestrator/rules")
     ]);
 
+    setCharacters(characterData);
     setGroups(groupData);
     setAttributes(attributeData);
     setTemplates(templateData);
@@ -1068,6 +1557,7 @@ export function App() {
     setSelectedTemplateId((current) => current || templateData[0]?.id || "");
     setSelectedGroupId((current) => current || groupData[0]?.id || "");
     setSelectedAssetId((current) => current || assetData[0]?.id || "");
+    setSelectedCharacterId((current) => current || characterData[0]?.id || "");
 
     const nextSelections = { image: "", video: "", music: "" };
     for (const template of templateData) {
@@ -1087,6 +1577,10 @@ export function App() {
   useEffect(() => {
     loadData().catch((error) => setStatus(error instanceof Error ? error.message : "Could not load studio"));
   }, [loadData]);
+
+  useEffect(() => {
+    window.localStorage.setItem("fbcm-language", language);
+  }, [language]);
 
   useEffect(() => {
     if (!autoRefresh) return;
@@ -1166,6 +1660,24 @@ export function App() {
       qualityStatus: selectedAsset.qualityStatus ?? "draft"
     });
   }, [assetTab, selectedAsset]);
+
+  useEffect(() => {
+    if (!selectedCharacterId) {
+      setCharacterDetail(null);
+      return;
+    }
+    api<CharacterDetail>(`/characters/${selectedCharacterId}/detail`)
+      .then((detail) => {
+        setCharacterDetail(detail);
+        setCharacterForm({
+          name: detail.character.name ?? "",
+          status: String(detail.character.status ?? "alive"),
+          age: detail.character.age == null ? "" : String(detail.character.age),
+          metadata: JSON.stringify(detail.character.metadata ?? {}, null, 2)
+        });
+      })
+      .catch((error) => setStatus(error instanceof Error ? error.message : "Could not load character detail"));
+  }, [selectedCharacterId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1318,6 +1830,406 @@ export function App() {
     setSelectedAssetId("");
   }
 
+  async function saveSelectedCharacter() {
+    if (!selectedCharacterId) return;
+    await adminAction("Updating character", async () => {
+      const character = await api<CharacterRecord>(`/characters/${selectedCharacterId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: characterForm.name,
+          status: characterForm.status,
+          age: characterForm.age ? Number(characterForm.age) : undefined,
+          metadata: parseJsonText(characterForm.metadata, {})
+        })
+      });
+      const detail = await api<CharacterDetail>(`/characters/${selectedCharacterId}/detail`);
+      setCharacterDetail(detail);
+      return character;
+    });
+  }
+
+  async function deleteSelectedCharacter() {
+    if (!characterDetail?.character.id) return;
+    const confirmed = window.confirm(
+      `Delete character ${characterDetail.character.name}?\n\nThis deletes only the character source record, group memberships, metadata, and original young/old source images. Edited assets, videos, post content, jobs, and lineage are preserved.`
+    );
+    if (!confirmed) return;
+
+    await adminAction("Deleting character source record", async () => {
+      const result = await api(`/characters/${characterDetail.character.id}`, { method: "DELETE" });
+      setSelectedCharacterId("");
+      setCharacterDetail(null);
+      await refreshQueue();
+      return result;
+    });
+  }
+
+  async function createCharacterSourceVersion(role: "young" | "old") {
+    if (!characterDetail?.character.id) return;
+    const current = role === "young" ? characterDetail.sourceImages.youngOriginalImage : characterDetail.sourceImages.oldOriginalImage;
+    const url = window.prompt(`Public URL for ${role} original source image`);
+    if (!url) return;
+    await adminAction("Uploading source image version", async () => {
+      const versionSiblings = assets.filter((asset) => (asset.versionGroupId ?? asset.id) === (current?.versionGroupId ?? current?.id));
+      const asset = await api<AssetRecord>("/assets", {
+        method: "POST",
+        body: JSON.stringify({
+          name: `${characterDetail.character.name} ${role === "young" ? "Young Original" : "Old Original"}`,
+          assetCategory: "CHARACTER_IMAGE",
+          assetType: "CHARACTER_IMAGE",
+          assetSubType: role === "young" ? "YOUNG_ORIGINAL_IMAGE" : "OLD_ORIGINAL_IMAGE",
+          mediaType: "image",
+          characterId: characterDetail.character.id,
+          publicUrl: url,
+          previewUrl: url,
+          sourceAssetId: current?.id,
+          versionGroupId: current?.versionGroupId ?? current?.id,
+          versionNo: current ? Math.max(0, ...versionSiblings.map((assetItem) => Number(assetItem.versionNo ?? 0))) + 1 : 1,
+          isBestVersion: false,
+          tags: [characterDetail.character.name, role, "original"],
+          attributes: { sourceRole: role },
+          metadata: { sourceRole: role, replacedFrom: current?.id ?? null },
+          status: "available",
+          usageStatus: "available",
+          usagePolicy: "reusable",
+          qualityStatus: "draft"
+        })
+      });
+      setSelectedAssetId(asset.id);
+      const detail = await api<CharacterDetail>(`/characters/${characterDetail.character.id}/detail`);
+      setCharacterDetail(detail);
+      return asset;
+    });
+  }
+
+  async function markActiveSourceImage(assetId?: string | null) {
+    if (!assetId) return;
+    await adminAction("Marking active source image", async () => {
+      const asset = await api<AssetRecord>(`/assets/${assetId}/set-best`, { method: "POST" });
+      if (characterDetail?.character.id) {
+        setCharacterDetail(await api<CharacterDetail>(`/characters/${characterDetail.character.id}/detail`));
+      }
+      return asset;
+    });
+  }
+
+  async function removeCharacterFromGroup(groupId?: string | null, memberId?: string | null) {
+    if (!groupId || !memberId) return;
+    await adminAction("Removing character from group", async () => {
+      await api(`/character-groups/${groupId}/members/${memberId}`, { method: "DELETE" });
+      if (selectedCharacterId) setCharacterDetail(await api<CharacterDetail>(`/characters/${selectedCharacterId}/detail`));
+      return { removed: true };
+    });
+  }
+
+  async function addCharacterToSelectedGroup() {
+    if (!selectedCharacterId || !selectedGroupId) return;
+    await adminAction("Adding character to group", async () => {
+      const result = await api(`/character-groups/${selectedGroupId}/members`, {
+        method: "POST",
+        body: JSON.stringify({ characterId: selectedCharacterId, role: "member", sortOrder: 0 })
+      });
+      setCharacterDetail(await api<CharacterDetail>(`/characters/${selectedCharacterId}/detail`));
+      return result;
+    });
+  }
+
+  async function openCharacterGroup(groupId: string, tab: typeof groupDrawerTab = "overview") {
+    setSelectedGroupId(groupId);
+    setGroupDrawerTab(tab);
+    const detail = await api<CharacterGroupDetail>(`/character-groups/${groupId}/detail`);
+    setSelectedGroupDetail(detail);
+    setGroupForm((current) => ({
+      ...current,
+      name: detail.group.name ?? "",
+      description: detail.group.description ?? "",
+      status: detail.group.status ?? "active"
+    }));
+  }
+
+  function toggleGroupCreateMember(characterId: string) {
+    setGroupCreateMemberIds((current) =>
+      current.includes(characterId) ? current.filter((id) => id !== characterId) : [...current, characterId]
+    );
+  }
+
+  function randomCharacterIds(count: number, excludedIds: string[] = []) {
+    const excluded = new Set(excludedIds);
+    return [...characters]
+      .filter((character) => character.sourceImages?.youngOriginalImage && character.sourceImages?.oldOriginalImage && !excluded.has(character.id))
+      .sort(() => Math.random() - 0.5)
+      .slice(0, count)
+      .map((character) => character.id);
+  }
+
+  async function createCharacterGroupFromBuilder() {
+    const targetSize = Math.max(1, Number(groupCreateSize || 0));
+    const selectedIds = groupCreateMode === "random"
+      ? randomCharacterIds(targetSize)
+      : groupCreateMode === "partial-random"
+        ? [...groupCreateMemberIds, ...randomCharacterIds(Math.max(0, targetSize - groupCreateMemberIds.length), groupCreateMemberIds)]
+        : groupCreateMemberIds;
+    const finalIds = [...new Set(selectedIds)].slice(0, targetSize);
+    if (!groupForm.name.trim()) {
+      setStatus("Group name is required");
+      return;
+    }
+    if (!finalIds.length) {
+      setStatus("Cannot save an empty group");
+      return;
+    }
+    const missingSource = finalIds.some((id) => {
+      const character = characters.find((item) => item.id === id);
+      return !character?.sourceImages?.youngOriginalImage || !character?.sourceImages?.oldOriginalImage;
+    });
+    if (groupForm.status === "active" && missingSource && !window.confirm("This active group has members missing source images. Save anyway?")) return;
+    await adminAction("Creating character group", async () => {
+      const group = await api<CharacterGroup>("/character-groups", {
+        method: "POST",
+        body: JSON.stringify({ name: groupForm.name, description: groupForm.description, status: groupForm.status })
+      });
+      for (const [index, characterId] of finalIds.entries()) {
+        await api(`/character-groups/${group.id}/members`, {
+          method: "POST",
+          body: JSON.stringify({ characterId, role: "member", sortOrder: index })
+        });
+      }
+      await loadData();
+      await openCharacterGroup(group.id, "members");
+      setShowGroupCreate(false);
+      setGroupCreateMemberIds([]);
+      return group;
+    });
+  }
+
+  async function saveSelectedGroup() {
+    if (!selectedGroupDetail?.group.id) return;
+    await adminAction("Updating character group", async () => {
+      const group = await api<CharacterGroup>(`/character-groups/${selectedGroupDetail.group.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: groupForm.name, description: groupForm.description, status: groupForm.status })
+      });
+      await loadData();
+      await openCharacterGroup(group.id, "overview");
+      return group;
+    });
+  }
+
+  async function duplicateSelectedGroup(groupId: string) {
+    await adminAction("Duplicating group", async () => {
+      const detail = await api<CharacterGroupDetail>(`/character-groups/${groupId}/duplicate`, { method: "POST" });
+      await loadData();
+      await openCharacterGroup(detail.group.id, "members");
+      return detail;
+    });
+  }
+
+  async function removeGroupMember(memberId?: string | null) {
+    if (!selectedGroupDetail?.group.id || !memberId) return;
+    await adminAction("Removing group member", async () => {
+      await api(`/character-groups/${selectedGroupDetail.group.id}/members/${memberId}`, { method: "DELETE" });
+      await loadData();
+      await openCharacterGroup(selectedGroupDetail.group.id, "members");
+      return { removed: true };
+    });
+  }
+
+  async function shuffleSelectedGroupMembers() {
+    if (!selectedGroupDetail?.group.id) return;
+    await shuffleGroupMembers(selectedGroupDetail.group.id);
+  }
+
+  async function shuffleGroupMembers(groupId: string) {
+    await adminAction("Shuffling group member order", async () => {
+      const detail = await api<CharacterGroupDetail>(`/character-groups/${groupId}/members/shuffle`, { method: "POST" });
+      setSelectedGroupDetail(detail);
+      setSelectedGroupId(groupId);
+      setGroupDrawerTab("members");
+      await loadData();
+      return detail;
+    });
+  }
+
+  async function reorderSelectedGroupMembers(targetMemberId?: string | null) {
+    if (!selectedGroupDetail?.group.id || !draggedGroupMemberId || !targetMemberId || draggedGroupMemberId === targetMemberId) return;
+    const currentIds = selectedGroupDetail.members.map((member) => String(member.memberId));
+    const nextIds = currentIds.filter((id) => id !== draggedGroupMemberId);
+    const targetIndex = nextIds.indexOf(String(targetMemberId));
+    nextIds.splice(targetIndex < 0 ? nextIds.length : targetIndex, 0, draggedGroupMemberId);
+    setDraggedGroupMemberId("");
+    await adminAction("Saving group member order", async () => {
+      const detail = await api<CharacterGroupDetail>(`/character-groups/${selectedGroupDetail.group.id}/members/reorder`, {
+        method: "PATCH",
+        body: JSON.stringify({ memberIds: nextIds })
+      });
+      setSelectedGroupDetail(detail);
+      await loadData();
+      return detail;
+    });
+  }
+
+  async function assignSelectedGroupAttribute() {
+    if (!selectedGroupDetail?.group.id || !groupForm.attributeId) return;
+    await adminAction("Assigning group attribute", async () => {
+      const result = await api(`/character-groups/${selectedGroupDetail.group.id}/attributes`, {
+        method: "POST",
+        body: JSON.stringify({ attributeId: groupForm.attributeId, customValue: groupForm.customValue })
+      });
+      await loadData();
+      await openCharacterGroup(selectedGroupDetail.group.id, "attributes");
+      return result;
+    });
+  }
+
+  async function createBatchForGroup(groupId: string, readiness?: GroupReadiness) {
+    if (!readiness?.ready && !window.confirm("This group is not fully ready. Create production batch anyway?")) return;
+    await adminAction("Creating production batch", async () => {
+      const batch = await api<ProductionBatch>(`/character-groups/${groupId}/create-production-batch`, { method: "POST" });
+      await refreshQueue();
+      await openCharacterGroup(groupId, "history");
+      return batch;
+    });
+  }
+
+  async function deleteCharacterGroup(group: CharacterGroup) {
+    if (!window.confirm(`Delete group ${group.name}?\n\nCharacters and source images will not be deleted.`)) return;
+    await adminAction("Deleting character group", async () => {
+      const result = await api(`/character-groups/${group.id}`, { method: "DELETE" });
+      if (selectedGroupId === group.id) {
+        setSelectedGroupId("");
+        setSelectedGroupDetail(null);
+      }
+      await loadData();
+      return result;
+    });
+  }
+
+  async function openPromptTemplate(templateId: string, tab: typeof promptDrawerTab = "overview") {
+    setSelectedTemplateId(templateId);
+    setPromptDrawerTab(tab);
+    const detail = await api<PromptTemplate>(`/prompt-templates/${templateId}`);
+    setPromptDetail(detail);
+    const activeVersion = detail.activeVersion ?? detail.versions?.[0] ?? null;
+    setPromptEditorText(activeVersion?.templateText ?? "");
+    setTemplateForm({
+      name: detail.name ?? "",
+      category: normalizePromptCategory(detail.category),
+      description: detail.description ?? "",
+      status: detail.status ?? "active",
+      templateText: activeVersion?.templateText ?? ""
+    });
+  }
+
+  async function createPromptTemplateFlow() {
+    await adminAction("Creating prompt template", async () => {
+      const template = await api<PromptTemplate>("/prompt-templates", {
+        method: "POST",
+        body: JSON.stringify({
+          name: templateForm.name,
+          category: templateForm.category,
+          description: templateForm.description,
+          status: templateForm.status
+        })
+      });
+      await api<PromptTemplateVersion>(`/prompt-templates/${template.id}/versions`, {
+        method: "POST",
+        body: JSON.stringify({ templateText: templateForm.templateText, status: "active" })
+      });
+      await refreshQueue();
+      await openPromptTemplate(template.id, "editor");
+      setShowPromptCreateModal(false);
+      return template;
+    });
+  }
+
+  async function savePromptVersion(statusValue: "draft" | "active" = "draft") {
+    if (!selectedTemplateId) return;
+    await adminAction(statusValue === "active" ? "Saving active prompt version" : "Saving draft prompt version", async () => {
+      const version = await api<PromptTemplateVersion>(`/prompt-templates/${selectedTemplateId}/versions`, {
+        method: "POST",
+        body: JSON.stringify({ templateText: promptEditorText, status: statusValue })
+      });
+      if (statusValue === "active") await api(`/prompt-template-versions/${version.id}/activate`, { method: "POST" });
+      await refreshQueue();
+      await openPromptTemplate(selectedTemplateId, "versions");
+      return version;
+    });
+  }
+
+  async function activatePromptVersion(versionId?: string) {
+    const targetVersionId = versionId ?? promptDetail?.activeVersion?.id;
+    if (!targetVersionId) return;
+    await adminAction("Activating prompt version", async () => {
+      const version = await api<PromptTemplateVersion>(`/prompt-template-versions/${targetVersionId}/activate`, { method: "POST" });
+      await refreshQueue();
+      if (selectedTemplateId) await openPromptTemplate(selectedTemplateId, "versions");
+      return version;
+    });
+  }
+
+  async function duplicatePromptTemplate(template: PromptTemplate) {
+    await adminAction("Duplicating prompt template", async () => {
+      const detail = await api<PromptTemplate>(`/prompt-templates/${template.id}`);
+      const activeVersion = detail.activeVersion ?? detail.versions?.[0] ?? null;
+      const copy = await api<PromptTemplate>("/prompt-templates", {
+        method: "POST",
+        body: JSON.stringify({
+          name: `${detail.name} Copy`,
+          category: normalizePromptCategory(detail.category),
+          description: detail.description ?? "",
+          status: "active"
+        })
+      });
+      if (activeVersion?.templateText) {
+        await api<PromptTemplateVersion>(`/prompt-templates/${copy.id}/versions`, {
+          method: "POST",
+          body: JSON.stringify({ templateText: activeVersion.templateText, status: "active" })
+        });
+      }
+      await refreshQueue();
+      await openPromptTemplate(copy.id, "editor");
+      return copy;
+    });
+  }
+
+  async function deletePromptTemplate(template: PromptTemplate) {
+    if (!window.confirm(`Delete prompt template ${template.name}?\n\nAll versions for this template will also be deleted.`)) return;
+    await adminAction("Deleting prompt template", async () => {
+      const result = await api(`/prompt-templates/${template.id}`, { method: "DELETE" });
+      if (selectedTemplateId === template.id) {
+        setSelectedTemplateId("");
+        setPromptDetail(null);
+      }
+      await loadData();
+      return result;
+    });
+  }
+
+  function insertPromptVariable(variable: string) {
+    setPromptEditorText((current) => `${current}${current.endsWith(" ") || !current ? "" : " "}${variable}`);
+  }
+
+  async function renderPromptPreview() {
+    const context = parseJsonText(promptPreviewContext, {});
+    const local = renderPromptLocally(promptEditorText || (promptDetail?.activeVersion?.templateText ?? ""), context);
+    setPromptPreviewResult(local);
+    if (selectedTemplateId && selectedGroupId) {
+      try {
+        const rendered = await api<{ prompt: string; values?: Record<string, string> }>("/prompt-builder/render", {
+          method: "POST",
+          body: JSON.stringify({ templateId: selectedTemplateId, groupId: selectedGroupId })
+        });
+        setPromptPreviewResult({
+          rendered: rendered.prompt,
+          replaced: Object.keys(rendered.values ?? {}),
+          missing: local.missing
+        });
+      } catch {
+        setPromptPreviewResult(local);
+      }
+    }
+  }
+
   async function addCharacterImportFiles(fileList: FileList | File[]) {
     const next = await Promise.all(Array.from(fileList).map(fileToImportFile));
     setCharacterImportFiles((current) => [...current, ...next]);
@@ -1338,13 +2250,13 @@ export function App() {
     }
     const payload = characterImportMode === "pair"
       ? {
-          young: characterImportFiles[0],
-          old: characterImportFiles[1],
+          young: characterImportMetadataOnly(characterImportFiles[0]),
+          old: characterImportMetadataOnly(characterImportFiles[1]),
           dryRun: true,
           createGroupCandidates: createCharacterGroupCandidates
         }
       : {
-          files: characterImportFiles,
+          files: characterImportFiles.map(characterImportMetadataOnly),
           dryRun: true,
           createGroupCandidates: createCharacterGroupCandidates
         };
@@ -1370,12 +2282,12 @@ export function App() {
     }
     const payload = characterImportMode === "pair"
       ? {
-          young: characterImportFiles[0],
-          old: characterImportFiles[1],
+          young: characterImportUploadPayload(characterImportFiles[0]),
+          old: characterImportUploadPayload(characterImportFiles[1]),
           createGroupCandidates: createCharacterGroupCandidates
         }
       : {
-          files: characterImportFiles,
+          files: characterImportFiles.map(characterImportUploadPayload),
           createGroupCandidates: createCharacterGroupCandidates
         };
     if (characterImportMode === "pair" && (!payload.young || !payload.old)) {
@@ -1448,7 +2360,9 @@ export function App() {
   }
 
   async function refreshQueue() {
-    const [latestHosts, latestWorkflows, latestWorkflowRuns, latestInstances, latestPools, latestBatches, latestAssets, latestJobs, latestSessions, latestScriptRuns, latestScripts, latestRules] = await Promise.all([
+    const [latestCharacters, latestGroups, latestHosts, latestWorkflows, latestWorkflowRuns, latestInstances, latestPools, latestBatches, latestAssets, latestJobs, latestSessions, latestScriptRuns, latestScripts, latestRules] = await Promise.all([
+      api<CharacterRecord[]>("/characters"),
+      api<CharacterGroup[]>("/character-groups"),
       api<HostRecord[]>("/hosts"),
       api<WorkflowRecord[]>("/workflows"),
       api<WorkflowRunRecord[]>("/workflow-runs"),
@@ -1462,6 +2376,8 @@ export function App() {
       api<ScriptRecord[]>("/scripts"),
       api<OrchestratorRule[]>("/orchestrator/rules")
     ]);
+    setCharacters(latestCharacters);
+    setGroups(latestGroups);
     setHosts(latestHosts);
     setWorkflows(latestWorkflows);
     setWorkflowRuns(latestWorkflowRuns);
@@ -1482,6 +2398,7 @@ export function App() {
       batches: latestBatches,
       assets: latestAssets,
       jobs: latestJobs,
+      groups: latestGroups,
       hosts: latestHosts,
       workflows: latestWorkflows,
       workflowRuns: latestWorkflowRuns,
@@ -2071,85 +2988,73 @@ export function App() {
       <header className="topbar">
         <div>
           <p className="eyebrow">FB-CM Factory</p>
-          <h1>
-            {page === "control-center"
-              ? "Factory Control Center"
-              : page === "production-jobs"
-                ? "Production Jobs"
-                : page === "asset-center"
-                  ? "Asset Center"
-                  : "Production Studio"}
-          </h1>
+          <h1>{pageTitle}</h1>
         </div>
-        <div className="statusLine">
-          {busy ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
-          <span>{status}</span>
-          <button className="iconButton" onClick={() => loadData()} title="Refresh studio data">
-            <RefreshCcw size={16} />
-          </button>
+        <div className="topbarActions">
+          <div className="statusLine">
+            {busy ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
+            <span>{status}</span>
+            <button className="iconButton" onClick={() => loadData()} title={t("app.refresh")}>
+              <RefreshCcw size={16} />
+            </button>
+          </div>
+          <label className="languageSelect" title={t("app.language")}>
+            <Languages size={16} />
+            <select value={language} onChange={(event) => setLanguage(event.target.value as LanguageCode)}>
+              <option value="en">English</option>
+              <option value="vi">Tiếng Việt</option>
+            </select>
+          </label>
         </div>
       </header>
 
       <nav className="appNav" aria-label="Main navigation">
         <button className={page === "control-center" ? "active" : ""} onClick={() => setPage("control-center")}>
           <Boxes size={16} />
-          Control Center
+          {t("app.controlCenter")}
         </button>
         <button className={page === "production-jobs" ? "active" : ""} onClick={() => setPage("production-jobs")}>
           <ClipboardList size={16} />
-          Production Jobs
+          {t("app.productionJobs")}
         </button>
         <button className={page === "asset-center" ? "active" : ""} onClick={() => setPage("asset-center")}>
           <Image size={16} />
-          Asset Center
+          {t("app.assetCenter")}
         </button>
         <button className={page === "studio" ? "active" : ""} onClick={() => setPage("studio")}>
           <Sparkles size={16} />
-          Production Studio
+          {t("app.productionStudio")}
         </button>
         <button className={page === "management" ? "active" : ""} onClick={() => setPage("management")}>
           <Users size={16} />
-          Management
+          {t("app.management")}
         </button>
       </nav>
 
       {page === "management" ? (
       <section className="managementPage">
         <aside className="managementMenu panel">
-          <strong>Management</strong>
-          {[
-            ["hosts", "Hosts"],
-            ["workflows", "Workflows"],
-            ["instances", "Instances"],
-            ["instance-pools", "Instance Pools"],
-            ["scripts", "Scripts"],
-            ["prompt-templates", "Prompt Templates"],
-            ["character-groups", "Character Groups"],
-            ["character-import", "Character Import"],
-            ["production-resources", "Production Resources"],
-            ["orchestrator-rules", "Orchestrator Rules"],
-            ["jobs", "Jobs"],
-            ["runtime-sessions", "Runtime Sessions"]
-          ].map(([id, label]) => (
+          <strong>{t("app.management")}</strong>
+          {managementMenuItems.map(({ id, labelKey }) => (
             <button
               key={id}
               className={managementSection === id ? "active" : ""}
-              onClick={() => setManagementSection(id as ManagementSection)}
+              onClick={() => setManagementSection(id)}
             >
-              {label}
+              {t(labelKey)}
             </button>
           ))}
         </aside>
         <section className="managementContent panel">
           <div className="managementHeader">
             <div>
-              <h2>{managementSection.split("-").map((part) => part[0].toUpperCase() + part.slice(1)).join(" ")}</h2>
-              <small>Simple CRUD tools for operators</small>
+              <h2>{t(managementMenuItems.find((item) => item.id === managementSection)?.labelKey ?? "app.management")}</h2>
+              <small>{t("management.subtitle")}</small>
             </div>
-            <input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder="Search/filter" />
+            <input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder={t("management.search")} />
             <button className="secondaryButton" onClick={() => refreshQueue()} disabled={busy}>
               <RefreshCcw size={15} />
-              Refresh
+              {t("app.refresh")}
             </button>
           </div>
 
@@ -2462,37 +3367,544 @@ export function App() {
           ) : null}
 
           {managementSection === "prompt-templates" ? (
-            <div className="adminGrid">
-              <div className="adminForm">
-                <label>Name<input value={templateForm.name} onChange={(event) => setTemplateForm({ ...templateForm, name: event.target.value })} /></label>
-                <label>Category<select value={templateForm.category} onChange={(event) => setTemplateForm({ ...templateForm, category: event.target.value })}>{promptCategoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
-                <label>Status<input value={templateForm.status} onChange={(event) => setTemplateForm({ ...templateForm, status: event.target.value })} /></label>
-                <button onClick={() => adminAction("Creating template", () => api("/prompt-templates", { method: "POST", body: JSON.stringify({ name: templateForm.name, category: templateForm.category, status: templateForm.status }) }))}>Create Template</button>
-                <label>Template<select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>
-                <label>Template Text<textarea value={templateForm.templateText} onChange={(event) => setTemplateForm({ ...templateForm, templateText: event.target.value })} /></label>
-                <button disabled={!selectedTemplateId} onClick={() => adminAction("Creating template version", () => api(`/prompt-templates/${selectedTemplateId}/versions`, { method: "POST", body: JSON.stringify({ templateText: templateForm.templateText, status: "draft" }) }))}>Create Version</button>
-                <label>Group<select value={selectedGroupId} onChange={(event) => setSelectedGroupId(event.target.value)}>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
-                <button disabled={!selectedTemplateId || !selectedGroupId} onClick={() => adminAction("Rendering preview", () => api("/prompt-builder/render", { method: "POST", body: JSON.stringify({ templateId: selectedTemplateId, groupId: selectedGroupId }) }))}>Render Preview</button>
-              </div>
-              <AdminSimpleList items={templates} search={adminSearch} />
+            <div className="promptManager">
+              <aside className="promptCategorySidebar">
+                <button className="primaryButton" onClick={() => setShowPromptCreateModal(true)}>New Prompt Template</button>
+                {promptCategoryOptions.map((category) => (
+                  <button
+                    key={category}
+                    className={selectedPromptCategory === category ? "active" : ""}
+                    onClick={() => setSelectedPromptCategory(category)}
+                  >
+                    <span>{category}</span>
+                    <b>{promptCategoryCounts[category] ?? 0}</b>
+                  </button>
+                ))}
+              </aside>
+
+              <section className="promptMainPanel">
+                <div className="promptFilters">
+                  <label>Category<select value={selectedPromptCategory} onChange={(event) => setSelectedPromptCategory(event.target.value)}><option value="">All categories</option>{promptCategoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+                  <label>Status<select value={promptStatusFilter} onChange={(event) => setPromptStatusFilter(event.target.value)}><option value="">All statuses</option><option value="active">active</option><option value="draft">draft</option><option value="archived">archived</option></select></label>
+                  <label>Has Variable<select value={promptHasVariableFilter} onChange={(event) => setPromptHasVariableFilter(event.target.value)}><option value="">Any</option><option value="yes">Has variables</option><option value="no">No variables</option></select></label>
+                  <label>Updated<select value={promptRecentFilter} onChange={(event) => setPromptRecentFilter(event.target.value)}><option value="">Any time</option><option value="recent">Last 7 days</option></select></label>
+                </div>
+
+                <div className="promptCardGrid">
+                  {filteredPromptCards.map((template) => (
+                    <article className={`promptTemplateCard ${selectedTemplateId === template.id ? "selected" : ""}`} key={template.id}>
+                      <div className="promptCardHeader">
+                        <strong>{template.name}</strong>
+                        <span className="poolBadge capabilityBadge">{template.normalizedCategory}</span>
+                      </div>
+                      <div className="promptCardMeta">
+                        <span className="statusPill">{template.status ?? "active"}</span>
+                        <span>v{template.activeVersion?.versionNo ?? "-"}</span>
+                        <small>{displayDateTime(template.updatedAt ?? undefined)}</small>
+                      </div>
+                      <pre>{template.preview || "No version text yet."}</pre>
+                      <div className="poolBadgeList">
+                        {template.variables.slice(0, 6).map((variable) => <span className="poolBadge" key={variable}>{variable}</span>)}
+                        {!template.variables.length ? <span className="poolBadge empty">No variables</span> : null}
+                      </div>
+                      <div className="promptCardActions">
+                        <button className="iconButton" title="View or edit template" aria-label="View or edit template" onClick={() => openPromptTemplate(template.id, "overview")}><Edit3 size={15} /></button>
+                        <button className="iconButton" title="Duplicate template" aria-label="Duplicate template" onClick={() => duplicatePromptTemplate(template)}><Copy size={15} /></button>
+                        <button className="iconButton" title="Preview template" aria-label="Preview template" onClick={() => openPromptTemplate(template.id, "preview")}><Eye size={15} /></button>
+                        <button className="iconButton" title="Activate active version" aria-label="Activate active version" disabled={!template.activeVersion} onClick={() => activatePromptVersion(template.activeVersion?.id)}><Check size={15} /></button>
+                        <button className="iconButton" disabled title="Template archive API is not available yet" aria-label="Archive template"><Archive size={15} /></button>
+                        <button className="iconButton dangerIconButton" title="Delete template" aria-label="Delete template" onClick={() => deletePromptTemplate(template)}><Trash2 size={15} /></button>
+                      </div>
+                    </article>
+                  ))}
+                  {!filteredPromptCards.length ? <p className="emptyDetail">No prompt templates match these filters.</p> : null}
+                </div>
+              </section>
+
+              {promptDetail ? (
+                <aside className="promptDrawer panel">
+                  <div className="drawerHeader">
+                    <div>
+                      <strong>{promptDetail.name}</strong>
+                      <small>{normalizePromptCategory(promptDetail.category)} / {displayShortId(promptDetail.id)}</small>
+                    </div>
+                    <button className="iconButton" onClick={() => setPromptDetail(null)} title="Close prompt drawer">x</button>
+                  </div>
+                  <div className="promptDrawerTabs">
+                    {["overview", "versions", "editor", "preview"].map((tab) => (
+                      <button key={tab} className={promptDrawerTab === tab ? "active" : ""} onClick={() => setPromptDrawerTab(tab as typeof promptDrawerTab)}>{tab}</button>
+                    ))}
+                  </div>
+
+                  {promptDrawerTab === "overview" ? (
+                    <section className="drawerSection">
+                      <div className="detailList">
+                        <span>Name <b>{promptDetail.name}</b></span>
+                        <span>Category <b>{normalizePromptCategory(promptDetail.category)}</b></span>
+                        <span>Description <b>{promptDetail.description ?? "-"}</b></span>
+                        <span>Status <b>{promptDetail.status ?? "active"}</b></span>
+                        <span>Active Version <b>v{promptDetail.activeVersion?.versionNo ?? "-"}</b></span>
+                        <span>Created <b>{displayDateTime(promptDetail.createdAt ?? undefined)}</b></span>
+                        <span>Updated <b>{displayDateTime(promptDetail.updatedAt ?? undefined)}</b></span>
+                      </div>
+                      <div className="adminNotice muted">
+                        <strong>Integration Hints</strong>
+                        <span>Workflow prompt mapping and Production Studio selections can use this template category. Usage tracking is not available yet.</span>
+                      </div>
+                    </section>
+                  ) : null}
+
+                  {promptDrawerTab === "versions" ? (
+                    <section className="drawerSection">
+                      <div className="promptVersionList">
+                        {(promptDetail.versions ?? []).map((version) => (
+                          <div key={version.id}>
+                            <b>v{version.versionNo}</b>
+                            <span>{version.status}</span>
+                            <small>{displayDateTime(version.createdAt ?? undefined)}</small>
+                            <pre>{version.templateText}</pre>
+                            <div className="controlActions">
+                              <button onClick={() => activatePromptVersion(version.id)}>Activate</button>
+                              <button onClick={() => { setPromptEditorText(version.templateText); setPromptDrawerTab("editor"); }}>Duplicate Version</button>
+                            </div>
+                          </div>
+                        ))}
+                        {!promptDetail.versions?.length ? <p className="emptyDetail">No versions yet.</p> : null}
+                      </div>
+                    </section>
+                  ) : null}
+
+                  {promptDrawerTab === "editor" ? (
+                    <section className="drawerSection promptEditorSection">
+                      <textarea value={promptEditorText} onChange={(event) => setPromptEditorText(event.target.value)} />
+                      <div className="variableHelperPanel">
+                        {promptVariableHelpers.map((group) => (
+                          <div key={group.group}>
+                            <strong>{group.group}</strong>
+                            <div className="poolBadgeList">
+                              {group.values.map((variable) => <button key={variable} onClick={() => insertPromptVariable(variable)}>{variable}</button>)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="controlActions">
+                        <button onClick={() => savePromptVersion("draft")} disabled={!promptEditorText.trim()}>Save Draft</button>
+                        <button onClick={() => savePromptVersion("active")} disabled={!promptEditorText.trim()}>Save as New Version</button>
+                      </div>
+                    </section>
+                  ) : null}
+
+                  {promptDrawerTab === "preview" ? (
+                    <section className="drawerSection promptPreviewSection">
+                      <label>Character Group<select value={selectedGroupId} onChange={(event) => setSelectedGroupId(event.target.value)}><option value="">Manual sample only</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+                      <label>Sample Context JSON<textarea value={promptPreviewContext} onChange={(event) => setPromptPreviewContext(event.target.value)} /></label>
+                      <button onClick={renderPromptPreview}>Render</button>
+                      <div className="promptRenderedOutput">
+                        <strong>Rendered Prompt</strong>
+                        <p>{promptPreviewResult.rendered || "Rendered output will appear here."}</p>
+                        <small>Variables replaced: {promptPreviewResult.replaced.join(", ") || "-"}</small>
+                        <small>Missing variables: {promptPreviewResult.missing.join(", ") || "-"}</small>
+                      </div>
+                    </section>
+                  ) : null}
+                </aside>
+              ) : null}
+
+              {showPromptCreateModal ? (
+                <div className="instanceDrawerOverlay">
+                  <aside className="promptCreateModal">
+                    <div className="drawerHeader">
+                      <div>
+                        <strong>New Prompt Template</strong>
+                        <small>Create a template and first version</small>
+                      </div>
+                      <button className="iconButton" onClick={() => setShowPromptCreateModal(false)} title="Close prompt modal">x</button>
+                    </div>
+                    <div className="adminForm">
+                      <label>Name<input value={templateForm.name} onChange={(event) => setTemplateForm({ ...templateForm, name: event.target.value })} /></label>
+                      <label>Category<select value={templateForm.category} onChange={(event) => setTemplateForm({ ...templateForm, category: event.target.value })}>{promptCategoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+                      <label>Description<input value={templateForm.description} onChange={(event) => setTemplateForm({ ...templateForm, description: event.target.value })} /></label>
+                      <label>Status<select value={templateForm.status} onChange={(event) => setTemplateForm({ ...templateForm, status: event.target.value })}><option value="active">active</option><option value="draft">draft</option></select></label>
+                      <label>Initial Template Text<textarea rows={12} value={templateForm.templateText} onChange={(event) => setTemplateForm({ ...templateForm, templateText: event.target.value })} /></label>
+                      <div className="controlActions">
+                        <button onClick={createPromptTemplateFlow} disabled={busy || !templateForm.name || !templateForm.templateText}>Create</button>
+                        <button className="secondaryButton" onClick={() => setShowPromptCreateModal(false)}>Cancel</button>
+                      </div>
+                    </div>
+                  </aside>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {managementSection === "characters" ? (
+            <div className="charactersPage">
+              <aside className="adminForm characterFilters">
+                <label>Search<input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder="Search by name" /></label>
+                <label>Status<select value={characterFilters.status} onChange={(event) => setCharacterFilters({ ...characterFilters, status: event.target.value })}>
+                  <option value="">All</option>
+                  <option value="alive">Alive</option>
+                  <option value="rip">R.I.P</option>
+                </select></label>
+                <div className="assetMiniGrid">
+                  <label>Age Min<input type="number" value={characterFilters.ageMin} onChange={(event) => setCharacterFilters({ ...characterFilters, ageMin: event.target.value })} /></label>
+                  <label>Age Max<input type="number" value={characterFilters.ageMax} onChange={(event) => setCharacterFilters({ ...characterFilters, ageMax: event.target.value })} /></label>
+                </div>
+                <label className="toggleControl"><input type="checkbox" checked={characterFilters.hasYoung} onChange={(event) => setCharacterFilters({ ...characterFilters, hasYoung: event.target.checked })} />Has young image</label>
+                <label className="toggleControl"><input type="checkbox" checked={characterFilters.hasOld} onChange={(event) => setCharacterFilters({ ...characterFilters, hasOld: event.target.checked })} />Has old image</label>
+                <label>Group<select value={characterFilters.groupState} onChange={(event) => setCharacterFilters({ ...characterFilters, groupState: event.target.value })}>
+                  <option value="">Any</option>
+                  <option value="in-group">In group</option>
+                  <option value="no-group">Not in any group</option>
+                </select></label>
+                <label>Tag<select value={characterFilters.tag} onChange={(event) => setCharacterFilters({ ...characterFilters, tag: event.target.value })}>
+                  <option value="">All tags</option>
+                  {characterTagOptions.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
+                </select></label>
+              </aside>
+
+              <section className="characterGrid">
+                {filteredCharacters.map((character) => {
+                  const young = character.sourceImages?.youngOriginalImage;
+                  const old = character.sourceImages?.oldOriginalImage;
+                  const youngThumb = listImageUrl(young);
+                  const oldThumb = listImageUrl(old);
+                  return (
+                    <button className={`characterCard ${selectedCharacterId === character.id ? "selected" : ""}`} key={character.id} onClick={() => setSelectedCharacterId(character.id)}>
+                      <div className="characterThumbPair">
+                        <div>{youngThumb ? <img src={youngThumb} alt={`${character.name} young thumbnail`} /> : <span>Young thumbnail pending</span>}</div>
+                        <div>{oldThumb ? <img src={oldThumb} alt={`${character.name} old thumbnail`} /> : <span>Old thumbnail pending</span>}</div>
+                      </div>
+                      <strong>{character.name}</strong>
+                      <span>{String(character.status ?? "unknown").toLowerCase() === "rip" ? "R.I.P" : "Alive"} / {character.age ?? "-"}</span>
+                      <small>{character.groupCount ?? 0} groups / {character.relatedAssetCount ?? 0} assets</small>
+                      <small>{displayDateTime(character.updatedAt ?? undefined)}</small>
+                      {!young || !old ? <em className="warningText">Source image incomplete</em> : null}
+                    </button>
+                  );
+                })}
+                {!filteredCharacters.length ? <p className="emptyDetail">No characters match these filters.</p> : null}
+              </section>
+
+              {characterDetail ? (
+                <aside className="characterDrawer panel">
+                  <div className="drawerHeader">
+                    <div>
+                      <strong>{characterDetail.character.name}</strong>
+                      <small>{displayShortId(characterDetail.character.id)} / {characterDetail.groups.length} groups</small>
+                    </div>
+                    <button className="iconButton" onClick={() => setCharacterDetail(null)} title="Close character detail">x</button>
+                  </div>
+                  <div className="characterDetailThumbs">
+                    <div>{listImageUrl(characterDetail.sourceImages.youngOriginalImage) ? <img src={listImageUrl(characterDetail.sourceImages.youngOriginalImage)} alt="Young thumbnail" /> : <span>Young thumbnail pending</span>}</div>
+                    <div>{listImageUrl(characterDetail.sourceImages.oldOriginalImage) ? <img src={listImageUrl(characterDetail.sourceImages.oldOriginalImage)} alt="Old thumbnail" /> : <span>Old thumbnail pending</span>}</div>
+                  </div>
+
+                  <section className="drawerSection">
+                    <div className="drawerSectionHeader"><strong>Basic Info</strong></div>
+                    <div className="characterEditGrid">
+                      <label>Name<input value={characterForm.name} onChange={(event) => setCharacterForm({ ...characterForm, name: event.target.value })} /></label>
+                      <label>Status<select value={characterForm.status} onChange={(event) => setCharacterForm({ ...characterForm, status: event.target.value })}><option value="alive">Alive</option><option value="rip">R.I.P</option><option value="unknown">Unknown</option></select></label>
+                      <label>Age<input type="number" value={characterForm.age} onChange={(event) => setCharacterForm({ ...characterForm, age: event.target.value })} /></label>
+                    </div>
+                    <label className="jsonLabel">Metadata JSON<textarea rows={5} value={characterForm.metadata} onChange={(event) => setCharacterForm({ ...characterForm, metadata: event.target.value })} /></label>
+                    <div className="detailList">
+                      <span>Created <b>{displayDateTime(characterDetail.character.createdAt ?? undefined)}</b></span>
+                      <span>Updated <b>{displayDateTime(characterDetail.character.updatedAt ?? undefined)}</b></span>
+                    </div>
+                    <div className="controlActions">
+                      <button onClick={saveSelectedCharacter} disabled={busy}>Save Character</button>
+                      <button className="dangerButton" onClick={deleteSelectedCharacter} disabled={busy}>Delete Character</button>
+                    </div>
+                  </section>
+
+                  <section className="drawerSection">
+                    <div className="drawerSectionHeader"><strong>Original Source Images</strong><small>Attached to Character only</small></div>
+                    <div className="sourceImageGrid">
+                      {[
+                        ["young", characterDetail.sourceImages.youngOriginalImage, "Young Original Image"],
+                        ["old", characterDetail.sourceImages.oldOriginalImage, "Old Original Image"]
+                      ].map(([role, asset, label]) => {
+                        const sourceAsset = asset as AssetRecord | null | undefined;
+                        return (
+                          <article className="sourceImageCard" key={String(role)}>
+                            <div className="assetPreview">{listImageUrl(sourceAsset) ? <img src={listImageUrl(sourceAsset)} alt={String(label)} /> : <span>{String(label)} thumbnail pending</span>}</div>
+                            <strong>{String(label)}</strong>
+                            <small>{sourceAsset?.assetSubType ?? "-"}</small>
+                            <div className="controlActions">
+                              <button disabled={!sourceAsset} onClick={() => sourceAsset && window.open(originalImageUrl(sourceAsset), "_blank")}>View</button>
+                              <button onClick={() => createCharacterSourceVersion(role as "young" | "old")}>Upload Version</button>
+                              <button disabled={!sourceAsset} onClick={() => markActiveSourceImage(sourceAsset?.id)}>Mark Active</button>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </section>
+
+                  <section className="drawerSection">
+                    <div className="drawerSectionHeader"><strong>Character Groups</strong></div>
+                    <div className="addToGroupRow">
+                      <select value={selectedGroupId} onChange={(event) => setSelectedGroupId(event.target.value)}>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select>
+                      <button disabled={!selectedGroupId} onClick={addCharacterToSelectedGroup}>Add to Group</button>
+                    </div>
+                    <div className="characterRelationList">
+                      {characterDetail.groups.map((group) => (
+                        <div key={`${group.id}-${group.memberId}`}>
+                          <b>{group.name}</b>
+                          <span>{displayShortId(group.id)} / {group.memberCount ?? 0} members</span>
+                          <small>{group.attributesSummary || "No attributes"}</small>
+                          <div className="controlActions">
+                            <button onClick={() => setSelectedGroupId(group.id)}>Open Group</button>
+                            <button onClick={() => removeCharacterFromGroup(group.id, group.memberId)}>Remove</button>
+                          </div>
+                        </div>
+                      ))}
+                      {!characterDetail.groups.length ? <p className="emptyDetail">This character is not in any group.</p> : null}
+                    </div>
+                  </section>
+
+                  <section className="drawerSection">
+                    <div className="drawerSectionHeader"><strong>Related Assets</strong></div>
+                    {[
+                      ["Original Images", characterDetail.relatedAssets.originalImages],
+                      ["Edited Images", characterDetail.relatedAssets.editedImages],
+                      ["Video Transitions", characterDetail.relatedAssets.videoTransitions],
+                      ["Final Videos", characterDetail.relatedAssets.finalVideos],
+                      ["Post Content", characterDetail.relatedAssets.postContent]
+                    ].map(([label, items]) => (
+                      <div className="assetSection" key={String(label)}>
+                        <strong>{String(label)}</strong>
+                        <div className="relatedAssetGrid">
+                          {(items as Array<AssetRecord | ProductionBatch>).slice(0, 12).map((item) => {
+                            const record = item as AssetRecord & ProductionBatch;
+                            const isAsset = Boolean(record.assetCategory || record.assetType);
+                            return (
+                              <button key={record.id} onClick={() => isAsset ? setSelectedAssetId(record.id) : setSelectedResourceId(record.id)}>
+                                <span>{isAsset && listImageUrl(record) ? <img src={listImageUrl(record)} alt={record.name ?? record.batchType} /> : displayShortId(record.id)}</span>
+                                <b>{record.name ?? record.batchType}</b>
+                                <small>{record.assetSubType ?? record.status} / {displayDateTime(record.createdAt)}</small>
+                                <small>job {displayShortId(getString(getRecord(record.metadata).sourceJobId))}</small>
+                              </button>
+                            );
+                          })}
+                          {!(items as unknown[]).length ? <p className="emptyDetail">No records yet.</p> : null}
+                        </div>
+                      </div>
+                    ))}
+                  </section>
+
+                  <section className="drawerSection">
+                    <div className="drawerSectionHeader"><strong>Jobs / Production History</strong></div>
+                    {["IMAGE_EDIT", "VIDEO_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT"].map((jobType) => (
+                      <div className="assetSection" key={jobType}>
+                        <strong>{jobType}</strong>
+                        <div className="characterJobList">
+                          {(characterDetail.relatedJobs.grouped[jobType] ?? []).map((job) => (
+                            <button key={job.id} onClick={() => loadJobDetail(job)}>
+                              <b>{displayShortId(job.id)}</b>
+                              <span>{job.status}</span>
+                              <small>source {displayShortId(job.sourceBatchId)}</small>
+                              <small>output {displayShortId(getString(getRecord(job.output).outputBatchId) || getString(getRecord(job.payload).outputBatchId))}</small>
+                              <small>{displayDateTime(job.createdAt)}</small>
+                            </button>
+                          ))}
+                          {!(characterDetail.relatedJobs.grouped[jobType] ?? []).length ? <p className="emptyDetail">No jobs yet.</p> : null}
+                        </div>
+                      </div>
+                    ))}
+                  </section>
+                </aside>
+              ) : null}
             </div>
           ) : null}
 
           {managementSection === "character-groups" ? (
-            <div className="adminGrid">
-              <div className="adminForm">
-                <label>Name<input value={groupForm.name} onChange={(event) => setGroupForm({ ...groupForm, name: event.target.value })} /></label>
-                <label>Description<input value={groupForm.description} onChange={(event) => setGroupForm({ ...groupForm, description: event.target.value })} /></label>
-                <button onClick={() => adminAction("Creating group", () => api("/character-groups", { method: "POST", body: JSON.stringify({ name: groupForm.name, description: groupForm.description, status: groupForm.status }) }))}>Create Group</button>
-                <label>Group<select value={selectedGroupId} onChange={(event) => setSelectedGroupId(event.target.value)}>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
-                <label>Character ID<input value={groupForm.characterId} onChange={(event) => setGroupForm({ ...groupForm, characterId: event.target.value })} /></label>
-                <button disabled={!selectedGroupId} onClick={() => adminAction("Adding member", () => api(`/character-groups/${selectedGroupId}/members`, { method: "POST", body: JSON.stringify({ characterId: groupForm.characterId, role: groupForm.role }) }))}>Add Member</button>
-                <label>Attribute<select value={groupForm.attributeId} onChange={(event) => setGroupForm({ ...groupForm, attributeId: event.target.value })}>{attributes.map((attr) => <option key={attr.id} value={attr.id}>{attr.name}</option>)}</select></label>
-                <label>Custom Value<input value={groupForm.customValue} onChange={(event) => setGroupForm({ ...groupForm, customValue: event.target.value })} /></label>
-                <button disabled={!selectedGroupId || !groupForm.attributeId} onClick={() => adminAction("Assigning attribute", () => api(`/character-groups/${selectedGroupId}/attributes`, { method: "POST", body: JSON.stringify({ attributeId: groupForm.attributeId, customValue: groupForm.customValue }) }))}>Assign Attribute</button>
-                <button disabled={!selectedGroupId} onClick={() => adminAction("Creating production batch", () => api("/production-batches", { method: "POST", body: JSON.stringify({ batchType: "CHARACTER_GROUP", sourceGroupId: selectedGroupId, status: "READY", usageStatus: "AVAILABLE", metadata: { createdFrom: "Management" } }) }))}>Create Batch</button>
+            <div className="groupManager">
+              <div className="groupKpis">
+                <div><span>Total Groups</span><b>{groupKpis.total}</b></div>
+                <div><span>Active Groups</span><b>{groupKpis.active}</b></div>
+                <div><span>Average Group Size</span><b>{groupKpis.averageSize}</b></div>
+                <div><span>Ready for Production</span><b>{groupKpis.ready}</b></div>
+                <div><span>Missing Source Images</span><b>{groupKpis.missingImages}</b></div>
               </div>
-              <AdminSimpleList items={groups} search={adminSearch} />
+
+              <div className="groupFilters">
+                <label>Search<input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder="Search group name" /></label>
+                <label>Status<select value={groupFilters.status} onChange={(event) => setGroupFilters({ ...groupFilters, status: event.target.value })}><option value="">All</option><option value="active">Active</option><option value="draft">Draft</option><option value="archived">Archived</option></select></label>
+                <label>Group Size<select value={groupFilters.size} onChange={(event) => setGroupFilters({ ...groupFilters, size: event.target.value })}><option value="">All</option><option value="3">3</option><option value="5">5</option><option value="6">6</option><option value="custom">Custom</option></select></label>
+                {groupFilters.size === "custom" ? <label>Custom<input type="number" min="1" value={groupFilters.customSize} onChange={(event) => setGroupFilters({ ...groupFilters, customSize: event.target.value })} /></label> : null}
+                <label className="toggleControl"><input type="checkbox" checked={groupFilters.missingImages} onChange={(event) => setGroupFilters({ ...groupFilters, missingImages: event.target.checked })} /> Missing images</label>
+                <label className="toggleControl"><input type="checkbox" checked={groupFilters.hasAttributes} onChange={(event) => setGroupFilters({ ...groupFilters, hasAttributes: event.target.checked })} /> Has attributes</label>
+                <label>Production<select value={groupFilters.productionUse} onChange={(event) => setGroupFilters({ ...groupFilters, productionUse: event.target.value })}><option value="">Any</option><option value="used">Used</option><option value="unused">Not used</option></select></label>
+                <label className="toggleControl"><input type="checkbox" checked={groupFilters.recent} onChange={(event) => setGroupFilters({ ...groupFilters, recent: event.target.checked })} /> Created recently</label>
+                <button className="primaryButton" onClick={() => { setShowGroupCreate(true); setGroupForm({ ...groupForm, ...defaultGroupDraft() }); setGroupCreateMode("random"); }}>New Group</button>
+              </div>
+
+              {showGroupCreate ? (
+                <section className="groupBuilder panel">
+                  <div className="drawerHeader">
+                    <div><strong>New Group</strong><small>Choose characters, then save as Draft or Active.</small></div>
+                    <button className="iconButton" onClick={() => setShowGroupCreate(false)}>x</button>
+                  </div>
+                  <div className="groupBuilderFields">
+                    <label>Name<input value={groupForm.name} onChange={(event) => setGroupForm({ ...groupForm, name: event.target.value })} /></label>
+                    <label>Status<select value={groupForm.status} onChange={(event) => setGroupForm({ ...groupForm, status: event.target.value })}><option value="draft">draft</option><option value="active">active</option><option value="archived">archived</option></select></label>
+                    <label>Size<select value={groupCreateSize} onChange={(event) => setGroupCreateSize(event.target.value)}><option value="3">3</option><option value="5">5</option><option value="6">6</option><option value="8">8</option></select></label>
+                    <label>Mode<select value={groupCreateMode} onChange={(event) => setGroupCreateMode(event.target.value as typeof groupCreateMode)}><option value="random">Full Random</option><option value="partial-random">Partial Manual + Random</option><option value="manual">Full Manual</option></select></label>
+                    <label>Description<input value={groupForm.description} onChange={(event) => setGroupForm({ ...groupForm, description: event.target.value })} /></label>
+                    <button className="primaryButton" onClick={createCharacterGroupFromBuilder}>Save Group</button>
+                  </div>
+                  <div className="groupPickerFilters">
+                    <label>Character<input value={groupFilters.characterSearch} onChange={(event) => setGroupFilters({ ...groupFilters, characterSearch: event.target.value })} /></label>
+                    <label>Status<select value={groupFilters.characterStatus} onChange={(event) => setGroupFilters({ ...groupFilters, characterStatus: event.target.value })}><option value="">All</option><option value="alive">Alive</option><option value="rip">R.I.P</option></select></label>
+                    <label>Age Min<input type="number" value={groupFilters.ageMin} onChange={(event) => setGroupFilters({ ...groupFilters, ageMin: event.target.value })} /></label>
+                    <label>Age Max<input type="number" value={groupFilters.ageMax} onChange={(event) => setGroupFilters({ ...groupFilters, ageMax: event.target.value })} /></label>
+                    <label className="toggleControl"><input type="checkbox" checked={groupFilters.hasYoung} onChange={(event) => setGroupFilters({ ...groupFilters, hasYoung: event.target.checked })} /> Has young</label>
+                    <label className="toggleControl"><input type="checkbox" checked={groupFilters.hasOld} onChange={(event) => setGroupFilters({ ...groupFilters, hasOld: event.target.checked })} /> Has old</label>
+                    <label className="toggleControl"><input type="checkbox" checked={groupFilters.notSelected} onChange={(event) => setGroupFilters({ ...groupFilters, notSelected: event.target.checked })} /> Not selected</label>
+                  </div>
+                  <div className="selectedMemberStrip">
+                    <strong>{groupCreateMemberIds.length} selected</strong>
+                    {groupCreateMemberIds.map((id) => <span key={id}>{characters.find((character) => character.id === id)?.name ?? displayShortId(id)}</span>)}
+                  </div>
+                  <div className="groupCharacterPicker">
+                    {groupPickerCharacters.slice(0, 80).map((character) => {
+                      const selected = groupCreateMemberIds.includes(character.id);
+                      return (
+                        <button className={selected ? "selected" : ""} key={character.id} onClick={() => toggleGroupCreateMember(character.id)}>
+                          <div className="miniThumbPair">
+                            <span>{listImageUrl(character.sourceImages?.youngOriginalImage) ? <img src={listImageUrl(character.sourceImages?.youngOriginalImage)} alt={`${character.name} young`} /> : "Young missing"}</span>
+                            <span>{listImageUrl(character.sourceImages?.oldOriginalImage) ? <img src={listImageUrl(character.sourceImages?.oldOriginalImage)} alt={`${character.name} old`} /> : "Old missing"}</span>
+                          </div>
+                          <b>{character.name}</b>
+                          <small>{character.status} / {character.age ?? "-"}</small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ) : null}
+
+              <div className="groupWorkspace">
+                <div className="groupCardGrid">
+                  {filteredGroupCards.map((group) => (
+                    <article className={`groupCard ${selectedGroupId === group.id ? "selected" : ""}`} key={group.id} onClick={() => openCharacterGroup(group.id, "overview")}>
+                      <div className="groupCardHeader">
+                        <div><strong>{group.name}</strong><small>{displayShortId(group.id)} / {displayDateTime(group.createdAt ?? undefined)}</small></div>
+                        <span className={`readinessBadge ${groupReadinessClass(group.readiness)}`}>{group.readiness?.label ?? "Empty Group"}</span>
+                      </div>
+                      <div className="groupMetaRow">
+                        <span>{group.status ?? "draft"}</span>
+                        <span>{group.memberCount ?? 0} members</span>
+                        <span>{group.productionBatchCount ?? 0} batches</span>
+                      </div>
+                      <p>{group.attributesSummary || "No attributes assigned."}</p>
+                      <div className="memberAvatarRow">
+                        {(group.membersPreview ?? []).map((member) => (
+                          <div key={member.memberId ?? member.character.id} title={member.character.name ?? ""}>
+                            <span>{thumbnailPairUrl(member.youngOriginalImage, member.youngThumbnailUrl) ? <img src={thumbnailPairUrl(member.youngOriginalImage, member.youngThumbnailUrl)} alt="young" /> : "!"}</span>
+                            <span>{thumbnailPairUrl(member.oldOriginalImage, member.oldThumbnailUrl) ? <img src={thumbnailPairUrl(member.oldOriginalImage, member.oldThumbnailUrl)} alt="old" /> : "!"}</span>
+                            <small>{member.character.name}</small>
+                          </div>
+                        ))}
+                        {!(group.membersPreview ?? []).length ? <em>Empty group</em> : null}
+                      </div>
+                      <div className="controlActions">
+                        <button className="iconButton" title="Open detail" aria-label="Open detail" onClick={(event) => { event.stopPropagation(); openCharacterGroup(group.id, "overview"); }}><Eye size={15} /></button>
+                        <button className="iconButton" title="Edit group" aria-label="Edit group" onClick={(event) => { event.stopPropagation(); openCharacterGroup(group.id, "overview"); }}><Edit3 size={15} /></button>
+                        <button className="iconButton" title="Shuffle positions" aria-label="Shuffle positions" onClick={(event) => { event.stopPropagation(); shuffleGroupMembers(group.id); }}><Shuffle size={15} /></button>
+                        <button className="iconButton" title="Duplicate group" aria-label="Duplicate group" onClick={(event) => { event.stopPropagation(); duplicateSelectedGroup(group.id); }}><Copy size={15} /></button>
+                        <button className="iconButton" title="Create production batch" aria-label="Create production batch" onClick={(event) => { event.stopPropagation(); createBatchForGroup(group.id, group.readiness); }}><PackagePlus size={15} /></button>
+                        <button className="iconButton" title="Archive group" aria-label="Archive group" onClick={(event) => { event.stopPropagation(); api(`/character-groups/${group.id}`, { method: "PATCH", body: JSON.stringify({ status: "archived" }) }).then(loadData); }}><Archive size={15} /></button>
+                        <button className="iconButton dangerIconButton" title="Delete group" aria-label="Delete group" onClick={(event) => { event.stopPropagation(); deleteCharacterGroup(group); }}><Trash2 size={15} /></button>
+                      </div>
+                    </article>
+                  ))}
+                  {!filteredGroupCards.length ? <p className="emptyDetail">No groups match the current filters.</p> : null}
+                </div>
+
+                {selectedGroupDetail ? (
+                  <aside className="groupDrawer panel">
+                    <div className="drawerHeader">
+                      <div><strong>{selectedGroupDetail.group.name}</strong><small>{selectedGroupDetail.group.memberCount ?? 0} members / {selectedGroupDetail.readiness.label}</small></div>
+                      <button className="iconButton" onClick={() => setSelectedGroupDetail(null)}>x</button>
+                    </div>
+                    <div className="drawerTabs">
+                      {(["overview", "members", "attributes", "history", "debug"] as const).map((tab) => <button className={groupDrawerTab === tab ? "active" : ""} key={tab} onClick={() => setGroupDrawerTab(tab)}>{tab}</button>)}
+                    </div>
+                    {groupDrawerTab === "overview" ? (
+                      <section className="drawerSection">
+                        <label>Name<input value={groupForm.name} onChange={(event) => setGroupForm({ ...groupForm, name: event.target.value })} /></label>
+                        <label>Status<select value={groupForm.status} onChange={(event) => setGroupForm({ ...groupForm, status: event.target.value })}><option value="active">active</option><option value="draft">draft</option><option value="archived">archived</option></select></label>
+                        <label>Description<input value={groupForm.description} onChange={(event) => setGroupForm({ ...groupForm, description: event.target.value })} /></label>
+                        <span className={`readinessBadge ${groupReadinessClass(selectedGroupDetail.readiness)}`}>{selectedGroupDetail.readiness.label}</span>
+                        <small>{selectedGroupDetail.group.attributesSummary || "No attributes"}</small>
+                        <small>Created {displayDateTime(selectedGroupDetail.group.createdAt ?? undefined)} / Updated {displayDateTime(selectedGroupDetail.group.updatedAt ?? undefined)}</small>
+                        <div className="controlActions"><button onClick={saveSelectedGroup}>Save</button><button onClick={() => createBatchForGroup(selectedGroupDetail.group.id, selectedGroupDetail.readiness)}>Create Production Batch</button><button className="dangerButton" onClick={() => deleteCharacterGroup(selectedGroupDetail.group)}>Delete Group</button></div>
+                      </section>
+                    ) : null}
+                    {groupDrawerTab === "members" ? (
+                      <section className="drawerSection">
+                        <div className="memberToolbar">
+                          <button className="secondaryButton" onClick={shuffleSelectedGroupMembers}><Shuffle size={15} /> Shuffle Positions</button>
+                          <small>Drag members to manually set video position order. This order is used by group asset and production batch snapshots.</small>
+                        </div>
+                        <div className="groupMemberList">
+                          {selectedGroupDetail.members.map((member) => (
+                            <article
+                              draggable
+                              className={draggedGroupMemberId === member.memberId ? "dragging" : ""}
+                              key={member.memberId ?? member.character.id}
+                              onDragStart={() => setDraggedGroupMemberId(String(member.memberId ?? ""))}
+                              onDragOver={(event) => event.preventDefault()}
+                              onDrop={() => reorderSelectedGroupMembers(member.memberId)}
+                              onDragEnd={() => setDraggedGroupMemberId("")}
+                            >
+                              <span className="memberPosition">#{Number(member.sortOrder ?? 0) + 1}</span>
+                              <div className="memberSourceThumb">
+                                {thumbnailPairUrl(member.youngOriginalImage, member.youngThumbnailUrl) ? <img src={thumbnailPairUrl(member.youngOriginalImage, member.youngThumbnailUrl)} alt={`${member.character.name} young`} /> : <span>Young missing</span>}
+                              </div>
+                              <div className="memberSourceThumb">
+                                {thumbnailPairUrl(member.oldOriginalImage, member.oldThumbnailUrl) ? <img src={thumbnailPairUrl(member.oldOriginalImage, member.oldThumbnailUrl)} alt={`${member.character.name} old`} /> : <span>Old missing</span>}
+                              </div>
+                              <div className="memberInfoCompact">
+                                <b>{member.character.name}</b>
+                                <small>{member.character.status} / age {member.character.age ?? "-"}</small>
+                                <div className="controlActions">
+                                  <button className="iconButton" title="Open character" aria-label="Open character" onClick={() => { setSelectedCharacterId(member.character.id); setManagementSection("characters"); }}><Eye size={15} /></button>
+                                  <button className="iconButton dangerIconButton" title="Remove from group" aria-label="Remove from group" onClick={() => removeGroupMember(member.memberId)}><Trash2 size={15} /></button>
+                                </div>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      </section>
+                    ) : null}
+                    {groupDrawerTab === "attributes" ? (
+                      <section className="drawerSection">
+                        <div className="addToGroupRow">
+                          <select value={groupForm.attributeId} onChange={(event) => setGroupForm({ ...groupForm, attributeId: event.target.value })}><option value="">Select attribute</option>{attributes.map((attr) => <option key={attr.id} value={attr.id}>{attr.name}</option>)}</select>
+                          <input value={groupForm.customValue} onChange={(event) => setGroupForm({ ...groupForm, customValue: event.target.value })} placeholder="Custom value" />
+                          <button disabled={!groupForm.attributeId} onClick={assignSelectedGroupAttribute}>Add</button>
+                        </div>
+                        <div className="characterRelationList">
+                          {selectedGroupDetail.attributes.map((attribute) => <div key={attribute.id ?? attribute.attributeId}><b>{attribute.attributeName ?? attribute.attributeKey}</b><span>{attribute.customValue ?? attribute.label ?? attribute.value ?? "-"}</span></div>)}
+                        </div>
+                      </section>
+                    ) : null}
+                    {groupDrawerTab === "history" ? (
+                      <section className="drawerSection">
+                        <strong>Production Batches</strong>
+                        <div className="characterRelationList">{selectedGroupDetail.productionHistory.batches.map((batch) => <div key={batch.id}><b>{batch.batchType}</b><span>{batch.status} / {batch.usageStatus}</span><small>{displayShortId(batch.id)}</small></div>)}</div>
+                        <strong>Jobs</strong>
+                        <div className="characterRelationList">{selectedGroupDetail.productionHistory.jobs.map((job) => <div key={job.id}><b>{job.targetStageType}</b><span>{job.status}</span><small>{displayShortId(job.id)}</small></div>)}</div>
+                      </section>
+                    ) : null}
+                    {groupDrawerTab === "debug" ? <pre className="jsonBlock">{compactJson(selectedGroupDetail)}</pre> : null}
+                  </aside>
+                ) : null}
+              </div>
             </div>
           ) : null}
 
@@ -2991,10 +4403,11 @@ export function App() {
               <div className="assetList">
                 {filteredAssets.slice(0, 80).map((asset) => {
                   const group = groups.find((item) => item.id === asset.groupId);
+                  const thumbUrl = listImageUrl(asset);
                   return (
                     <button className={`assetCard ${selectedAssetId === asset.id ? "selected" : ""}`} key={asset.id} onClick={() => setSelectedAssetId(asset.id)}>
                       <div className="assetPreview">
-                        {asset.previewUrl || asset.publicUrl ? <img src={asset.previewUrl ?? asset.publicUrl ?? ""} alt={asset.name} /> : <span>{asset.assetCategory ?? asset.assetType}</span>}
+                        {thumbUrl ? <img src={thumbUrl} alt={asset.name} /> : <span>{asset.thumbnailStatus === "FAILED" ? "Thumbnail failed" : asset.assetCategory ?? asset.assetType}</span>}
                       </div>
                       <strong>{asset.name}</strong>
                       <small>{group?.name ?? asset.characterId ?? "Ungrouped"}</small>
@@ -3015,7 +4428,7 @@ export function App() {
                 {selectedAsset ? (
                   <>
                     <div className="assetHeroPreview">
-                      {selectedAsset.previewUrl || selectedAsset.publicUrl ? <img src={selectedAsset.previewUrl ?? selectedAsset.publicUrl ?? ""} alt={selectedAsset.name} /> : <pre>{compactJson(selectedAsset.metadata)}</pre>}
+                      {originalImageUrl(selectedAsset) ? <img src={originalImageUrl(selectedAsset)} alt={selectedAsset.name} /> : <pre>{compactJson(selectedAsset.metadata)}</pre>}
                     </div>
                     <div className="detailList">
                       <span>ID <b>{displayShortId(selectedAsset.id)}</b></span>

@@ -29,16 +29,47 @@ function mapVersion(row: Record<string, unknown>) {
   };
 }
 
+function versionsForTemplate(promptTemplateId: string) {
+  return db.prepare(`
+    SELECT * FROM prompt_template_versions
+    WHERE prompt_template_id = ?
+    ORDER BY version_no DESC
+  `).all(promptTemplateId).map((versionRow) => mapVersion(versionRow as Record<string, unknown>));
+}
+
+function withVersions(template: ReturnType<typeof mapTemplate>) {
+  const versions = versionsForTemplate(String(template.id));
+  return {
+    ...template,
+    versions,
+    activeVersion: versions.find((version) => version.status === "active") ?? versions[0] ?? null
+  };
+}
+
 export const promptTemplatesRepository = {
   list() {
     return db.prepare("SELECT * FROM prompt_templates ORDER BY created_at DESC")
       .all()
-      .map((row) => mapTemplate(row as Record<string, unknown>));
+      .map((row) => withVersions(mapTemplate(row as Record<string, unknown>)));
   },
 
   get(id: string) {
     const row = db.prepare("SELECT * FROM prompt_templates WHERE id = ?").get(id);
-    return row ? mapTemplate(row as Record<string, unknown>) : null;
+    if (!row) return null;
+    const template = mapTemplate(row as Record<string, unknown>);
+    return withVersions(template);
+  },
+
+  getVersion(id: string) {
+    const row = db.prepare("SELECT * FROM prompt_template_versions WHERE id = ?").get(id);
+    return row ? mapVersion(row as Record<string, unknown>) : null;
+  },
+
+  delete(id: string) {
+    return db.transaction(() => {
+      db.prepare("DELETE FROM prompt_template_versions WHERE prompt_template_id = ?").run(id);
+      return db.prepare("DELETE FROM prompt_templates WHERE id = ?").run(id).changes > 0;
+    })();
   },
 
   create(input: CreatePromptTemplateInput) {
@@ -119,4 +150,3 @@ export const promptTemplatesRepository = {
     return mapVersion(updated as Record<string, unknown>);
   }
 };
-

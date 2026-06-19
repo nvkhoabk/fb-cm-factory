@@ -27,8 +27,27 @@ export function createId(prefix: string) {
   return `${prefix}_${randomUUID()}`;
 }
 
+export function containsBinaryContent(value: unknown): boolean {
+  if (typeof value === "string") {
+    const compact = value.replace(/\s+/g, "");
+    const looksLikeLargeBase64 = compact.length > 4096
+      && compact.length % 4 === 0
+      && /^[A-Za-z0-9+/]+={0,2}$/.test(compact);
+    return /data:(image|video|audio)\//i.test(value)
+      || /base64,/i.test(value)
+      || looksLikeLargeBase64;
+  }
+  if (Array.isArray(value)) return value.some((item) => containsBinaryContent(item));
+  if (value && typeof value === "object") return Object.values(value).some((item) => containsBinaryContent(item));
+  return false;
+}
+
 export function jsonString(value: unknown, fallback: unknown) {
-  return JSON.stringify(value ?? fallback);
+  const resolved = value ?? fallback;
+  if (containsBinaryContent(resolved)) {
+    throw new AppError("BINARY_CONTENT_NOT_ALLOWED_IN_DB", "Binary/base64 media content is not allowed in SQLite JSON fields", 400);
+  }
+  return JSON.stringify(resolved);
 }
 
 export function jsonParse<T>(value: unknown, fallback: T): T {

@@ -31,6 +31,15 @@ promptTemplatesRouter.get("/:id", (req, res) => {
   }
 });
 
+promptTemplatesRouter.delete("/:id", (req, res) => {
+  try {
+    promptTemplatesService.delete(req.params.id);
+    res.json({ ok: true, data: { deleted: true } });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 promptTemplatesRouter.post("/:id/versions", (req, res) => {
   try {
     const input = createPromptTemplateVersionSchema.parse(req.body);
@@ -43,6 +52,14 @@ promptTemplatesRouter.post("/:id/versions", (req, res) => {
 promptTemplateVersionsRouter.post("/:id/activate", (req, res) => {
   try {
     res.json({ ok: true, data: promptTemplatesService.activateVersion(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+promptTemplateVersionsRouter.get("/:id", (req, res) => {
+  try {
+    res.json({ ok: true, data: promptTemplatesService.getVersion(req.params.id) });
   } catch (error) {
     sendError(res, error);
   }

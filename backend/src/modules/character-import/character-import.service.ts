@@ -88,6 +88,31 @@ function existingCharacterAssets(characterId: string | null, name: string) {
   `).all(characterId, `%${name}%`);
 }
 
+function isOriginalSourceSubtype(value: unknown) {
+  return ["YOUNG_ORIGINAL_IMAGE", "YOUNG_IMAGE", "OLD_ORIGINAL_IMAGE", "OLD_IMAGE"].includes(String(value ?? ""));
+}
+
+function hasUsableSourceImages(characterId: string) {
+  const rows = db.prepare(`
+    SELECT asset_sub_type, file_path, public_url
+    FROM assets
+    WHERE character_id = ?
+      AND asset_category = 'CHARACTER_IMAGE'
+      AND asset_sub_type IN ('YOUNG_ORIGINAL_IMAGE', 'YOUNG_IMAGE', 'OLD_ORIGINAL_IMAGE', 'OLD_IMAGE')
+  `).all(characterId) as Record<string, unknown>[];
+
+  const usable = rows.filter((row) => {
+    const publicUrl = text(row, "public_url") ?? "";
+    const filePath = text(row, "file_path") ?? "";
+    return isOriginalSourceSubtype(row.asset_sub_type) && Boolean(filePath || (publicUrl && !publicUrl.startsWith("blob:")));
+  });
+
+  return {
+    young: usable.some((row) => ["YOUNG_ORIGINAL_IMAGE", "YOUNG_IMAGE"].includes(String(row.asset_sub_type))),
+    old: usable.some((row) => ["OLD_ORIGINAL_IMAGE", "OLD_IMAGE"].includes(String(row.asset_sub_type)))
+  };
+}
+
 function pairKey(pair: { name: string; young?: ImportFileInput; old?: ImportFileInput }) {
   return `${normalizeName(pair.name)}|${pair.young?.fileName ?? ""}|${pair.old?.fileName ?? ""}`;
 }
@@ -202,7 +227,7 @@ function maybeCreateCandidateGroup(name: string, characterId: string | null) {
   return id;
 }
 
-function createCharacterImageAsset(input: {
+async function createCharacterImageAsset(input: {
   characterId: string | null;
   name: string;
   subType: "YOUNG_IMAGE" | "OLD_IMAGE";
@@ -265,7 +290,22 @@ function recordHistory(mode: string, status: string, importedCount: number, skip
   return mapHistory(row as Record<string, unknown>);
 }
 
-function importPreviews(previews: ReturnType<typeof previewPairs>, createGroupCandidates: boolean, mode: string) {
+function stripInlineMedia(value: unknown): unknown {
+  if (typeof value === "string") {
+    if (/^data:(image|video|audio)\//i.test(value) || /base64,/i.test(value)) return "[stored-in-external-storage]";
+    return value;
+  }
+  if (Array.isArray(value)) return value.map((item) => stripInlineMedia(item));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+      key,
+      key === "dataUrl" ? "[stored-in-external-storage]" : stripInlineMedia(item)
+    ]));
+  }
+  return value;
+}
+
+async function importPreviews(previews: ReturnType<typeof previewPairs>, createGroupCandidates: boolean, mode: string) {
   const imported = [];
   const skipped = [];
   for (const preview of previews) {
@@ -273,11 +313,13 @@ function importPreviews(previews: ReturnType<typeof previewPairs>, createGroupCa
       skipped.push(preview);
       continue;
     }
-    if (preview.existingCharacter || preview.existingAssetCount > 0) {
+    const usableSourceImages = preview.existingCharacter?.id ? hasUsableSourceImages(preview.existingCharacter.id) : null;
+    const canRepairExistingCharacter = Boolean(preview.existingCharacter?.id && (!usableSourceImages?.young || !usableSourceImages?.old));
+    if ((preview.existingCharacter || preview.existingAssetCount > 0) && !canRepairExistingCharacter) {
       skipped.push({ ...preview, skippedReason: "duplicate warning requires manual review" });
       continue;
     }
-    const character = createCharacter({
+    const character = preview.existingCharacter ?? createCharacter({
       name: preview.name,
       status: preview.status,
       age: preview.age,
@@ -288,7 +330,7 @@ function importPreviews(previews: ReturnType<typeof previewPairs>, createGroupCa
       }
     });
     const groupId = createGroupCandidates ? maybeCreateCandidateGroup(preview.name, character.id) : null;
-    const youngAsset = createCharacterImageAsset({
+    const youngAsset = await createCharacterImageAsset({
       characterId: character.id,
       name: preview.name,
       subType: "YOUNG_IMAGE",
@@ -296,7 +338,7 @@ function importPreviews(previews: ReturnType<typeof previewPairs>, createGroupCa
       status: preview.status,
       age: preview.age
     });
-    const oldAsset = createCharacterImageAsset({
+    const oldAsset = await createCharacterImageAsset({
       characterId: character.id,
       name: preview.name,
       subType: "OLD_IMAGE",
@@ -305,9 +347,15 @@ function importPreviews(previews: ReturnType<typeof previewPairs>, createGroupCa
       age: preview.age,
       sourceAssetId: youngAsset?.id ?? undefined
     });
-    imported.push({ preview, character, groupId, assets: { young: youngAsset, old: oldAsset } });
+    imported.push({
+      preview,
+      character,
+      groupId,
+      assets: { young: youngAsset, old: oldAsset },
+      repairedExistingCharacter: canRepairExistingCharacter
+    });
   }
-  const history = recordHistory(mode, skipped.length ? "PARTIAL" : "IMPORTED", imported.length, skipped.length, { imported, skipped });
+  const history = recordHistory(mode, skipped.length ? "PARTIAL" : "IMPORTED", imported.length, skipped.length, stripInlineMedia({ imported, skipped }));
   return { importedCount: imported.length, skippedCount: skipped.length, imported, skipped, history };
 }
 

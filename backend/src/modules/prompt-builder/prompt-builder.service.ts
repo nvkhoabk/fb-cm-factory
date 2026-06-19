@@ -16,6 +16,18 @@ export const promptTemplatesService = {
 
   create: (input: CreatePromptTemplateInput) => promptTemplatesRepository.create(input),
 
+  delete(id: string) {
+    if (!promptTemplatesRepository.delete(id)) {
+      throw new AppError("PROMPT_TEMPLATE_NOT_FOUND", "Prompt template not found", 404);
+    }
+  },
+
+  getVersion(id: string) {
+    const version = promptTemplatesRepository.getVersion(id);
+    if (!version) throw new AppError("PROMPT_TEMPLATE_VERSION_NOT_FOUND", "Prompt template version not found", 404);
+    return version;
+  },
+
   createVersion(promptTemplateId: string, input: CreatePromptTemplateVersionInput) {
     if (!promptTemplatesRepository.get(promptTemplateId)) {
       throw new AppError("PROMPT_TEMPLATE_NOT_FOUND", "Prompt template not found", 404);
@@ -30,4 +42,3 @@ export const promptTemplatesService = {
     return version;
   }
 };
-

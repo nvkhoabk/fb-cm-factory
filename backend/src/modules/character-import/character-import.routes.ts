@@ -15,19 +15,19 @@ characterImportRouter.get("/preview", (req, res) => {
   }
 });
 
-characterImportRouter.post("/pair", (req, res) => {
+characterImportRouter.post("/pair", async (req, res) => {
   try {
     const input = importPairSchema.parse(req.body);
-    res.json({ ok: true, data: characterImportService.importPair(input) });
+    res.json({ ok: true, data: await characterImportService.importPair(input) });
   } catch (error) {
     sendError(res, error);
   }
 });
 
-characterImportRouter.post("/bulk", (req, res) => {
+characterImportRouter.post("/bulk", async (req, res) => {
   try {
     const input = importBulkSchema.parse(req.body);
-    res.json({ ok: true, data: characterImportService.importBulk(input) });
+    res.json({ ok: true, data: await characterImportService.importBulk(input) });
   } catch (error) {
     sendError(res, error);
   }
