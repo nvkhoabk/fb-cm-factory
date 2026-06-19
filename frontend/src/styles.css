@@ -378,7 +378,7 @@ h2 {
 .kpiBar {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
 }
 
 .kpiCard {
@@ -402,10 +402,35 @@ h2 {
   line-height: 1;
 }
 
+.boardHeader {
+  align-items: end;
+  display: flex;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.boardHeader h2 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.boardHeader small {
+  color: #6c7380;
+  font-size: 12px;
+}
+
 .pipelineBoard {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(7, minmax(155px, 1fr));
+  grid-template-columns: repeat(6, minmax(165px, 1fr));
+  overflow-x: auto;
+}
+
+.instanceBoard,
+.jobBoard {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(6, minmax(175px, 1fr));
   overflow-x: auto;
 }
 
@@ -449,6 +474,14 @@ h2 {
   border-color: #7d8da1;
 }
 
+.pipelineCard.selected,
+.instanceBoardCard.selected,
+.jobBoardCard.selected,
+.runtimeCard.selected {
+  border-color: #2f6f7e;
+  box-shadow: inset 0 0 0 1px #2f6f7e;
+}
+
 .pipelineCard strong,
 .pipelineCard span,
 .pipelineCard small,
@@ -468,6 +501,82 @@ h2 {
 .pipelineCard em {
   color: #6c7380;
   font-style: normal;
+}
+
+.instanceBoardCard,
+.jobBoardCard,
+.runtimeCard {
+  background: #ffffff;
+  border: 1px solid #e1e6ed;
+  border-radius: 8px;
+  color: inherit;
+  display: grid;
+  gap: 5px;
+  min-height: 118px;
+  padding: 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.jobBoardCard {
+  cursor: pointer;
+}
+
+.instanceBoardCard strong,
+.instanceBoardCard small,
+.jobBoardCard strong,
+.jobBoardCard span,
+.jobBoardCard small,
+.runtimeCard strong,
+.runtimeCard span,
+.runtimeCard small {
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jobBoardCard span,
+.runtimeCard span {
+  font-weight: 700;
+}
+
+.miniActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 3px;
+}
+
+.miniActions span,
+.miniActions button,
+.runtimeCard em {
+  background: #f7f8fa;
+  border: 1px solid #d8dee6;
+  border-radius: 6px;
+  color: #2d3440;
+  cursor: pointer;
+  font-size: 11px;
+  min-height: 24px;
+  padding: 3px 6px;
+}
+
+.miniActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.runtimeBoard {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.runtimeCard em {
+  color: #8b2b22;
+  font-style: normal;
+  justify-self: start;
 }
 
 .controlDetails {
@@ -630,6 +739,16 @@ h2 {
   display: grid;
   gap: 8px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.debugGrid section {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.debugGrid section b {
+  font-size: 12px;
 }
 
 .debugGrid pre {
@@ -1682,6 +1801,7 @@ h2 {
   .jobsToolbar,
   .jobsWorkspace,
   .controlDetails,
+  .runtimeBoard,
   .debugGrid,
   .managementPage,
   .adminGrid,

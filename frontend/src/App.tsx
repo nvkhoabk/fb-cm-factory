@@ -190,6 +190,8 @@ type ProductionBatch = {
   id: string;
   batchType: string;
   sourceGroupId?: string | null;
+  workflowId?: string | null;
+  workflowRunId?: string | null;
   status: string;
   usageStatus: string;
   attributes?: Record<string, unknown>;
@@ -301,6 +303,7 @@ const pageSizeOptions = [10, 20, 50];
 const instancePoolStateOptions = ["AVAILABLE", "STANDBY", "WORKFLOW", "MAINTENANCE", "DISABLED", "RETIRED"];
 const capacityStageOptions = ["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT"];
 const productionBatchTypeOptions = ["CHARACTER_GROUP", "IMAGE_BATCH", "VIDEO_BATCH", "MUSIC_TRACK", "FINAL_VIDEO", "POST_CONTENT"];
+const jobBoardStatusOptions = ["PENDING", "ALLOCATED", "RUNNING", "COMPLETED", "FAILED"];
 const promptCategoryOptions = ["image", "video", "music", "POST_CONTENT"];
 const musicPolicyModes = ["RANDOM_LIBRARY", "REQUIRE_MATCHED", "CREATE_DEDICATED"];
 const musicMatchAttributeOptions = ["mood", "tempo", "style", "scene", "emotion", "tags"];
@@ -747,6 +750,10 @@ export function App() {
       ?? null,
     [runtimeSession, runtimeSessions, selectedRuntimeId]
   );
+  const selectedInstance = useMemo(
+    () => instances.find((instance) => instance.id === selectedInstanceId) ?? null,
+    [instances, selectedInstanceId]
+  );
   const selectedScriptRun = useMemo(
     () => scriptRun ?? scriptRuns.find((run) => run.runtimeSessionId === selectedRuntime?.id) ?? null,
     [scriptRun, scriptRuns, selectedRuntime]
@@ -789,22 +796,47 @@ export function App() {
     });
   }, [adminSearch, instanceCapabilityFilter, instancePoolStateFilter, instanceRuntimeFilter, instances, selectedHostId]);
   const kpis = useMemo(() => ({
+    availableInstances: instances.filter((instance) => (instance.currentPoolType ?? "AVAILABLE") === "AVAILABLE").length,
+    standbyInstances: instances.filter((instance) => instance.currentPoolType === "STANDBY").length,
+    workflowInstances: instances.filter((instance) => instance.currentPoolType === "WORKFLOW").length,
+    maintenanceInstances: instances.filter((instance) => instance.currentPoolType === "MAINTENANCE").length,
+    disabledInstances: instances.filter((instance) => instance.currentPoolType === "DISABLED").length,
     readyBatches: batches.filter((batch) => batch.status === "READY" && ["AVAILABLE", "REUSABLE"].includes(batch.usageStatus)).length,
     pendingJobs: jobs.filter((job) => job.status === "PENDING").length,
-    allocatedJobs: jobs.filter((job) => job.status === "ALLOCATED").length,
-    runningRuntimeSessions: runtimeSessions.filter((session) => session.status === "RUNNING").length,
+    runningJobs: jobs.filter((job) => job.status === "RUNNING").length,
     failedRecoverableSessions: runtimeSessions.filter((session) => session.status === "FAILED_RECOVERABLE").length,
-    finalOutputs: batches.filter((batch) => batch.batchType === "FINAL_VIDEO" && batch.status === "READY").length
-  }), [batches, jobs, runtimeSessions]);
-  const board = useMemo(() => ({
-    inputGroups: batches.filter((batch) => batch.batchType === "CHARACTER_GROUP"),
-    imageBatches: batches.filter((batch) => batch.batchType === "IMAGE_BATCH"),
-    videoBatches: batches.filter((batch) => batch.batchType === "VIDEO_BATCH"),
-    musicTracks: batches.filter((batch) => batch.batchType === "MUSIC_TRACK"),
-    finalVideos: batches.filter((batch) => batch.batchType === "FINAL_VIDEO"),
-    jobs,
-    runtimeSessions
-  }), [batches, jobs, runtimeSessions]);
+    finalVideoCount: batches.filter((batch) => batch.batchType === "FINAL_VIDEO").length,
+    postContentCount: batches.filter((batch) => batch.batchType === "POST_CONTENT").length
+  }), [batches, instances, jobs, runtimeSessions]);
+  const pipelineColumns = useMemo(() => productionBatchTypeOptions.map((batchType) => ({
+    batchType,
+    items: batches.filter((batch) => batch.batchType === batchType)
+  })), [batches]);
+  const instanceColumns = useMemo(() => instancePoolStateOptions.map((poolType) => ({
+    poolType,
+    items: instances.filter((instance) => (instance.currentPoolType ?? "AVAILABLE") === poolType)
+  })), [instances]);
+  const jobColumns = useMemo(() => jobBoardStatusOptions.map((statusName) => ({
+    status: statusName,
+    items: jobs.filter((job) => job.status === statusName)
+  })), [jobs]);
+  const selectedBatchJobs = useMemo(
+    () => selectedBatch ? jobs.filter((job) => job.sourceBatchId === selectedBatch.id) : [],
+    [jobs, selectedBatch]
+  );
+  const selectedJobRuntime = useMemo(
+    () => selectedJob ? runtimeSessions.find((session) => session.jobId === selectedJob.id) ?? null : null,
+    [runtimeSessions, selectedJob]
+  );
+  const selectedRuntimeScriptRuns = useMemo(
+    () => selectedRuntime ? scriptRuns.filter((run) => run.runtimeSessionId === selectedRuntime.id) : [],
+    [scriptRuns, selectedRuntime]
+  );
+  const selectedBatchLineage = useMemo(() => {
+    if (!selectedBatch) return [];
+    const directJobs = jobs.filter((job) => job.sourceBatchId === selectedBatch.id);
+    return batches.filter((batch) => directJobs.some((job) => batchMatchesJob(batch, job)));
+  }, [batches, jobs, selectedBatch]);
 
   const loadData = useCallback(async () => {
     setStatus("Loading studio data");
@@ -1243,8 +1275,8 @@ export function App() {
     }
   }
 
-  async function runtimeAction(action: "test-screenshot" | "recover" | "mark-unrecoverable") {
-    const session = selectedRuntime;
+  async function runtimeAction(action: "test-screenshot" | "recover" | "mark-unrecoverable", runtimeOverride?: RuntimeSession) {
+    const session = runtimeOverride ?? selectedRuntime;
     if (!session) return;
 
     setBusy(true);
@@ -2223,7 +2255,7 @@ export function App() {
         <div className="controlToolbar panel">
           <div>
             <strong>Factory Control Center</strong>
-            <small>Production flow visibility and test controls</small>
+            <small>Resource to job to instance to runtime to output visibility</small>
           </div>
           <label className="toggleControl">
             <input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} />
@@ -2237,12 +2269,17 @@ export function App() {
 
         <div className="kpiBar">
           {[
-            ["Ready Batches", kpis.readyBatches],
-            ["Pending Jobs", kpis.pendingJobs],
-            ["Allocated Jobs", kpis.allocatedJobs],
-            ["Running Runtime Sessions", kpis.runningRuntimeSessions],
-            ["Failed Recoverable Sessions", kpis.failedRecoverableSessions],
-            ["Final Outputs", kpis.finalOutputs]
+            ["AVAILABLE instances", kpis.availableInstances],
+            ["STANDBY instances", kpis.standbyInstances],
+            ["WORKFLOW instances", kpis.workflowInstances],
+            ["MAINTENANCE instances", kpis.maintenanceInstances],
+            ["DISABLED instances", kpis.disabledInstances],
+            ["READY batches", kpis.readyBatches],
+            ["PENDING jobs", kpis.pendingJobs],
+            ["RUNNING jobs", kpis.runningJobs],
+            ["FAILED_RECOVERABLE sessions", kpis.failedRecoverableSessions],
+            ["FINAL_VIDEO count", kpis.finalVideoCount],
+            ["POST_CONTENT count", kpis.postContentCount]
           ].map(([label, value]) => (
             <div className="kpiCard" key={String(label)}>
               <span>{label}</span>
@@ -2251,46 +2288,99 @@ export function App() {
           ))}
         </div>
 
+        <div className="boardHeader">
+          <h2>Pipeline Board</h2>
+          <small>Production resources by batch type</small>
+        </div>
         <div className="pipelineBoard">
-          {[
-            { title: "Input Groups", items: board.inputGroups, kind: "batch" },
-            { title: "Image Batches", items: board.imageBatches, kind: "batch" },
-            { title: "Video Batches", items: board.videoBatches, kind: "batch" },
-            { title: "Music Tracks", items: board.musicTracks, kind: "batch" },
-            { title: "Final Videos", items: board.finalVideos, kind: "batch" },
-            { title: "Jobs", items: board.jobs, kind: "job" },
-            { title: "Runtime Sessions", items: board.runtimeSessions, kind: "runtime" }
-          ].map((column) => (
-            <section className="pipelineColumn" key={column.title}>
-              <h2>{column.title}</h2>
+          {pipelineColumns.map((column) => (
+            <section className="pipelineColumn" key={column.batchType}>
+              <h2>{column.batchType}</h2>
               <div className="pipelineCards">
-                {column.items.slice(0, 12).map((item) => {
-                  const isJob = column.kind === "job";
-                  const isRuntime = column.kind === "runtime";
-                  const batch = item as ProductionBatch;
-                  const job = item as OrchestratorJob;
-                  const runtime = item as RuntimeSession;
-                  return (
-                    <button
-                      className="pipelineCard"
-                      key={String(item.id)}
-                      onClick={() => {
-                        if (isJob) loadJobDetail(job);
-                        else if (isRuntime) selectRuntimeSession(runtime);
-                        else setSelectedBatchId(String(batch.id));
-                      }}
-                    >
-                      <strong>{displayShortId(String(item.id))}</strong>
-                      <span>{isJob ? job.targetStageType : isRuntime ? "Runtime" : batch.batchType}</span>
-                      <small>{String(item.status)}</small>
-                      {!isJob && !isRuntime ? <small>{batch.usageStatus}</small> : null}
-                      <small>{displayDateTime(isRuntime ? runtime.updatedAt : isJob ? job.createdAt : batch.createdAt)}</small>
-                      {isJob ? <em>source {displayShortId(job.sourceBatchId)}</em> : null}
-                      {isRuntime ? <em>job {displayShortId(runtime.jobId)}</em> : null}
-                    </button>
-                  );
-                })}
+                {column.items.slice(0, 12).map((batch) => (
+                  <button
+                    className={`pipelineCard ${selectedBatchId === batch.id ? "selected" : ""}`}
+                    key={batch.id}
+                    onClick={() => setSelectedBatchId(batch.id)}
+                  >
+                    <strong>{displayShortId(batch.id)}</strong>
+                    <span>{batch.status}</span>
+                    <small>{batch.usageStatus}</small>
+                    <small>workflow {displayShortId(batch.workflowId)}</small>
+                    <small>{displayDateTime(batch.createdAt)}</small>
+                  </button>
+                ))}
                 {!column.items.length ? <p>No items</p> : null}
+              </div>
+            </section>
+          ))}
+        </div>
+
+        <div className="boardHeader">
+          <h2>Instance Board</h2>
+          <small>Dynamic pool state and capability matching surface</small>
+        </div>
+        <div className="instanceBoard">
+          {instanceColumns.map((column) => (
+            <section className="pipelineColumn" key={column.poolType}>
+              <h2>{column.poolType}</h2>
+              <div className="pipelineCards">
+                {column.items.slice(0, 16).map((instance) => (
+                  <button
+                    className={`instanceBoardCard ${selectedInstanceId === instance.id ? "selected" : ""}`}
+                    key={instance.id}
+                    onClick={() => {
+                      setSelectedInstanceId(instance.id);
+                      setHostInstanceId(instance.id);
+                      setHostAdbId(instance.adbId ?? "");
+                      const host = hostForInstance(instance);
+                      if (host) setSelectedHostId(host.id);
+                    }}
+                  >
+                    <strong title={instance.id}>{instance.id}</strong>
+                    <small>{instance.hostId}</small>
+                    <small>{instance.adbId ?? "-"}</small>
+                    <span className="poolBadgeList">{renderCapabilityBadges(instance)}</span>
+                    <small>{instance.runtimeStatus ?? "-"}</small>
+                    <span className="miniActions">
+                      <span onClick={(event) => { event.stopPropagation(); moveInstance(instance, "move-standby"); }}>standby</span>
+                      <span onClick={(event) => { event.stopPropagation(); moveInstance(instance, "move-maintenance"); }}>maintenance</span>
+                      <span onClick={(event) => { event.stopPropagation(); moveInstance(instance, "disable"); }}>disable</span>
+                    </span>
+                  </button>
+                ))}
+                {!column.items.length ? <p>No instances</p> : null}
+              </div>
+            </section>
+          ))}
+        </div>
+
+        <div className="boardHeader">
+          <h2>Job Board</h2>
+          <small>Allocation and execution controls</small>
+        </div>
+        <div className="jobBoard">
+          {jobColumns.map((column) => (
+            <section className="pipelineColumn" key={column.status}>
+              <h2>{column.status}</h2>
+              <div className="pipelineCards">
+                {column.items.slice(0, 16).map((job) => (
+                  <article className={`jobBoardCard ${selectedJobId === job.id ? "selected" : ""}`} key={job.id} onClick={() => loadJobDetail(job)}>
+                    <strong>{displayShortId(job.id)}</strong>
+                    <span>{job.targetStageType}</span>
+                    <small>source {displayShortId(job.sourceBatchId)}</small>
+                    <small>instance {displayJobInstance(job)}</small>
+                    <small>{displayJobAllocationMode(job)}</small>
+                    <div className="miniActions">
+                      <button disabled={busy || job.status !== "PENDING"} onClick={(event) => { event.stopPropagation(); runJobAction(job, "allocate"); }}>Allocate</button>
+                      <button disabled={busy} onClick={(event) => { event.stopPropagation(); runJobAction(job, "execute-mock"); }}>Execute Mock</button>
+                      <button disabled={busy || job.targetStageType !== "IMAGE_EDIT"} onClick={(event) => { event.stopPropagation(); runJobAction(job, "execute-image-edit"); }}>Execute IMAGE_EDIT</button>
+                      <button disabled={busy || ["COMPLETED", "FAILED"].includes(job.status)} onClick={(event) => { event.stopPropagation(); runJobAction(job, "fail"); }}>Fail</button>
+                      <button disabled={busy} onClick={(event) => { event.stopPropagation(); refreshQueue(); }}>Refresh</button>
+                    </div>
+                  </article>
+                ))}
+                {!column.items.length ? <p>No jobs</p> : null}
               </div>
             </section>
           ))}
@@ -2299,103 +2389,32 @@ export function App() {
         <div className="controlDetails">
           <section className="panel controlPanel">
             <div className="panelHeader">
-              <ClipboardList size={18} />
-              <h2>Job Detail</h2>
-            </div>
-            {selectedJob ? (
-              <>
-                <div className="detailList">
-                  <span>Job id <b>{selectedJob.id}</b></span>
-                  <span>Source batch <b>{selectedJob.sourceBatchId}</b></span>
-                  <span>Target stage <b>{selectedJob.targetStageType}</b></span>
-                  <span>Status <b>{selectedJob.status}</b></span>
-                  <span>Pool <b>{displayJobPool(selectedJob, pools)}</b></span>
-                  <span>Instance <b>{displayJobInstance(selectedJob)}</b></span>
-                  <span>Allocation <b>{displayJobAllocationMode(selectedJob)}</b></span>
-                </div>
-                <pre className="jsonBlock">{compactJson(selectedJob.payload)}</pre>
-                <div className="controlActions">
-                  {(["allocate", "execute-mock", "execute-image-edit", "start", "complete", "fail"] as const).map((action) => (
-                    <button
-                      key={action}
-                      onClick={() => runJobAction(selectedJob, action)}
-                      disabled={
-                        busy
-                        || (action === "allocate" && selectedJob.status !== "PENDING")
-                        || (["execute-mock", "execute-image-edit", "start"].includes(action) && selectedJob.status !== "ALLOCATED")
-                        || (action === "execute-image-edit" && selectedJob.targetStageType !== "IMAGE_EDIT")
-                        || (action === "complete" && !["ALLOCATED", "RUNNING"].includes(selectedJob.status))
-                        || (action === "fail" && ["COMPLETED", "FAILED", "CANCELLED"].includes(selectedJob.status))
-                      }
-                    >
-                      {action === "execute-image-edit" ? "Execute IMAGE_EDIT" : action}
-                    </button>
-                  ))}
-                  <button onClick={() => refreshQueue()} disabled={busy}>Refresh</button>
-                </div>
-              </>
-            ) : (
-              <p className="emptyDetail">Select a job from the board.</p>
-            )}
-          </section>
-
-          <section className="panel controlPanel">
-            <div className="panelHeader">
               <Play size={18} />
-              <h2>Runtime Detail</h2>
+              <h2>Runtime Board</h2>
             </div>
-            {selectedRuntime ? (
-              <>
-                <div className="detailList">
-                  <span>Runtime id <b>{selectedRuntime.id}</b></span>
-                  <span>Status <b>{selectedRuntime.status}</b></span>
-                  <span>Host <b>{selectedRuntime.hostId ?? "-"}</b></span>
-                  <span>Instance <b>{selectedRuntime.instanceId ?? "-"}</b></span>
-                  <span>Current step <b>{selectedRuntime.currentStepNo}</b></span>
-                </div>
-                <pre className="jsonBlock">{compactJson(selectedRuntime.checkpoint)}</pre>
-                <div className="controlActions">
-                  <button onClick={() => runtimeAction("test-screenshot")} disabled={busy}>Test Screenshot</button>
-                  <button onClick={() => runtimeAction("recover")} disabled={busy || selectedRuntime.status !== "FAILED_RECOVERABLE"}>Recover</button>
-                  <button onClick={() => runtimeAction("mark-unrecoverable")} disabled={busy}>Mark Unrecoverable</button>
-                </div>
-              </>
-            ) : (
-              <p className="emptyDetail">Select a runtime session from the board.</p>
-            )}
-          </section>
-
-          <section className="panel controlPanel timelinePanel">
-            <div className="panelHeader">
-              <ClipboardList size={18} />
-              <h2>Script Run Timeline</h2>
+            <div className="runtimeBoard">
+              {runtimeSessions.slice(0, 24).map((session) => (
+                <button
+                  className={`runtimeCard ${selectedRuntime?.id === session.id ? "selected" : ""}`}
+                  key={session.id}
+                  onClick={() => selectRuntimeSession(session)}
+                >
+                  <strong>{displayShortId(session.id)}</strong>
+                  <span>{session.status}</span>
+                  <small>step {session.currentStepNo ?? 0}</small>
+                  <small>{session.hostId ?? "-"}</small>
+                  <small>{session.instanceId ?? "-"}</small>
+                  {session.status === "FAILED_RECOVERABLE" ? <em onClick={(event) => { event.stopPropagation(); runtimeAction("recover", session); }}>recover</em> : null}
+                </button>
+              ))}
+              {!runtimeSessions.length ? <p className="emptyDetail">No runtime sessions yet.</p> : null}
             </div>
-            {selectedScriptRun ? (
-              <div className="timelineList">
-                <strong>{selectedScriptRun.status} / {selectedScriptRun.id}</strong>
-                {(selectedScriptRun.steps ?? []).map((step) => {
-                  const previewUrl = findUrl(step.output);
-                  return (
-                    <article className="timelineStep" key={step.id}>
-                      <span>{step.stepNo}. {step.stepType}</span>
-                      <b>{step.status}</b>
-                      <small>{displayDateTime(step.startedAt ?? undefined)} - {displayDateTime(step.finishedAt ?? undefined)}</small>
-                      {step.errorMessage ? <em>{step.errorMessage}</em> : null}
-                      {previewUrl ? <img src={previewUrl} alt="step output preview" /> : null}
-                      <pre>{compactJson(step.output)}</pre>
-                    </article>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="emptyDetail">No script run selected.</p>
-            )}
           </section>
 
           <section className="panel controlPanel">
             <div className="panelHeader">
               <Users size={18} />
-              <h2>Host Agent Test</h2>
+              <h2>Host Test Panel</h2>
             </div>
             <div className="hostForm">
               <label>
@@ -2412,7 +2431,6 @@ export function App() {
               <button onClick={() => runHostAction("health")} disabled={busy}>Health</button>
               <button onClick={() => runHostAction("devices")} disabled={busy || !selectedHost}>ADB Devices</button>
               <button onClick={() => runHostAction("screenshot")} disabled={busy}>Screenshot</button>
-              <button onClick={() => runHostAction("tap")} disabled={busy}>Tap Test</button>
               <button onClick={() => runHostAction("send-text")} disabled={busy}>Send Text</button>
               <button onClick={() => runHostAction("download-latest")} disabled={busy}>Download Latest</button>
             </div>
@@ -2425,34 +2443,30 @@ export function App() {
           </section>
         </div>
 
-        <div className="panel relationshipPanel">
-          <div className="panelHeader">
-            <Boxes size={18} />
-            <h2>Visual Links</h2>
-          </div>
-          <div className="relationshipList">
-            {selectedJob ? <span>Batch {displayShortId(selectedJob.sourceBatchId)} to Job {displayShortId(selectedJob.id)}</span> : null}
-            {selectedJob && selectedRuntime ? <span>Job {displayShortId(selectedJob.id)} to Runtime {displayShortId(selectedRuntime.id)}</span> : null}
-            {selectedRuntime && selectedScriptRun ? <span>Runtime {displayShortId(selectedRuntime.id)} to Script Run {displayShortId(selectedScriptRun.id)}</span> : null}
-            {selectedJob && outputBatches.map((batch) => <span key={batch.id}>Job {displayShortId(selectedJob.id)} to Output Batch {displayShortId(batch.id)}</span>)}
-            {!selectedJob && !selectedRuntime ? <span>Select a job or runtime to see links.</span> : null}
-          </div>
-        </div>
-
         <div className="panel debugPanel">
           <div className="drawerSectionHeader">
-            <strong>Debug JSON</strong>
+            <strong>Debug Drawer</strong>
             <button className="secondaryButton" onClick={() => setDebugOpen((current) => !current)}>
               {debugOpen ? "Hide" : "Show"}
             </button>
           </div>
           {debugOpen ? (
-            <div className="debugGrid">
-              <pre>{compactJson(selectedBatch)}</pre>
-              <pre>{compactJson(selectedJob)}</pre>
-              <pre>{compactJson(selectedRuntime)}</pre>
-              <pre>{compactJson(selectedScriptRun)}</pre>
-            </div>
+            <>
+              <div className="relationshipList">
+                {selectedBatch ? <span>batch to jobs: {selectedBatchJobs.length}</span> : null}
+                {selectedJob ? <span>job to runtime: {selectedJobRuntime?.id ? displayShortId(selectedJobRuntime.id) : "-"}</span> : null}
+                {selectedRuntime ? <span>runtime to script runs: {selectedRuntimeScriptRuns.length}</span> : null}
+                {selectedBatchLineage.map((batch) => <span key={batch.id}>lineage output {batch.batchType} / {displayShortId(batch.id)}</span>)}
+                {outputBatches.map((batch) => <span key={batch.id}>job output {batch.batchType} / {displayShortId(batch.id)}</span>)}
+                {selectedInstance ? <span>instance {selectedInstance.currentPoolType ?? "AVAILABLE"} / {selectedInstance.runtimeStatus}</span> : null}
+              </div>
+              <div className="debugGrid">
+                <section><b>Batch</b><pre>{compactJson({ selectedBatch, relatedJobs: selectedBatchJobs, lineage: selectedBatchLineage })}</pre></section>
+                <section><b>Job</b><pre>{compactJson({ selectedJob, runtime: selectedJobRuntime, outputBatches })}</pre></section>
+                <section><b>Runtime</b><pre>{compactJson({ selectedRuntime, scriptRuns: selectedRuntimeScriptRuns, selectedScriptRun })}</pre></section>
+                <section><b>Instance</b><pre>{compactJson(selectedInstance)}</pre></section>
+              </div>
+            </>
           ) : null}
         </div>
       </section>
