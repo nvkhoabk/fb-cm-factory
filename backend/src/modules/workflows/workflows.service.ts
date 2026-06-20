@@ -49,6 +49,77 @@ export const workflowsService = {
 
   create: (input: CreateWorkflowInput) => workflowsRepository.create(input),
 
+  getDetail(id: string) {
+    const workflow = this.get(id) as Record<string, unknown> & { id: string; name: string };
+    const legacyStages = workflowsRepository.listStages(id);
+    const runs = workflowsRepository.listRuns().filter((run) => run.workflowId === id);
+    const resourceRules = Array.isArray(workflow.resourceRules) ? workflow.resourceRules as Array<Record<string, unknown>> : [];
+    const promptMapping = (workflow.promptMapping ?? {}) as Record<string, unknown>;
+    const scriptMapping = (workflow.scriptMapping ?? {}) as Record<string, unknown>;
+    const capacity = (workflow.capacityConfig ?? {}) as Record<string, unknown>;
+    const musicPolicy = (workflow.musicPolicy ?? {}) as Record<string, unknown>;
+    const postContentPolicy = (workflow.postContentPolicy ?? {}) as Record<string, unknown>;
+    const warnings: string[] = [];
+
+    if (!resourceRules.length && legacyStages.length) warnings.push("workflow has only legacy stages");
+    for (const rule of resourceRules as Array<Record<string, unknown>>) {
+      const targetJobType = String(rule.targetJobType ?? "");
+      if (targetJobType && !promptMapping[targetJobType]) warnings.push(`${targetJobType} rule missing prompt template`);
+      if (targetJobType && !scriptMapping[targetJobType]) warnings.push(`${targetJobType} rule missing script`);
+      if (targetJobType && !Number(capacity[targetJobType] ?? 0)) warnings.push(`capacity missing for ${targetJobType}`);
+      const requires = Array.isArray(rule.requires) ? rule.requires : [];
+      if (targetJobType === "VIDEO_COMPOSE" && requires.includes("MUSIC_TRACK") && !Object.keys(musicPolicy).length) {
+        warnings.push("VIDEO_COMPOSE requires music but music policy missing");
+      }
+      if (targetJobType === "POST_CONTENT" && !promptMapping.POST_CONTENT) {
+        warnings.push("POST_CONTENT enabled but missing post prompt");
+      }
+    }
+
+    return {
+      workflow,
+      resourceRules,
+      promptMapping,
+      scriptMapping,
+      capacity,
+      musicPolicy,
+      postContentPolicy,
+      legacyStages,
+      runs,
+      warnings: [...new Set(warnings)]
+    };
+  },
+
+  duplicate(id: string) {
+    const workflow = this.get(id) as Record<string, unknown> & { id: string; name: string; description?: string | null };
+    const copy = workflowsRepository.create({
+      name: `${workflow.name} Copy`,
+      description: typeof workflow.description === "string" ? workflow.description : undefined,
+      status: "draft",
+      musicPolicy: (workflow.musicPolicy ?? {}) as Record<string, unknown>,
+      postContentPolicy: (workflow.postContentPolicy ?? {}) as Record<string, unknown>,
+      resourceRules: (Array.isArray(workflow.resourceRules) ? workflow.resourceRules as Array<Record<string, unknown>> : [])
+        .filter((rule) => typeof rule.trigger === "string" && typeof rule.targetJobType === "string")
+        .map((rule) => ({
+          ...rule,
+          trigger: String(rule.trigger),
+          targetJobType: String(rule.targetJobType),
+          outputBatchType: typeof rule.outputBatchType === "string" ? rule.outputBatchType : undefined,
+          requires: Array.isArray(rule.requires) ? rule.requires.map(String) : undefined,
+          scriptCategory: typeof rule.scriptCategory === "string" ? rule.scriptCategory : undefined,
+          promptCategory: typeof rule.promptCategory === "string" ? rule.promptCategory : undefined
+        })),
+      scriptMapping: (workflow.scriptMapping ?? {}) as Record<string, unknown>,
+      promptMapping: (workflow.promptMapping ?? {}) as Record<string, unknown>
+    });
+    if (workflow.capacityConfig && Object.keys(workflow.capacityConfig).length) {
+      const copyRecord = copy as { id?: unknown } | null;
+      if (!copyRecord || typeof copyRecord.id !== "string") throw new AppError("WORKFLOW_DUPLICATE_FAILED", "Could not duplicate workflow", 500);
+      return workflowsRepository.updateCapacity(copyRecord.id, normalizeCapacityConfig(workflow.capacityConfig as CapacityConfigInput));
+    }
+    return copy;
+  },
+
   update(id: string, input: UpdateWorkflowInput) {
     const workflow = workflowsRepository.update(id, input);
     if (!workflow) throw new AppError("WORKFLOW_NOT_FOUND", "Workflow not found", 404);

@@ -1,5 +1,6 @@
 import { AppError } from "../shared/resource";
 import { db } from "../../database/db";
+import crypto from "node:crypto";
 import { productionBatchService } from "../production-batches/production-batch.service";
 import { characterSourceAssetsService } from "../character-assets/character-source-assets.service";
 import { characterGroupsRepository } from "./character-groups.repository";
@@ -7,6 +8,7 @@ import type {
   AssignGroupAttributeInput,
   CreateCharacterGroupInput,
   CreateGroupMemberInput,
+  ReplaceGroupAttributesInput,
   ReorderGroupMembersInput,
   UpdateCharacterGroupInput
 } from "./character-groups.schemas";
@@ -58,6 +60,62 @@ function groupAttributes(groupId: string) {
     WHERE cgav.group_id = ?
     ORDER BY cgav.created_at ASC
   `).all(groupId).map((row) => mapAttribute(row as Row));
+}
+
+function normalizeAttributeKey(key: string) {
+  return key.trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+function ensureGroupAttribute(key: string, name?: string) {
+  const normalizedKey = normalizeAttributeKey(key);
+  const existing = db.prepare("SELECT * FROM group_attributes WHERE lower(key) = lower(?) LIMIT 1").get(normalizedKey) as Row | undefined;
+  if (existing) return mapAttribute(existing);
+  const id = `ga_${crypto.randomUUID()}`;
+  const timestamp = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO group_attributes (id, key, name, value_type, created_at, updated_at)
+    VALUES (@id, @key, @name, 'TEXT', @createdAt, @updatedAt)
+  `).run({
+    id,
+    key: normalizedKey,
+    name: name || normalizedKey,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  });
+  db.prepare(`
+    INSERT OR IGNORE INTO group_attribute_definitions (id, key, label, value_type, scope, created_at, updated_at)
+    VALUES (@id, @key, @name, 'TEXT', 'group', @createdAt, @updatedAt)
+  `).run({
+    id,
+    key: normalizedKey,
+    name: name || normalizedKey,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  });
+  return mapAttribute(db.prepare("SELECT * FROM group_attributes WHERE id = ?").get(id) as Row);
+}
+
+function attributeSuggestions(groupId: string) {
+  const rows = db.prepare(`
+    SELECT
+      ga.key AS attribute_key,
+      ga.name AS attribute_name,
+      COALESCE(cgav.custom_value, gav.label, gav.value) AS value,
+      COUNT(*) AS usage_count
+    FROM character_group_attribute_values cgav
+    JOIN group_attributes ga ON ga.id = cgav.attribute_id
+    LEFT JOIN group_attribute_values gav ON gav.id = cgav.value_id
+    WHERE cgav.group_id <> ?
+      AND COALESCE(cgav.custom_value, gav.label, gav.value, '') <> ''
+    GROUP BY ga.key, ga.name, value
+    ORDER BY usage_count DESC, value ASC
+  `).all(groupId) as Row[];
+  return rows.map((row) => ({
+    key: text(row, "attribute_key"),
+    name: text(row, "attribute_name"),
+    value: text(row, "value"),
+    usageCount: Number(row.usage_count ?? 0)
+  }));
 }
 
 function attributesSummary(attributes: ReturnType<typeof mapAttribute>[]) {
@@ -156,6 +214,7 @@ function groupDetail(id: string) {
     attributes: attrs,
     readiness,
     productionHistory: productionHistory(id),
+    attributeSuggestions: attributeSuggestions(id),
     sourceAssets
   };
 }
@@ -226,6 +285,36 @@ export const characterGroupsService = {
 
   assignAttribute: (groupId: string, input: AssignGroupAttributeInput) =>
     characterGroupsRepository.assignAttribute(groupId, input),
+
+  replaceAttributes(groupId: string, input: ReplaceGroupAttributesInput) {
+    this.get(groupId);
+    const cleanAttributes = input.attributes
+      .map((attribute) => ({
+        key: normalizeAttributeKey(attribute.key),
+        name: attribute.name?.trim() || normalizeAttributeKey(attribute.key),
+        value: attribute.value?.trim() ?? ""
+      }))
+      .filter((attribute) => attribute.key && attribute.value);
+    const timestamp = new Date().toISOString();
+    db.transaction(() => {
+      db.prepare("DELETE FROM character_group_attribute_values WHERE group_id = ?").run(groupId);
+      const insert = db.prepare(`
+        INSERT INTO character_group_attribute_values (id, group_id, attribute_id, value_id, custom_value, created_at)
+        VALUES (@id, @groupId, @attributeId, NULL, @customValue, @createdAt)
+      `);
+      for (const attribute of cleanAttributes) {
+        const definition = ensureGroupAttribute(attribute.key, attribute.name);
+        insert.run({
+          id: `cgav_${crypto.randomUUID()}`,
+          groupId,
+          attributeId: definition.attributeId ?? definition.id,
+          customValue: attribute.value,
+          createdAt: timestamp
+        });
+      }
+    })();
+    return groupDetail(groupId);
+  },
 
   detail: groupDetail,
 

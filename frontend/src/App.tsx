@@ -88,6 +88,12 @@ type CharacterGroupDetail = {
     batches: ProductionBatch[];
     jobs: OrchestratorJob[];
   };
+  attributeSuggestions?: Array<{
+    key?: string | null;
+    name?: string | null;
+    value?: string | null;
+    usageCount?: number;
+  }>;
   sourceAssets?: Record<string, unknown>;
 };
 
@@ -212,6 +218,35 @@ type WorkflowRecord = {
   resourceRules?: Array<Record<string, unknown>>;
   scriptMapping?: Record<string, unknown>;
   promptMapping?: Record<string, unknown>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+type WorkflowStageRecord = {
+  id: string;
+  workflowId: string;
+  stageNo: number;
+  stageType: string;
+  name: string;
+  scriptId?: string | null;
+  poolType?: string | null;
+  promptTemplateId?: string | null;
+  config?: Record<string, unknown>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+type WorkflowDetailRecord = {
+  workflow: WorkflowRecord;
+  resourceRules: Array<Record<string, unknown>>;
+  promptMapping: Record<string, unknown>;
+  scriptMapping: Record<string, unknown>;
+  capacity: CapacityConfig;
+  musicPolicy: Record<string, unknown>;
+  postContentPolicy: Record<string, unknown>;
+  legacyStages: WorkflowStageRecord[];
+  runs: WorkflowRunRecord[];
+  warnings: string[];
 };
 
 type WorkflowRunRecord = {
@@ -234,6 +269,18 @@ type CapacityAllocation = {
   adbId?: string | null;
   status: string;
   metadata?: Record<string, unknown>;
+};
+
+type InstanceAllocationRecord = CapacityAllocation & {
+  poolId?: string | null;
+  orchestratorJobId?: string | null;
+  workflowRunId?: string | null;
+  workflowStageRunId?: string | null;
+  allocationMode?: string | null;
+  allocatedAt?: string | null;
+  releasedAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 };
 
 type WorkflowCapacityResponse = {
@@ -279,7 +326,8 @@ type ScriptRecord = {
   category?: string;
   description?: string | null;
   status: string;
-  createdAt?: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 };
 
 type ScriptVersionRecord = {
@@ -287,10 +335,13 @@ type ScriptVersionRecord = {
   scriptId: string;
   versionNo: number;
   status: string;
+  definition?: Record<string, unknown>;
   steps?: Array<Record<string, unknown>>;
   variables?: Record<string, unknown>;
   retryPolicy?: Record<string, unknown>;
   detectionPolicy?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 type OrchestratorRule = {
@@ -315,7 +366,10 @@ type ProductionBatch = {
   attributes?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   createdAt: string;
+  updatedAt?: string | null;
 };
+
+type ProductionResourceTab = "CHARACTER_GROUP" | "IMAGE_BATCH" | "VIDEO_BATCH" | "MUSIC_TRACK" | "FINAL_VIDEO" | "POST_CONTENT" | "ALL";
 
 type AssetRecord = {
   id: string;
@@ -347,6 +401,30 @@ type AssetRecord = {
   sourceAssetId?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
+};
+
+type AssetCenterItem = {
+  id: string;
+  itemType: string;
+  title: string;
+  subtitle?: string | null;
+  category?: string | null;
+  status?: string | null;
+  thumbnailUrl?: string | null;
+  previewText?: string | null;
+  tags: string[];
+  attributes: Record<string, unknown>;
+  sourceModule: string;
+  sourceId: string;
+  updatedAt?: string | null;
+  metadata: Record<string, unknown>;
+};
+
+type AssetCenterItemsResponse = {
+  items: AssetCenterItem[];
+  total: number;
+  page: number;
+  pageSize: number;
 };
 
 type AssetCategory = {
@@ -402,6 +480,7 @@ type RuntimeStep = {
   stepNo: number;
   stepType: string;
   status: string;
+  input?: Record<string, unknown>;
   output?: Record<string, unknown>;
   errorMessage?: string | null;
   startedAt?: string | null;
@@ -418,6 +497,8 @@ type RuntimeSession = {
   currentStepNo: number;
   context?: Record<string, unknown>;
   checkpoint?: Record<string, unknown>;
+  createdAt?: string;
+  startedAt?: string | null;
   updatedAt?: string;
   finishedAt?: string | null;
   steps?: RuntimeStep[];
@@ -428,6 +509,7 @@ type ScriptRunStep = {
   stepNo: number;
   stepType: string;
   status: string;
+  input?: Record<string, unknown>;
   output?: Record<string, unknown>;
   errorMessage?: string | null;
   startedAt?: string | null;
@@ -447,7 +529,7 @@ type ScriptRun = {
   steps?: ScriptRunStep[];
 };
 
-type PromptKind = "image" | "video" | "music";
+type PromptKind = "image" | "video" | "music" | "post";
 type LanguageCode = "en" | "vi";
 type ManagementSection =
   | "hosts"
@@ -464,6 +546,9 @@ type ManagementSection =
   | "jobs"
   | "runtime-sessions";
 type AppPage = "control-center" | "studio" | "asset-center" | "production-jobs" | "management";
+type CapacityPoolsTab = "operational" | "capabilities" | "workflow" | "legacy";
+type CapacityDrawerTab = "overview" | "capabilities" | "allocation" | "history" | "host" | "json";
+type ProductionControlView = "group" | "job";
 
 type PromptPreviews = Record<PromptKind, string>;
 type PromptSelections = Record<PromptKind, string>;
@@ -490,6 +575,7 @@ const stageTypeToPoolType: Record<string, string> = {
 };
 
 const pageSizeOptions = [10, 20, 50];
+const runtimeStatusBoardOptions = ["PENDING", "RUNNING", "PAUSED", "FAILED_RECOVERABLE", "FAILED", "COMPLETED", "CANCELLED"];
 const instancePoolStateOptions = ["AVAILABLE", "STANDBY", "WORKFLOW", "MAINTENANCE", "DISABLED", "RETIRED"];
 const capacityStageOptions = ["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT"];
 const productionBatchTypeOptions = ["CHARACTER_GROUP", "IMAGE_BATCH", "VIDEO_BATCH", "MUSIC_TRACK", "FINAL_VIDEO", "POST_CONTENT"];
@@ -498,10 +584,38 @@ const assetCategoryTabs = [
   { id: "PROMPT_TEMPLATE", label: "Prompt Templates" },
   { id: "MUSIC_TRACK", label: "Music Library" },
   { id: "VIDEO_TEMPLATE", label: "Video Templates" },
-  { id: "POST_TEMPLATE", label: "Post Templates" }
+  { id: "POST_TEMPLATE", label: "Post Templates" },
+  { id: "PRODUCTION_RESOURCE", label: "Production Resources" }
 ];
-const jobBoardStatusOptions = ["PENDING", "ALLOCATED", "RUNNING", "COMPLETED", "FAILED"];
+const jobBoardStatusOptions = ["PENDING", "ALLOCATED", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"];
+const productionQueueStatusOptions = ["PENDING", "ALLOCATED", "RUNNING", "WAITING_RESOURCE", "WAITING_MUSIC", "FAILED_RECOVERABLE", "FAILED", "COMPLETED"];
+const productionPipelineStages = ["CHARACTER_GROUP", "IMAGE_EDIT", "VIDEO_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT"];
 const promptCategoryOptions = ["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT", "UTILITY"];
+const scriptStepTemplates: Record<string, { label: string; fields: Array<{ key: string; label: string; type?: "number" | "json" | "text"; required?: boolean }> }> = {
+  wait: { label: "wait", fields: [{ key: "ms", label: "ms", type: "number", required: true }] },
+  screenshot: { label: "screenshot", fields: [{ key: "label", label: "label" }] },
+  tap: { label: "tap", fields: [{ key: "x", label: "x", type: "number", required: true }, { key: "y", label: "y", type: "number", required: true }] },
+  swipe: { label: "swipe", fields: [{ key: "x1", label: "x1", type: "number", required: true }, { key: "y1", label: "y1", type: "number", required: true }, { key: "x2", label: "x2", type: "number", required: true }, { key: "y2", label: "y2", type: "number", required: true }, { key: "duration", label: "duration", type: "number" }] },
+  "send-text": { label: "send-text", fields: [{ key: "text", label: "text", required: true }] },
+  "send-key": { label: "send-key", fields: [{ key: "key", label: "key", required: true }] },
+  "download-latest": { label: "download-latest", fields: [{ key: "sourceDir", label: "sourceDir" }, { key: "extensions", label: "extensions", type: "json" }, { key: "targetFolder", label: "targetFolder" }] },
+  "check-screen": { label: "check-screen", fields: [{ key: "templateId", label: "templateId", required: true }, { key: "timeoutMs", label: "timeoutMs", type: "number" }, { key: "matchType", label: "matchType" }] },
+  "wait-screen": { label: "wait-screen", fields: [{ key: "templateId", label: "templateId", required: true }, { key: "timeoutMs", label: "timeoutMs", type: "number" }, { key: "intervalMs", label: "intervalMs", type: "number" }] },
+  "upload-file": { label: "upload-file", fields: [{ key: "fileAssetId", label: "fileAssetId", required: true }, { key: "target", label: "target" }] },
+  retry: { label: "retry", fields: [{ key: "maxRetries", label: "maxRetries", type: "number", required: true }, { key: "retryDelayMs", label: "retryDelayMs", type: "number" }] },
+  if: { label: "if", fields: [{ key: "condition", label: "condition", required: true }, { key: "thenSteps", label: "thenSteps", type: "json" }, { key: "elseSteps", label: "elseSteps", type: "json" }] },
+  "run-sub-script": { label: "run-sub-script", fields: [{ key: "scriptId", label: "scriptId", required: true }, { key: "versionId", label: "versionId" }] }
+};
+const scriptRuntimeVariables = ["{{prompt.image}}", "{{prompt.video}}", "{{prompt.music}}", "{{prompt.post}}", "{{group.name}}", "{{group.size}}", "{{batch.id}}", "{{asset.publicUrl}}", "{{runtime.instanceId}}", "{{runtime.adbId}}"];
+const standardGroupAttributeKeys = ["background", "outfit", "emotion", "scene"];
+const workflowJobTypes = ["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT"];
+const defaultFullPipelineRules = [
+  { trigger: "CHARACTER_GROUP.READY", targetJobType: "IMAGE_EDIT", outputBatchType: "IMAGE_BATCH", scriptCategory: "IMAGE_EDIT", promptCategory: "IMAGE" },
+  { trigger: "IMAGE_BATCH.READY", targetJobType: "VIDEO_GENERATE", outputBatchType: "VIDEO_BATCH", scriptCategory: "VIDEO_GENERATE", promptCategory: "VIDEO" },
+  { trigger: "VIDEO_BATCH.READY", targetJobType: "VIDEO_COMPOSE", outputBatchType: "FINAL_VIDEO", requires: ["MUSIC_TRACK"], scriptCategory: "VIDEO_COMPOSE" },
+  { trigger: "FINAL_VIDEO.READY", targetJobType: "POST_CONTENT", outputBatchType: "POST_CONTENT", scriptCategory: "POST_CONTENT", promptCategory: "POST_CONTENT" }
+];
+const workflowTemplateOptions = ["Full AI Content Pipeline", "Image Only", "Video Pipeline", "Post Content Only", "Blank Resource-Driven Workflow"];
 const promptVariableHelpers = [
   { group: "Character / Group", values: ["{{group.name}}", "{{group.size}}", "{{character.name}}", "{{character.status}}", "{{character.age}}"] },
   { group: "Attributes", values: ["{scene}", "{emotion}", "{outfit}", "{mood}", "{style}", "{tempo}"] },
@@ -515,7 +629,7 @@ const scriptCategoryOptions = ["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE",
 const translations: Record<LanguageCode, Record<string, string>> = {
   en: {
     "app.controlCenter": "Factory Control Center",
-    "app.productionJobs": "Production Jobs",
+    "app.productionJobs": "Production Control Center",
     "app.assetCenter": "Asset Center",
     "app.productionStudio": "Production Studio",
     "app.management": "Management",
@@ -534,7 +648,7 @@ const translations: Record<LanguageCode, Record<string, string>> = {
     "management.orchestratorRules": "Orchestrator Rules",
     "management.hosts": "Hosts",
     "management.instances": "Instances",
-    "management.instancePools": "Instance Pools",
+    "management.instancePools": "Capacity Pools",
     "management.search": "Search/filter"
   },
   vi: {
@@ -558,7 +672,7 @@ const translations: Record<LanguageCode, Record<string, string>> = {
     "management.orchestratorRules": "Luật Orchestrator",
     "management.hosts": "Hosts",
     "management.instances": "Instances",
-    "management.instancePools": "Instance Pools",
+    "management.instancePools": "Capacity Pools",
     "management.search": "Tìm kiếm/lọc"
   }
 };
@@ -716,6 +830,12 @@ function displayJobPool(job: OrchestratorJob, pools: InstancePool[]) {
   return stageTypeToPoolType[job.targetStageType] ?? "-";
 }
 
+function jobPayloadString(job: OrchestratorJob, key: string) {
+  const payload = getRecord(job.payload);
+  const output = getRecord(job.output);
+  return getString(payload[key]) || getString(output[key]);
+}
+
 function adbMappingConfidence(instance?: InstanceRecord | null) {
   const confidence = instance?.metadata?.adbMappingConfidence;
   return typeof confidence === "string" ? confidence : "";
@@ -739,22 +859,52 @@ function displayDateTime(value?: string) {
   return date.toLocaleString();
 }
 
+function displayDuration(start?: string | null, end?: string | null) {
+  if (!start) return "-";
+  const startTime = new Date(start).getTime();
+  const endTime = end ? new Date(end).getTime() : Date.now();
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime < startTime) return "-";
+  const seconds = Math.round((endTime - startTime) / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const remaining = seconds % 60;
+  if (minutes < 1) return `${remaining}s`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return hours ? `${hours}h ${mins}m` : `${mins}m ${remaining}s`;
+}
+
+function runtimeProgress(session?: RuntimeSession | null, run?: ScriptRun | null) {
+  const steps = run?.steps?.length ? run.steps : session?.steps ?? [];
+  const completed = steps.filter((step) => ["COMPLETED", "SKIPPED"].includes(step.status)).length;
+  return { completed, total: steps.length };
+}
+
 function groupTimestampParts(date = new Date()) {
   const yy = String(date.getFullYear()).slice(-2);
+  const yyyy = String(date.getFullYear());
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
   const hh = String(date.getHours()).padStart(2, "0");
   const mi = String(date.getMinutes()).padStart(2, "0");
-  return { date: `${yy}${mm}${dd}`, time: `${hh}${mi}` };
+  return {
+    date: `${yy}${mm}${dd}`,
+    displayDate: `${dd}/${mm}/${yyyy}`,
+    time: `${hh}${mi}`,
+    displayTime: `${hh}:${mi}`
+  };
 }
 
 function defaultGroupDraft() {
   const stamp = groupTimestampParts();
   return {
     name: `Nhóm ${stamp.date} ${stamp.time}`,
-    description: `Nhóm tạo ngày ${stamp.date} vào lúc ${stamp.time}`,
+    description: `Nhóm nhân vật tạo ngày ${stamp.displayDate}, vào lúc ${stamp.displayTime}`,
     status: "draft"
   };
+}
+
+function normalizeAttributeKey(key?: string | null) {
+  return String(key ?? "").trim().toLowerCase().replace(/\s+/g, "_");
 }
 
 function getRecord(value: unknown) {
@@ -908,6 +1058,132 @@ function musicTrackMetadata(batch: ProductionBatch) {
   };
 }
 
+function batchGroupId(batch?: ProductionBatch | null) {
+  const metadata = getRecord(batch?.metadata);
+  return batch?.sourceGroupId || getString(metadata.groupId) || getString(getRecord(metadata.characterGroupBatch).groupId);
+}
+
+function batchDisplayName(batch: ProductionBatch, group?: CharacterGroup | null) {
+  const metadata = getRecord(batch.metadata);
+  const post = postContentMetadata(batch);
+  return getString(metadata.title)
+    || post.title
+    || getString(metadata.name)
+    || group?.name
+    || `${batch.batchType} ${displayShortId(batch.id)}`;
+}
+
+function resourceTabLabel(tab: ProductionResourceTab) {
+  return ({
+    CHARACTER_GROUP: "Character Groups",
+    IMAGE_BATCH: "Images",
+    VIDEO_BATCH: "Videos",
+    MUSIC_TRACK: "Music",
+    FINAL_VIDEO: "Final Videos",
+    POST_CONTENT: "Post Contents",
+    ALL: "All Resources"
+  } as Record<ProductionResourceTab, string>)[tab];
+}
+
+function resourceTypeForTab(tab: ProductionResourceTab) {
+  return tab === "ALL" ? "" : tab;
+}
+
+function isRecentDate(value?: string | null) {
+  if (!value) return false;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) && time >= Date.now() - 1000 * 60 * 60 * 24 * 7;
+}
+
+function lineageOrder(batchType: string) {
+  const order = ["CHARACTER_GROUP", "IMAGE_BATCH", "VIDEO_BATCH", "FINAL_VIDEO", "POST_CONTENT"];
+  const index = order.indexOf(batchType);
+  return index < 0 ? 99 : index;
+}
+
+function workflowModeLabel(workflow: WorkflowRecord, legacyStages: WorkflowStageRecord[] = []) {
+  const hasRules = Boolean((workflow.resourceRules ?? []).length);
+  const hasLegacy = legacyStages.length > 0;
+  if (hasRules && hasLegacy) return "Mixed";
+  if (hasRules) return "Resource-Driven";
+  return "Legacy";
+}
+
+function workflowCapacitySummary(config?: CapacityConfig) {
+  const entries = Object.entries(config ?? {}).filter(([, value]) => Number(value) > 0);
+  return entries.length ? entries.map(([key, value]) => `${key}:${value}`).join(" / ") : "No capacity";
+}
+
+function workflowRulesForTemplate(templateType: string) {
+  if (templateType === "Image Only") return [defaultFullPipelineRules[0]];
+  if (templateType === "Video Pipeline") return defaultFullPipelineRules.slice(1, 3);
+  if (templateType === "Post Content Only") return [defaultFullPipelineRules[3]];
+  if (templateType === "Blank Resource-Driven Workflow") return [];
+  return defaultFullPipelineRules;
+}
+
+function normalizeScriptStep(step: Record<string, unknown>, index = 0) {
+  const config = getRecord(step.config);
+  const input = getRecord(step.input);
+  return {
+    ...step,
+    type: getString(step.type) || getString(step.stepType) || "wait",
+    stepNo: Number(step.stepNo ?? index + 1),
+    config: { ...input, ...config }
+  };
+}
+
+function scriptStepType(step: Record<string, unknown>) {
+  return getString(step.type) || getString(step.stepType) || "";
+}
+
+function scriptStepConfig(step: Record<string, unknown>) {
+  return { ...getRecord(step.input), ...getRecord(step.config) };
+}
+
+function scriptStepSummary(step: Record<string, unknown>) {
+  const config = scriptStepConfig(step);
+  const entries = Object.entries(config)
+    .filter(([, value]) => value !== undefined && value !== "")
+    .slice(0, 3)
+    .map(([key, value]) => `${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`);
+  return entries.join(" / ") || "No config";
+}
+
+function parseScriptDefinitionJson(value: string) {
+  const parsed = parseJsonText(value, { steps: [] });
+  return {
+    steps: Array.isArray(parsed.steps) ? parsed.steps.map((step, index) => normalizeScriptStep(getRecord(step), index)) : [],
+    variables: getRecord(parsed.variables),
+    retryPolicy: getRecord(parsed.retryPolicy),
+    detectionPolicy: getRecord(parsed.detectionPolicy)
+  };
+}
+
+function validateScriptSteps(steps: Array<Record<string, unknown>>) {
+  const messages: Array<{ index: number; level: "ok" | "warning" | "error"; message: string }> = [];
+  steps.forEach((step, index) => {
+    const type = scriptStepType(step);
+    const config = scriptStepConfig(step);
+    const template = scriptStepTemplates[type];
+    if (!type) {
+      messages.push({ index, level: "error", message: "Step type is required" });
+      return;
+    }
+    if (!template) {
+      messages.push({ index, level: "warning", message: `Unknown step type: ${type}` });
+      return;
+    }
+    for (const field of template.fields.filter((item) => item.required)) {
+      if (config[field.key] === undefined || config[field.key] === "") {
+        messages.push({ index, level: "error", message: `${type} needs ${field.key}` });
+      }
+    }
+  });
+  if (!steps.length) messages.push({ index: 0, level: "error", message: "At least one step is required" });
+  return messages;
+}
+
 function instanceCapabilityLabels(instance: InstanceRecord) {
   const capabilities = instance.capabilities ?? {};
   const canRun = Array.isArray(capabilities.canRun) ? capabilities.canRun : [];
@@ -918,6 +1194,31 @@ function instanceCapabilityLabels(instance: InstanceRecord) {
     capabilities.supportsUpload ? "upload" : "",
     capabilities.supportsDownload ? "download" : ""
   ].filter(Boolean);
+}
+
+function normalizeInstanceCapabilities(capabilities?: InstanceCapabilities): InstanceCapabilities {
+  return {
+    ...capabilities,
+    canRun: Array.isArray(capabilities?.canRun) ? capabilities.canRun.filter((item): item is string => typeof item === "string") : [],
+    apps: Array.isArray(capabilities?.apps) ? capabilities.apps.filter((item): item is string => typeof item === "string") : [],
+    supportsUpload: Boolean(capabilities?.supportsUpload),
+    supportsDownload: Boolean(capabilities?.supportsDownload),
+    notes: typeof capabilities?.notes === "string" ? capabilities.notes : ""
+  };
+}
+
+function instanceCanRun(instance: InstanceRecord, stageType: string) {
+  const canRun = normalizeInstanceCapabilities(instance.capabilities).canRun ?? [];
+  return canRun.includes(stageType);
+}
+
+function isRuntimeIdle(runtimeStatus?: string | null) {
+  const value = String(runtimeStatus ?? "").trim();
+  return !value || value === "IDLE";
+}
+
+function allocationMetadata(allocation?: InstanceAllocationRecord | null) {
+  return getRecord(allocation?.metadata);
 }
 
 function findJobError(job?: OrchestratorJob | null, runtimeSession?: RuntimeSession | null, scriptRun?: ScriptRun | null) {
@@ -1031,13 +1332,17 @@ export function App() {
   const [workflowRuns, setWorkflowRuns] = useState<WorkflowRunRecord[]>([]);
   const [pools, setPools] = useState<InstancePool[]>([]);
   const [instances, setInstances] = useState<InstanceRecord[]>([]);
+  const [allocations, setAllocations] = useState<InstanceAllocationRecord[]>([]);
   const [batches, setBatches] = useState<ProductionBatch[]>([]);
   const [assets, setAssets] = useState<AssetRecord[]>([]);
+  const [assetCenterItems, setAssetCenterItems] = useState<AssetCenterItem[]>([]);
+  const [assetCenterTotal, setAssetCenterTotal] = useState(0);
   const [assetCategories, setAssetCategories] = useState<AssetCategory[]>([]);
   const [jobs, setJobs] = useState<OrchestratorJob[]>([]);
   const [runtimeSessions, setRuntimeSessions] = useState<RuntimeSession[]>([]);
   const [scriptRuns, setScriptRuns] = useState<ScriptRun[]>([]);
   const [scriptVersions, setScriptVersions] = useState<ScriptVersionRecord[]>([]);
+  const [scriptVersionIndex, setScriptVersionIndex] = useState<Record<string, ScriptVersionRecord[]>>({});
   const [launchedJobs, setLaunchedJobs] = useState<OrchestratorJob[]>([]);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [attributeValues, setAttributeValues] = useState<Record<string, string>>({
@@ -1047,15 +1352,35 @@ export function App() {
   });
   const [musicPolicyMode, setMusicPolicyMode] = useState("RANDOM_LIBRARY");
   const [musicMatchAttributes, setMusicMatchAttributes] = useState<string[]>(["mood", "tempo", "emotion"]);
+  const [postPolicyEnabled, setPostPolicyEnabled] = useState(true);
+  const [postPolicyPlatform, setPostPolicyPlatform] = useState("facebook");
+  const [postHashtagPolicy, setPostHashtagPolicy] = useState("template");
+  const [postCtaPolicy, setPostCtaPolicy] = useState("template");
+  const [studioGroupFilters, setStudioGroupFilters] = useState({
+    search: "",
+    readyOnly: false,
+    groupSize: "",
+    missingImages: false,
+    recentlyCreated: false
+  });
+  const [studioDrafts, setStudioDrafts] = useState<Array<Record<string, unknown>>>(() => {
+    try {
+      return JSON.parse(window.localStorage.getItem("fbcm-studio-drafts") ?? "[]") as Array<Record<string, unknown>>;
+    } catch {
+      return [];
+    }
+  });
   const [promptSelections, setPromptSelections] = useState<PromptSelections>({
     image: "",
     video: "",
-    music: ""
+    music: "",
+    post: ""
   });
   const [previews, setPreviews] = useState<PromptPreviews>({
     image: "",
     video: "",
-    music: ""
+    music: "",
+    post: ""
   });
   const [selectedJobId, setSelectedJobId] = useState("");
   const [runtimeSession, setRuntimeSession] = useState<RuntimeSession | null>(null);
@@ -1067,10 +1392,34 @@ export function App() {
   const [statusFilter, setStatusFilter] = useState("");
   const [stageFilter, setStageFilter] = useState("");
   const [poolFilter, setPoolFilter] = useState("");
+  const [jobsViewMode, setJobsViewMode] = useState<"kanban" | "table">("kanban");
+  const [jobsWorkflowFilter, setJobsWorkflowFilter] = useState("");
+  const [jobsGroupFilter, setJobsGroupFilter] = useState("");
+  const [jobsInstanceFilter, setJobsInstanceFilter] = useState("");
+  const [jobsAllocationModeFilter, setJobsAllocationModeFilter] = useState("");
+  const [jobsCreatedDateFilter, setJobsCreatedDateFilter] = useState("");
+  const [jobsFailedOnly, setJobsFailedOnly] = useState(false);
+  const [jobsRecoverableOnly, setJobsRecoverableOnly] = useState(false);
+  const [productionControlView, setProductionControlView] = useState<ProductionControlView>("group");
+  const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
+  const [jobDrawerTab, setJobDrawerTab] = useState<"overview" | "source" | "allocation" | "runtime" | "script" | "output" | "lineage" | "json">("overview");
+  const [lastJobsRefreshAt, setLastJobsRefreshAt] = useState("");
   const [jobsPage, setJobsPage] = useState(1);
   const [jobsPageSize, setJobsPageSize] = useState(10);
   const [selectedBatchId, setSelectedBatchId] = useState("");
   const [selectedRuntimeId, setSelectedRuntimeId] = useState("");
+  const [runtimeViewMode, setRuntimeViewMode] = useState<"board" | "table">("board");
+  const [runtimeStatusFilter, setRuntimeStatusFilter] = useState("");
+  const [runtimeHostFilter, setRuntimeHostFilter] = useState("");
+  const [runtimeInstanceFilter, setRuntimeInstanceFilter] = useState("");
+  const [runtimeJobTypeFilter, setRuntimeJobTypeFilter] = useState("");
+  const [runtimeScriptCategoryFilter, setRuntimeScriptCategoryFilter] = useState("");
+  const [runtimeCreatedDateFilter, setRuntimeCreatedDateFilter] = useState("");
+  const [runtimeRecoverableOnly, setRuntimeRecoverableOnly] = useState(false);
+  const [runtimeFailedOnly, setRuntimeFailedOnly] = useState(false);
+  const [runtimeRunningOnly, setRuntimeRunningOnly] = useState(false);
+  const [runtimeDrawerTab, setRuntimeDrawerTab] = useState<"overview" | "checkpoint" | "timeline" | "host" | "job" | "output" | "recovery" | "json">("overview");
+  const [lastRuntimeRefreshAt, setLastRuntimeRefreshAt] = useState("");
   const [selectedHostId, setSelectedHostId] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [debugOpen, setDebugOpen] = useState(true);
@@ -1103,12 +1452,62 @@ export function App() {
     musicPolicy: "{}",
     postContentPolicy: "{}"
   });
+  const [workflowViewMode, setWorkflowViewMode] = useState<"card" | "table">("card");
+  const [workflowStatusFilter, setWorkflowStatusFilter] = useState("");
+  const [workflowModeFilter, setWorkflowModeFilter] = useState("");
+  const [workflowHasCapacityFilter, setWorkflowHasCapacityFilter] = useState(false);
+  const [workflowHasMusicFilter, setWorkflowHasMusicFilter] = useState(false);
+  const [workflowHasPostFilter, setWorkflowHasPostFilter] = useState(false);
+  const [workflowRecentFilter, setWorkflowRecentFilter] = useState(false);
+  const [workflowDrawerTab, setWorkflowDrawerTab] = useState<"overview" | "rules" | "prompts" | "scripts" | "capacity" | "music" | "post" | "legacy" | "runs" | "json">("overview");
+  const [workflowDetail, setWorkflowDetail] = useState<WorkflowDetailRecord | null>(null);
+  const [showWorkflowWizard, setShowWorkflowWizard] = useState(false);
+  const [workflowWizardStep, setWorkflowWizardStep] = useState(1);
+  const [workflowWizard, setWorkflowWizard] = useState({
+    name: "",
+    description: "",
+    status: "draft",
+    templateType: "Full AI Content Pipeline",
+    resourceRules: JSON.stringify(defaultFullPipelineRules, null, 2),
+    promptMapping: "{}",
+    scriptMapping: "{}",
+    capacity: JSON.stringify({ IMAGE_EDIT: 1, VIDEO_GENERATE: 1, MUSIC_GENERATE: 0, VIDEO_COMPOSE: 1, POST_CONTENT: 1 }, null, 2),
+    musicPolicy: JSON.stringify({ mode: "RANDOM_LIBRARY", matchAttributes: ["mood", "tempo", "emotion"] }, null, 2),
+    postContentPolicy: JSON.stringify({ enabled: true, platform: "facebook", hashtagPolicy: "template", ctaPolicy: "template" }, null, 2)
+  });
   const [capacityResult, setCapacityResult] = useState<WorkflowCapacityResponse | null>(null);
   const [instancePoolStateFilter, setInstancePoolStateFilter] = useState("");
   const [instanceCapabilityFilter, setInstanceCapabilityFilter] = useState("");
   const [instanceRuntimeFilter, setInstanceRuntimeFilter] = useState("");
+  const [capacityPoolsTab, setCapacityPoolsTab] = useState<CapacityPoolsTab>("operational");
+  const [selectedCapacityInstanceIds, setSelectedCapacityInstanceIds] = useState<string[]>([]);
+  const [capacityDrawerInstanceId, setCapacityDrawerInstanceId] = useState("");
+  const [capacityDrawerTab, setCapacityDrawerTab] = useState<CapacityDrawerTab>("overview");
+  const [capacityCopySourceInstanceId, setCapacityCopySourceInstanceId] = useState("");
+  const [capacityBulkCapability, setCapacityBulkCapability] = useState("IMAGE_EDIT");
+  const [capacityCapabilityDraft, setCapacityCapabilityDraft] = useState<InstanceCapabilities>({
+    canRun: [],
+    apps: [],
+    supportsUpload: false,
+    supportsDownload: false,
+    notes: ""
+  });
   const [selectedScriptId, setSelectedScriptId] = useState("");
   const [selectedScriptVersionId, setSelectedScriptVersionId] = useState("");
+  const [scriptCategoryFilter, setScriptCategoryFilter] = useState("");
+  const [scriptStatusFilter, setScriptStatusFilter] = useState("");
+  const [scriptHasActiveFilter, setScriptHasActiveFilter] = useState(false);
+  const [scriptLastTestFilter, setScriptLastTestFilter] = useState("");
+  const [scriptRecentFilter, setScriptRecentFilter] = useState(false);
+  const [scriptDrawerTab, setScriptDrawerTab] = useState<"overview" | "versions" | "steps" | "variables" | "test" | "runs" | "json">("overview");
+  const [selectedScriptStepIndex, setSelectedScriptStepIndex] = useState(0);
+  const [scriptTestContext, setScriptTestContext] = useState(JSON.stringify({
+    prompt: { image: "Sample image prompt", video: "", music: "", post: "" },
+    group: { name: "Sample Group", size: 5 },
+    batch: { id: "pb_sample" },
+    asset: { publicUrl: "/storage/sample.png" },
+    runtime: { instanceId: "", adbId: "" }
+  }, null, 2));
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedPromptCategory, setSelectedPromptCategory] = useState("IMAGE_EDIT");
   const [promptStatusFilter, setPromptStatusFilter] = useState("");
@@ -1136,11 +1535,32 @@ export function App() {
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [selectedResourceId, setSelectedResourceId] = useState("");
   const [resourceTypeFilter, setResourceTypeFilter] = useState("");
+  const [productionResourceTab, setProductionResourceTab] = useState<ProductionResourceTab>("IMAGE_BATCH");
+  const [productionResourceFilters, setProductionResourceFilters] = useState({
+    search: "",
+    type: "",
+    status: "",
+    usageStatus: "",
+    workflowId: "",
+    groupId: "",
+    createdDate: "",
+    hasLineage: false,
+    readyOnly: false,
+    reusableOnly: false,
+    includeArchived: false
+  });
+  const [productionGrouped, setProductionGrouped] = useState(false);
+  const [resourceDrawerTab, setResourceDrawerTab] = useState<"overview" | "group" | "lineage" | "jobs" | "runtime" | "json">("overview");
   const [assetTab, setAssetTab] = useState("CHARACTER_IMAGE");
   const [assetSearch, setAssetSearch] = useState("");
   const [assetTagFilter, setAssetTagFilter] = useState("");
   const [assetAttributeFilter, setAssetAttributeFilter] = useState("");
+  const [assetLibraryCategoryFilter, setAssetLibraryCategoryFilter] = useState("");
+  const [assetStatusFilter, setAssetStatusFilter] = useState("");
+  const [assetSourceFilter, setAssetSourceFilter] = useState("");
+  const [assetUpdatedDateFilter, setAssetUpdatedDateFilter] = useState("");
   const [selectedAssetId, setSelectedAssetId] = useState("");
+  const [selectedAssetCenterItemId, setSelectedAssetCenterItemId] = useState("");
   const [assetForm, setAssetForm] = useState({
     name: "",
     assetCategory: "CHARACTER_IMAGE",
@@ -1217,6 +1637,8 @@ export function App() {
   const [groupCreateSize, setGroupCreateSize] = useState("5");
   const [groupCreateMode, setGroupCreateMode] = useState<"manual" | "partial-random" | "random">("manual");
   const [draggedGroupMemberId, setDraggedGroupMemberId] = useState("");
+  const [groupAttributeDrafts, setGroupAttributeDrafts] = useState<Record<string, string>>({});
+  const [customGroupAttributes, setCustomGroupAttributes] = useState<Array<{ key: string; value: string }>>([]);
   const [batchForm, setBatchForm] = useState({ batchType: "IMAGE_BATCH", status: "NEW", usageStatus: "AVAILABLE", metadata: "{}" });
   const [ruleForm, setRuleForm] = useState({ name: "", triggerBatchType: "IMAGE_BATCH", triggerStatus: "READY", targetStageType: "VIDEO_GENERATE", priority: "100", config: "{}" });
   const [status, setStatus] = useState("Loading studio data");
@@ -1247,11 +1669,125 @@ export function App() {
   const filteredJobs = useMemo(() => {
     return jobs.filter((job) => {
       const poolType = getJobPoolType(job, pools);
-      return (!statusFilter || job.status === statusFilter)
+      return (!statusFilter || job.status === statusFilter || productionJobStatus(job) === statusFilter)
         && (!stageFilter || job.targetStageType === stageFilter)
         && (!poolFilter || poolType === poolFilter);
     });
   }, [jobs, poolFilter, pools, stageFilter, statusFilter]);
+  const managementFilteredJobs = useMemo(() => {
+    const search = adminSearch.toLowerCase();
+    return jobs.filter((job) => {
+      const sourceBatch = batches.find((batch) => batch.id === job.sourceBatchId) ?? null;
+      const groupId = batchGroupId(sourceBatch);
+      const group = groupId ? groups.find((item) => item.id === groupId) ?? null : null;
+      const workflowId = sourceBatch?.workflowId || jobPayloadString(job, "workflowId");
+      const allocation = allocations.find((item) => item.id === jobPayloadString(job, "allocationId") || item.orchestratorJobId === job.id) ?? null;
+      const instanceId = displayJobInstance(job) !== "-" ? displayJobInstance(job) : allocation?.instanceId ?? "";
+      const allocationMode = displayJobAllocationMode(job) !== "-" ? displayJobAllocationMode(job) : allocation?.allocationMode ?? "";
+      const runtime = runtimeSessions.find((session) => session.jobId === job.id);
+      const haystack = `${job.id} ${job.sourceBatchId} ${job.targetStageType} ${job.status} ${group?.name ?? ""} ${workflowId ?? ""} ${instanceId} ${allocationMode}`.toLowerCase();
+      return (!adminSearch || haystack.includes(search))
+        && (!statusFilter || job.status === statusFilter || productionJobStatus(job) === statusFilter)
+        && (!stageFilter || job.targetStageType === stageFilter)
+        && (!jobsWorkflowFilter || workflowId === jobsWorkflowFilter)
+        && (!jobsGroupFilter || groupId === jobsGroupFilter)
+        && (!jobsInstanceFilter || instanceId === jobsInstanceFilter)
+        && (!jobsAllocationModeFilter || allocationMode === jobsAllocationModeFilter)
+        && (!jobsCreatedDateFilter || String(job.createdAt).slice(0, 10) === jobsCreatedDateFilter)
+        && (!jobsFailedOnly || job.status === "FAILED")
+        && (!jobsRecoverableOnly || runtime?.status === "FAILED_RECOVERABLE");
+    });
+  }, [adminSearch, allocations, batches, groups, jobs, jobsAllocationModeFilter, jobsCreatedDateFilter, jobsFailedOnly, jobsGroupFilter, jobsInstanceFilter, jobsRecoverableOnly, jobsWorkflowFilter, runtimeSessions, stageFilter, statusFilter]);
+  const managementJobColumns = useMemo(() => jobBoardStatusOptions.map((statusName) => ({
+    status: statusName,
+    items: managementFilteredJobs.filter((job) => job.status === statusName)
+  })), [managementFilteredJobs]);
+  const managementJobKpis = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const waitingCapacity = jobs.filter((job) => job.status === "PENDING" && !instances.some((instance) => (instance.currentPoolType ?? "") === "STANDBY" && instanceCanRun(instance, job.targetStageType))).length;
+    const waitingMusic = jobs.filter((job) => job.status === "PENDING" && job.targetStageType === "VIDEO_COMPOSE" && !batches.some((batch) => batch.batchType === "MUSIC_TRACK" && batch.status === "READY" && ["AVAILABLE", "REUSABLE"].includes(batch.usageStatus))).length;
+    return {
+      pending: jobs.filter((job) => job.status === "PENDING").length,
+      allocated: jobs.filter((job) => job.status === "ALLOCATED").length,
+      running: jobs.filter((job) => job.status === "RUNNING").length,
+      completedToday: jobs.filter((job) => job.status === "COMPLETED" && String(job.updatedAt ?? job.createdAt).slice(0, 10) === today).length,
+      failed: jobs.filter((job) => job.status === "FAILED").length,
+      recoverable: runtimeSessions.filter((session) => session.status === "FAILED_RECOVERABLE").length,
+      waitingInstance: waitingCapacity,
+      waitingMusic,
+      waitingResource: jobs.filter((job) => job.status === "PENDING" && !batches.some((batch) => batch.id === job.sourceBatchId)).length,
+      finalOutputsToday: batches.filter((batch) => batch.batchType === "FINAL_VIDEO" && String(batch.createdAt).slice(0, 10) === today).length,
+      postContentsToday: batches.filter((batch) => batch.batchType === "POST_CONTENT" && String(batch.createdAt).slice(0, 10) === today).length
+    };
+  }, [batches, instances, jobs, runtimeSessions]);
+  const productionControlColumns = useMemo(() => productionQueueStatusOptions.map((statusName) => ({
+    status: statusName,
+    items: managementFilteredJobs.filter((job) => productionJobStatus(job) === statusName)
+  })), [managementFilteredJobs, batches, instances, runtimeSessions]);
+  const productionPipelineStats = useMemo(() => productionPipelineStages.map((stage) => {
+    if (stage === "CHARACTER_GROUP") {
+      return {
+        stage,
+        pending: batches.filter((batch) => batch.batchType === "CHARACTER_GROUP" && batch.status === "NEW").length,
+        running: 0,
+        completed: batches.filter((batch) => batch.batchType === "CHARACTER_GROUP" && batch.status === "READY").length,
+        failed: batches.filter((batch) => batch.batchType === "CHARACTER_GROUP" && batch.status === "FAILED").length
+      };
+    }
+    const stageJobs = jobs.filter((job) => job.targetStageType === stage);
+    return {
+      stage,
+      pending: stageJobs.filter((job) => productionJobStatus(job) === "PENDING").length,
+      running: stageJobs.filter((job) => ["ALLOCATED", "RUNNING"].includes(productionJobStatus(job))).length,
+      completed: stageJobs.filter((job) => job.status === "COMPLETED").length,
+      failed: stageJobs.filter((job) => ["FAILED", "FAILED_RECOVERABLE"].includes(productionJobStatus(job))).length
+    };
+  }), [batches, jobs, instances, runtimeSessions]);
+  const productionGroupTimelines = useMemo(() => {
+    const map = new Map<string, { group: CharacterGroup | null; jobs: OrchestratorJob[]; batches: ProductionBatch[] }>();
+    for (const batch of batches) {
+      const groupId = batchGroupId(batch) || batch.sourceGroupId || "ungrouped";
+      const group = groups.find((item) => item.id === groupId) ?? null;
+      const entry = map.get(groupId) ?? { group, jobs: [], batches: [] };
+      entry.batches.push(batch);
+      map.set(groupId, entry);
+    }
+    for (const job of managementFilteredJobs) {
+      const sourceBatch = batches.find((batch) => batch.id === job.sourceBatchId) ?? null;
+      const groupId = batchGroupId(sourceBatch) || sourceBatch?.sourceGroupId || "ungrouped";
+      const group = groups.find((item) => item.id === groupId) ?? null;
+      const entry = map.get(groupId) ?? { group, jobs: [], batches: [] };
+      entry.jobs.push(job);
+      map.set(groupId, entry);
+    }
+    return [...map.entries()].map(([groupId, value]) => ({ groupId, ...value })).filter((entry) => entry.jobs.length || entry.batches.length);
+  }, [batches, groups, managementFilteredJobs]);
+  const productionRecoveryJobs = useMemo(() => (
+    jobs.filter((job) => runtimeSessions.some((session) => session.jobId === job.id && session.status === "FAILED_RECOVERABLE"))
+  ), [jobs, runtimeSessions]);
+  const productionOutputCenter = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return batches.filter((batch) => ["IMAGE_BATCH", "VIDEO_BATCH", "FINAL_VIDEO", "POST_CONTENT"].includes(batch.batchType) && String(batch.createdAt).slice(0, 10) === today);
+  }, [batches]);
+  const productionCapacityRows = useMemo(() => capacityStageOptions.map((stageType) => {
+    const required = jobs.filter((job) => ["PENDING", "ALLOCATED", "RUNNING"].includes(job.status) && job.targetStageType === stageType).length;
+    const allocated = instances.filter((instance) => instance.currentPoolType === "WORKFLOW" && instanceCanRun(instance, stageType)).length;
+    const available = instances.filter((instance) => instance.currentPoolType === "STANDBY" && instanceCanRun(instance, stageType) && isRuntimeIdle(instance.runtimeStatus)).length;
+    return { stageType, required, allocated, available, shortage: Math.max(0, required - allocated - available) };
+  }), [instances, jobs]);
+  const productionRecommendations = useMemo(() => {
+    const recommendations = [];
+    if (managementJobKpis.waitingInstance) recommendations.push(`${managementJobKpis.waitingInstance} IMAGE/production jobs waiting for capacity.`);
+    if (managementJobKpis.waitingMusic) recommendations.push(`${managementJobKpis.waitingMusic} VIDEO_COMPOSE jobs waiting for matching music.`);
+    if (managementJobKpis.waitingResource) recommendations.push(`${managementJobKpis.waitingResource} jobs waiting for source resources.`);
+    for (const row of productionCapacityRows.filter((item) => item.shortage > 0)) recommendations.push(`${row.stageType} shortage: need ${row.required}, allocated ${row.allocated}, standby ${row.available}.`);
+    return recommendations.length ? recommendations : ["Production queue is healthy. No immediate recommendations."];
+  }, [managementJobKpis.waitingInstance, managementJobKpis.waitingMusic, managementJobKpis.waitingResource, productionCapacityRows]);
+  const allocationModeOptions = useMemo(() => {
+    const fromJobs = jobs.map((job) => displayJobAllocationMode(job)).filter((value) => value && value !== "-");
+    const fromAllocations = allocations.map((allocation) => allocation.allocationMode ?? "").filter(Boolean);
+    return [...new Set([...fromJobs, ...fromAllocations])].sort();
+  }, [allocations, jobs]);
   const totalJobPages = Math.max(1, Math.ceil(filteredJobs.length / jobsPageSize));
   const paginatedJobs = useMemo(() => {
     const start = (Math.min(jobsPage, totalJobPages) - 1) * jobsPageSize;
@@ -1261,6 +1797,40 @@ export function App() {
     () => batches.filter((batch) => batchMatchesJob(batch, selectedJob)),
     [batches, selectedJob]
   );
+  const selectedJobSourceBatch = useMemo(
+    () => selectedJob ? batches.find((batch) => batch.id === selectedJob.sourceBatchId) ?? null : null,
+    [batches, selectedJob]
+  );
+  const selectedJobGroup = useMemo(() => {
+    const groupId = batchGroupId(selectedJobSourceBatch);
+    return groupId ? groups.find((group) => group.id === groupId) ?? null : null;
+  }, [groups, selectedJobSourceBatch]);
+  const selectedJobWorkflow = useMemo(() => {
+    const workflowId = selectedJobSourceBatch?.workflowId || jobPayloadString(selectedJob ?? { id: "", sourceBatchId: "", targetStageType: "", status: "", createdAt: "" }, "workflowId");
+    return workflowId ? workflows.find((workflow) => workflow.id === workflowId) ?? null : null;
+  }, [selectedJob, selectedJobSourceBatch, workflows]);
+  const selectedJobAllocation = useMemo(() => {
+    if (!selectedJob) return null;
+    const allocationId = jobPayloadString(selectedJob, "allocationId");
+    return allocations.find((allocation) => allocation.id === allocationId || allocation.orchestratorJobId === selectedJob.id) ?? null;
+  }, [allocations, selectedJob]);
+  const selectedJobOutputAssets = useMemo(() => {
+    const ids = new Set(outputBatches.map((batch) => batch.id));
+    return assets.filter((asset) => {
+      const text = compactJson(asset);
+      return [...ids].some((id) => text.includes(id));
+    });
+  }, [assets, outputBatches]);
+  const selectedJobLineage = useMemo(() => {
+    if (!selectedJob) return [];
+    return [
+      selectedJobSourceBatch ? { type: "Source Batch", id: selectedJobSourceBatch.id, label: selectedJobSourceBatch.batchType, status: selectedJobSourceBatch.status } : null,
+      { type: "Job", id: selectedJob.id, label: selectedJob.targetStageType, status: selectedJob.status },
+      runtimeSession ? { type: "Runtime Session", id: runtimeSession.id, label: `Step ${runtimeSession.currentStepNo}`, status: runtimeSession.status } : null,
+      scriptRun ? { type: "Script Run", id: scriptRun.id, label: displayShortId(scriptRun.scriptVersionId), status: scriptRun.status } : null,
+      ...outputBatches.map((batch) => ({ type: "Output Batch", id: batch.id, label: batch.batchType, status: batch.status }))
+    ].filter(Boolean) as Array<{ type: string; id: string; label: string; status: string }>;
+  }, [outputBatches, runtimeSession, scriptRun, selectedJob, selectedJobSourceBatch]);
   const selectedBatch = useMemo(
     () => batches.find((batch) => batch.id === selectedBatchId) ?? null,
     [batches, selectedBatchId]
@@ -1283,10 +1853,50 @@ export function App() {
     () => scripts.find((script) => script.id === selectedScriptId) ?? null,
     [scripts, selectedScriptId]
   );
+  const selectedScriptVersion = useMemo(
+    () => scriptVersions.find((version) => version.id === selectedScriptVersionId)
+      ?? scriptVersions.find((version) => String(version.status).toLowerCase() === "active")
+      ?? scriptVersions[0]
+      ?? null,
+    [scriptVersions, selectedScriptVersionId]
+  );
+  const scriptDraft = useMemo(() => parseScriptDefinitionJson(scriptForm.steps), [scriptForm.steps]);
+  const scriptValidationMessages = useMemo(() => validateScriptSteps(scriptDraft.steps), [scriptDraft.steps]);
   const latestSelectedScriptRuns = useMemo(
     () => scriptRuns.filter((run) => !selectedScriptId || run.scriptId === selectedScriptId).slice(0, 8),
     [scriptRuns, selectedScriptId]
   );
+  const scriptCategoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const category of scriptCategoryOptions) counts[category] = 0;
+    for (const script of scripts) counts[script.category ?? "UTILITY"] = (counts[script.category ?? "UTILITY"] ?? 0) + 1;
+    return counts;
+  }, [scripts]);
+  const scriptKpis = useMemo(() => ({
+    total: scripts.length,
+    active: scripts.filter((script) => String(script.status).toLowerCase() === "active").length,
+    draft: scripts.filter((script) => String(script.status).toLowerCase() === "draft").length,
+    failedRuns: scriptRuns.filter((run) => ["FAILED", "FAILED_RECOVERABLE"].includes(run.status)).length,
+    recentRuns: scriptRuns.filter((run) => isRecentDate(run.startedAt)).length
+  }), [scriptRuns, scripts]);
+  const filteredScripts = useMemo(() => {
+    const search = adminSearch.toLowerCase();
+    const recentCutoff = Date.now() - 1000 * 60 * 60 * 24 * 7;
+    return scripts.filter((script) => {
+      const versions = scriptVersionIndex[script.id] ?? [];
+      const activeVersion = versions.find((version) => String(version.status).toLowerCase() === "active");
+      const lastRun = scriptRuns.find((run) => run.scriptId === script.id);
+      const updatedAt = script.updatedAt ? new Date(script.updatedAt).getTime() : 0;
+      const testState = !lastRun ? "not-tested" : ["COMPLETED"].includes(lastRun.status) ? "success" : ["FAILED", "FAILED_RECOVERABLE"].includes(lastRun.status) ? "failed" : "running";
+      const haystack = `${script.name} ${script.category ?? ""} ${script.status} ${script.description ?? ""}`.toLowerCase();
+      return (!adminSearch || haystack.includes(search))
+        && (!scriptCategoryFilter || script.category === scriptCategoryFilter)
+        && (!scriptStatusFilter || String(script.status).toLowerCase() === scriptStatusFilter)
+        && (!scriptHasActiveFilter || Boolean(activeVersion))
+        && (!scriptLastTestFilter || testState === scriptLastTestFilter)
+        && (!scriptRecentFilter || updatedAt >= recentCutoff);
+    });
+  }, [adminSearch, scriptCategoryFilter, scriptHasActiveFilter, scriptLastTestFilter, scriptRecentFilter, scriptRuns, scriptStatusFilter, scriptVersionIndex, scripts]);
   const selectedHost = useMemo(
     () => hosts.find((host) => host.id === selectedHostId || host.hostId === selectedHostId) ?? hosts[0] ?? null,
     [hosts, selectedHostId]
@@ -1295,6 +1905,31 @@ export function App() {
     () => workflows.find((workflow) => workflow.id === selectedWorkflowId) ?? workflows[0] ?? null,
     [selectedWorkflowId, workflows]
   );
+  const filteredWorkflows = useMemo(() => {
+    const search = adminSearch.toLowerCase();
+    const recentCutoff = Date.now() - 1000 * 60 * 60 * 24 * 7;
+    return workflows.filter((workflow) => {
+      const mode = workflowModeLabel(workflow);
+      const updatedAt = workflow.updatedAt ? new Date(workflow.updatedAt).getTime() : 0;
+      return (!adminSearch || `${workflow.name} ${workflow.description ?? ""}`.toLowerCase().includes(search))
+        && (!workflowStatusFilter || String(workflow.status ?? "").toLowerCase() === workflowStatusFilter)
+        && (!workflowModeFilter || mode === workflowModeFilter)
+        && (!workflowHasCapacityFilter || Object.values(workflow.capacityConfig ?? {}).some((value) => Number(value) > 0))
+        && (!workflowHasMusicFilter || Object.keys(workflow.musicPolicy ?? {}).length > 0)
+        && (!workflowHasPostFilter || Object.keys(workflow.postContentPolicy ?? {}).length > 0)
+        && (!workflowRecentFilter || updatedAt >= recentCutoff);
+    });
+  }, [adminSearch, workflowHasCapacityFilter, workflowHasMusicFilter, workflowHasPostFilter, workflowModeFilter, workflowRecentFilter, workflowStatusFilter, workflows]);
+  const workflowKpis = useMemo(() => ({
+    total: workflows.length,
+    active: workflows.filter((workflow) => String(workflow.status).toLowerCase() === "active").length,
+    draft: workflows.filter((workflow) => String(workflow.status).toLowerCase() === "draft").length,
+    resourceDriven: workflows.filter((workflow) => (workflow.resourceRules ?? []).length > 0).length,
+    legacy: workflows.filter((workflow) => !(workflow.resourceRules ?? []).length).length,
+    capacity: workflows.filter((workflow) => Object.values(workflow.capacityConfig ?? {}).some((value) => Number(value) > 0)).length,
+    music: workflows.filter((workflow) => Object.keys(workflow.musicPolicy ?? {}).length > 0).length,
+    post: workflows.filter((workflow) => Object.keys(workflow.postContentPolicy ?? {}).length > 0).length
+  }), [workflows]);
   const selectedWorkflowRun = useMemo(
     () => workflowRuns.find((run) => run.id === selectedWorkflowRunId) ?? workflowRuns.find((run) => run.workflowId === selectedWorkflow?.id) ?? null,
     [selectedWorkflow, selectedWorkflowRunId, workflowRuns]
@@ -1337,6 +1972,68 @@ export function App() {
     poolType,
     items: instances.filter((instance) => (instance.currentPoolType ?? "AVAILABLE") === poolType)
   })), [instances]);
+  const capacityPoolKpis = useMemo(() => ({
+    total: instances.length,
+    available: instances.filter((instance) => (instance.currentPoolType ?? "AVAILABLE") === "AVAILABLE").length,
+    standby: instances.filter((instance) => instance.currentPoolType === "STANDBY").length,
+    workflow: instances.filter((instance) => instance.currentPoolType === "WORKFLOW").length,
+    maintenance: instances.filter((instance) => instance.currentPoolType === "MAINTENANCE").length,
+    disabled: instances.filter((instance) => instance.currentPoolType === "DISABLED").length,
+    retired: instances.filter((instance) => instance.currentPoolType === "RETIRED").length
+  }), [instances]);
+  const capacityPoolHints = useMemo(() => {
+    const noCapabilityStandby = instances.filter((instance) => instance.currentPoolType === "STANDBY" && !(normalizeInstanceCapabilities(instance.capabilities).canRun ?? []).length).length;
+    const staleMaintenance = instances.filter((instance) => {
+      if (instance.currentPoolType !== "MAINTENANCE") return false;
+      const time = new Date(instance.lastErrorAt ?? instance.updatedAt ?? "").getTime();
+      return Number.isFinite(time) && time < Date.now() - 1000 * 60 * 60 * 24;
+    }).length;
+    const queueWithoutCapacity = capacityStageOptions.filter((stageType) => (
+      jobs.some((job) => job.targetStageType === stageType && ["PENDING", "ALLOCATED"].includes(job.status))
+      && !instances.some((instance) => instance.currentPoolType === "STANDBY" && instanceCanRun(instance, stageType) && isRuntimeIdle(instance.runtimeStatus))
+    ));
+    return [
+      `${capacityPoolKpis.available} instances are AVAILABLE but not in STANDBY.`,
+      `${noCapabilityStandby} STANDBY instances have no capabilities.`,
+      `${staleMaintenance} MAINTENANCE instances have been stuck for more than 24 hours.`,
+      ...queueWithoutCapacity.map((stageType) => `${stageType} queue has jobs but no standby capable instance.`)
+    ];
+  }, [capacityPoolKpis.available, instances, jobs]);
+  const capacityInstanceColumns = useMemo(() => instancePoolStateOptions.map((poolType) => ({
+    poolType,
+    items: filteredInstances.filter((instance) => (instance.currentPoolType ?? "AVAILABLE") === poolType)
+  })), [filteredInstances]);
+  const selectedCapacityInstance = useMemo(
+    () => instances.find((instance) => instance.id === capacityDrawerInstanceId) ?? null,
+    [capacityDrawerInstanceId, instances]
+  );
+  const selectedCapacityAllocation = useMemo(
+    () => selectedCapacityInstance ? allocations.find((allocation) => allocation.instanceId === selectedCapacityInstance.id && !["RELEASED", "FAILED"].includes(allocation.status)) ?? null : null,
+    [allocations, selectedCapacityInstance]
+  );
+  const capacityWorkflowRows = useMemo(() => {
+    return workflows
+      .filter((workflow) => String(workflow.status ?? "").toLowerCase() !== "archived")
+      .map((workflow) => ({
+        workflow,
+        stages: capacityStageOptions.map((stageType) => {
+          const required = Number(workflow.capacityConfig?.[stageType] ?? 0);
+          const standbyCapable = instances.filter((instance) => (
+            instance.currentPoolType === "STANDBY"
+            && ["ACTIVE", "ONLINE"].includes(String(instance.status ?? ""))
+            && isRuntimeIdle(instance.runtimeStatus)
+            && instanceCanRun(instance, stageType)
+          )).length;
+          const allocated = allocations.filter((allocation) => {
+            const metadata = allocationMetadata(allocation);
+            return allocation.status !== "RELEASED"
+              && (allocation.workflowRunId === workflow.id || getString(metadata.workflowId) === workflow.id)
+              && (getString(metadata.stageType) === stageType || getString(metadata.targetStageType) === stageType);
+          }).length;
+          return { stageType, required, standbyCapable, allocated, shortage: Math.max(0, required - standbyCapable) };
+        })
+      }));
+  }, [allocations, instances, workflows]);
   const jobColumns = useMemo(() => jobBoardStatusOptions.map((statusName) => ({
     status: statusName,
     items: jobs.filter((job) => job.status === statusName)
@@ -1353,6 +2050,76 @@ export function App() {
     () => selectedRuntime ? scriptRuns.filter((run) => run.runtimeSessionId === selectedRuntime.id) : [],
     [scriptRuns, selectedRuntime]
   );
+  const selectedRuntimeJob = useMemo(
+    () => selectedRuntime?.jobId ? jobs.find((job) => job.id === selectedRuntime.jobId) ?? null : null,
+    [jobs, selectedRuntime]
+  );
+  const selectedRuntimeInstance = useMemo(
+    () => selectedRuntime?.instanceId ? instances.find((instance) => instance.id === selectedRuntime.instanceId) ?? null : null,
+    [instances, selectedRuntime]
+  );
+  const selectedRuntimeHost = useMemo(
+    () => selectedRuntime ? hosts.find((host) => host.id === selectedRuntime.hostId || host.hostId === selectedRuntime.hostId || host.hostId === selectedRuntimeInstance?.hostId) ?? null : null,
+    [hosts, selectedRuntime, selectedRuntimeInstance]
+  );
+  const selectedRuntimeSourceBatch = useMemo(
+    () => selectedRuntimeJob ? batches.find((batch) => batch.id === selectedRuntimeJob.sourceBatchId) ?? null : null,
+    [batches, selectedRuntimeJob]
+  );
+  const selectedRuntimeOutputBatches = useMemo(
+    () => selectedRuntimeJob ? batches.filter((batch) => batchMatchesJob(batch, selectedRuntimeJob)) : [],
+    [batches, selectedRuntimeJob]
+  );
+  const selectedRuntimeOutputAssets = useMemo(() => {
+    const ids = new Set(selectedRuntimeOutputBatches.map((batch) => batch.id));
+    return assets.filter((asset) => [...ids].some((id) => compactJson(asset).includes(id)));
+  }, [assets, selectedRuntimeOutputBatches]);
+  const runtimeKpis = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const completed = runtimeSessions.filter((session) => session.status === "COMPLETED" && String(session.finishedAt ?? session.updatedAt ?? "").slice(0, 10) === today);
+    const durations = runtimeSessions
+      .map((session) => {
+        const start = session.startedAt ? new Date(session.startedAt).getTime() : NaN;
+        const end = session.finishedAt ? new Date(session.finishedAt).getTime() : NaN;
+        return Number.isFinite(start) && Number.isFinite(end) && end >= start ? end - start : 0;
+      })
+      .filter(Boolean);
+    const avgMs = durations.length ? durations.reduce((sum, value) => sum + value, 0) / durations.length : 0;
+    return {
+      running: runtimeSessions.filter((session) => session.status === "RUNNING").length,
+      completedToday: completed.length,
+      failed: runtimeSessions.filter((session) => session.status === "FAILED").length,
+      recoverable: runtimeSessions.filter((session) => session.status === "FAILED_RECOVERABLE").length,
+      paused: runtimeSessions.filter((session) => session.status === "PAUSED").length,
+      averageDuration: avgMs ? displayDuration(new Date(Date.now() - avgMs).toISOString(), new Date().toISOString()) : "-",
+      waitingHost: runtimeSessions.filter((session) => !session.hostId && ["PENDING", "RUNNING"].includes(session.status)).length,
+      waitingRecovery: runtimeSessions.filter((session) => session.status === "FAILED_RECOVERABLE").length
+    };
+  }, [runtimeSessions]);
+  const filteredRuntimeSessions = useMemo(() => {
+    const search = adminSearch.toLowerCase();
+    return runtimeSessions.filter((session) => {
+      const job = session.jobId ? jobs.find((item) => item.id === session.jobId) : null;
+      const script = session.scriptId ? scripts.find((item) => item.id === session.scriptId) : null;
+      const instance = session.instanceId ? instances.find((item) => item.id === session.instanceId) : null;
+      const host = hosts.find((item) => item.id === session.hostId || item.hostId === session.hostId || item.hostId === instance?.hostId) ?? null;
+      const haystack = `${session.id} ${session.jobId ?? ""} ${session.scriptId ?? ""} ${session.instanceId ?? ""} ${session.hostId ?? ""} ${job?.targetStageType ?? ""} ${script?.category ?? ""}`.toLowerCase();
+      return (!adminSearch || haystack.includes(search))
+        && (!runtimeStatusFilter || session.status === runtimeStatusFilter)
+        && (!runtimeHostFilter || session.hostId === runtimeHostFilter || host?.id === runtimeHostFilter || host?.hostId === runtimeHostFilter)
+        && (!runtimeInstanceFilter || session.instanceId === runtimeInstanceFilter)
+        && (!runtimeJobTypeFilter || job?.targetStageType === runtimeJobTypeFilter)
+        && (!runtimeScriptCategoryFilter || script?.category === runtimeScriptCategoryFilter)
+        && (!runtimeCreatedDateFilter || String(session.startedAt ?? session.updatedAt ?? "").slice(0, 10) === runtimeCreatedDateFilter)
+        && (!runtimeRecoverableOnly || session.status === "FAILED_RECOVERABLE")
+        && (!runtimeFailedOnly || ["FAILED", "FAILED_RECOVERABLE"].includes(session.status))
+        && (!runtimeRunningOnly || session.status === "RUNNING");
+    });
+  }, [adminSearch, hosts, instances, jobs, runtimeCreatedDateFilter, runtimeFailedOnly, runtimeHostFilter, runtimeInstanceFilter, runtimeJobTypeFilter, runtimeRecoverableOnly, runtimeRunningOnly, runtimeScriptCategoryFilter, runtimeSessions, runtimeStatusFilter, scripts]);
+  const runtimeColumns = useMemo(() => runtimeStatusBoardOptions.map((statusName) => ({
+    status: statusName,
+    items: filteredRuntimeSessions.filter((session) => session.status === statusName)
+  })), [filteredRuntimeSessions]);
   const selectedBatchLineage = useMemo(() => {
     if (!selectedBatch) return [];
     const directJobs = jobs.filter((job) => job.sourceBatchId === selectedBatch.id);
@@ -1380,6 +2147,30 @@ export function App() {
         && (!assetAttributeFilter || Object.keys(asset.attributes ?? {}).includes(assetAttributeFilter));
     });
   }, [assetAttributeFilter, assetSearch, assetTab, assetTagFilter, assets]);
+  const selectedAssetCenterItem = useMemo(
+    () => assetCenterItems.find((item) => item.id === selectedAssetCenterItemId) ?? assetCenterItems[0] ?? null,
+    [assetCenterItems, selectedAssetCenterItemId]
+  );
+  const assetCenterTagOptions = useMemo(
+    () => [...new Set(assetCenterItems.flatMap((item) => item.tags ?? []))].sort(),
+    [assetCenterItems]
+  );
+  const assetCenterAttributeOptions = useMemo(
+    () => [...new Set(assetCenterItems.flatMap((item) => Object.keys(item.attributes ?? {})))].sort(),
+    [assetCenterItems]
+  );
+  const assetCenterStatusOptions = useMemo(
+    () => [...new Set(assetCenterItems.map((item) => item.status).filter(Boolean) as string[])].sort(),
+    [assetCenterItems]
+  );
+  const assetCenterCategoryOptions = useMemo(
+    () => [...new Set(assetCenterItems.map((item) => item.category).filter(Boolean) as string[])].sort(),
+    [assetCenterItems]
+  );
+  const assetCenterSourceOptions = useMemo(
+    () => [...new Set(assetCenterItems.map((item) => item.sourceModule).filter(Boolean))].sort(),
+    [assetCenterItems]
+  );
   const selectedAssetVersions = useMemo(
     () => selectedAsset ? assets.filter((asset) => (asset.versionGroupId ?? asset.id) === (selectedAsset.versionGroupId ?? selectedAsset.id)) : [],
     [assets, selectedAsset]
@@ -1390,6 +2181,87 @@ export function App() {
       : [],
     [assets, selectedAsset]
   );
+  const selectedProductionResource = useMemo(
+    () => batches.find((batch) => batch.id === selectedResourceId) ?? null,
+    [batches, selectedResourceId]
+  );
+  const productionResourceJobs = useMemo(() => {
+    if (!selectedProductionResource) return [];
+    return jobs.filter((job) => {
+      const payload = getRecord(job.payload);
+      const output = getRecord(job.output);
+      const text = compactJson({ payload, output });
+      return job.sourceBatchId === selectedProductionResource.id
+        || getString(output.outputBatchId) === selectedProductionResource.id
+        || getString(payload.outputBatchId) === selectedProductionResource.id
+        || text.includes(selectedProductionResource.id);
+    });
+  }, [jobs, selectedProductionResource]);
+  const productionResourceRuntimeSessions = useMemo(() => {
+    const jobIds = new Set(productionResourceJobs.map((job) => job.id));
+    return runtimeSessions.filter((session) => session.jobId && jobIds.has(session.jobId));
+  }, [productionResourceJobs, runtimeSessions]);
+  const productionResourceLineage = useMemo(() => {
+    if (!selectedProductionResource) return [];
+    const groupId = batchGroupId(selectedProductionResource);
+    const related = batches.filter((batch) => {
+      const text = compactJson(batch.metadata);
+      return batch.id === selectedProductionResource.id
+        || (groupId && batchGroupId(batch) === groupId)
+        || text.includes(selectedProductionResource.id);
+    });
+    return related.sort((a, b) => lineageOrder(a.batchType) - lineageOrder(b.batchType) || a.createdAt.localeCompare(b.createdAt));
+  }, [batches, selectedProductionResource]);
+  const productionResourceStatusOptions = useMemo(() => [...new Set(batches.map((batch) => batch.status))].sort(), [batches]);
+  const productionResourceUsageOptions = useMemo(() => [...new Set(batches.map((batch) => batch.usageStatus))].sort(), [batches]);
+  const productionResourceCards = useMemo(() => {
+    const activeTabType = resourceTypeForTab(productionResourceTab);
+    const search = productionResourceFilters.search.toLowerCase();
+    return batches.filter((batch) => {
+      const groupId = batchGroupId(batch);
+      const group = groups.find((item) => item.id === groupId);
+      const lineageCount = groupId ? batches.filter((item) => batchGroupId(item) === groupId).length : 0;
+      const haystack = `${batchDisplayName(batch, group)} ${batch.batchType} ${batch.status} ${batch.usageStatus} ${group?.name ?? ""} ${compactJson(batch.metadata)}`.toLowerCase();
+      return (!activeTabType || batch.batchType === activeTabType)
+        && (!productionResourceFilters.type || batch.batchType === productionResourceFilters.type)
+        && (!productionResourceFilters.status || batch.status === productionResourceFilters.status)
+        && (!productionResourceFilters.usageStatus || batch.usageStatus === productionResourceFilters.usageStatus)
+        && (!productionResourceFilters.workflowId || batch.workflowId === productionResourceFilters.workflowId)
+        && (!productionResourceFilters.groupId || groupId === productionResourceFilters.groupId)
+        && (!productionResourceFilters.createdDate || String(batch.createdAt).slice(0, 10) === productionResourceFilters.createdDate)
+        && (!productionResourceFilters.hasLineage || lineageCount > 1)
+        && (!productionResourceFilters.readyOnly || batch.status === "READY")
+        && (!productionResourceFilters.reusableOnly || batch.usageStatus === "REUSABLE")
+        && (productionResourceFilters.includeArchived || batch.status !== "ARCHIVED")
+        && (!search || haystack.includes(search));
+    });
+  }, [batches, groups, productionResourceFilters, productionResourceTab]);
+  const productionResourceGroups = useMemo(() => {
+    const map = new Map<string, { group: CharacterGroup | null; resources: ProductionBatch[] }>();
+    for (const batch of productionResourceCards) {
+      const groupId = batchGroupId(batch) || "ungrouped";
+      const group = groups.find((item) => item.id === groupId) ?? null;
+      const current = map.get(groupId) ?? { group, resources: [] };
+      current.resources.push(batch);
+      map.set(groupId, current);
+    }
+    return [...map.entries()].map(([groupId, value]) => ({
+      groupId,
+      group: value.group,
+      resources: value.resources.sort((a, b) => lineageOrder(a.batchType) - lineageOrder(b.batchType) || b.createdAt.localeCompare(a.createdAt))
+    }));
+  }, [groups, productionResourceCards]);
+  const productionResourceKpis = useMemo(() => ({
+    characterGroups: batches.filter((batch) => batch.batchType === "CHARACTER_GROUP").length,
+    imageBatches: batches.filter((batch) => batch.batchType === "IMAGE_BATCH").length,
+    videoBatches: batches.filter((batch) => batch.batchType === "VIDEO_BATCH").length,
+    musicTracks: batches.filter((batch) => batch.batchType === "MUSIC_TRACK").length,
+    finalVideos: batches.filter((batch) => batch.batchType === "FINAL_VIDEO").length,
+    postContents: batches.filter((batch) => batch.batchType === "POST_CONTENT").length,
+    readyResources: batches.filter((batch) => batch.status === "READY").length,
+    failedResources: batches.filter((batch) => batch.status === "FAILED").length,
+    recentlyCreated: batches.filter((batch) => isRecentDate(batch.createdAt)).length
+  }), [batches]);
   const characterTagOptions = useMemo(
     () => [...new Set(characters.flatMap((character) => character.tags ?? []))].sort(),
     [characters]
@@ -1486,6 +2358,16 @@ export function App() {
     });
   }, [adminSearch, promptCards, promptHasVariableFilter, promptRecentFilter, promptStatusFilter, selectedPromptCategory]);
 
+  async function loadScriptVersionIndex(scriptData: ScriptRecord[]) {
+    const entries = await Promise.all(scriptData.map(async (script) => {
+      const versions = await api<ScriptVersionRecord[]>(`/scripts/${script.id}/versions`).catch(() => []);
+      return [script.id, versions] as const;
+    }));
+    const next = Object.fromEntries(entries);
+    setScriptVersionIndex(next);
+    return next;
+  }
+
   const loadData = useCallback(async () => {
     setStatus("Loading studio data");
     const [
@@ -1502,6 +2384,7 @@ export function App() {
       assetData,
       assetCategoryData,
       jobData,
+      allocationData,
       sessionData,
       scriptRunData,
       scriptData,
@@ -1520,6 +2403,7 @@ export function App() {
       api<AssetRecord[]>("/assets"),
       api<AssetCategory[]>("/assets/categories"),
       api<OrchestratorJob[]>("/orchestrator/jobs"),
+      api<InstanceAllocationRecord[]>("/instance-allocations"),
       api<RuntimeSession[]>("/runtime-sessions"),
       api<ScriptRun[]>("/script-runs"),
       api<ScriptRecord[]>("/scripts"),
@@ -1543,9 +2427,11 @@ export function App() {
     setAssets(assetData);
     setAssetCategories(assetCategoryData);
     setJobs(jobData);
+    setAllocations(allocationData);
     setRuntimeSessions(sessionData);
     setScriptRuns(scriptRunData);
     setScripts(scriptData);
+    await loadScriptVersionIndex(scriptData);
     setOrchestratorRules(ruleData);
     setSelectedGroups((current) => current.length ? current : groupData[0] ? [groupData[0].id] : []);
     setSelectedHostId((current) => current || hostData[0]?.id || "");
@@ -1558,25 +2444,52 @@ export function App() {
     setSelectedGroupId((current) => current || groupData[0]?.id || "");
     setSelectedAssetId((current) => current || assetData[0]?.id || "");
     setSelectedCharacterId((current) => current || characterData[0]?.id || "");
+    setLastJobsRefreshAt(new Date().toISOString());
+    setLastRuntimeRefreshAt(new Date().toISOString());
 
-    const nextSelections = { image: "", video: "", music: "" };
+    const nextSelections: PromptSelections = { image: "", video: "", music: "", post: "" };
     for (const template of templateData) {
       const kind = normalizeCategory(template.category);
-      if (!["image", "video", "music"].includes(kind)) continue;
+      if (!["image", "video", "music", "post"].includes(kind)) continue;
       const promptKind = kind as PromptKind;
       if (!nextSelections[promptKind]) nextSelections[promptKind] = template.id;
     }
     setPromptSelections((current) => ({
       image: current.image || nextSelections.image,
       video: current.video || nextSelections.video,
-      music: current.music || nextSelections.music
+      music: current.music || nextSelections.music,
+      post: current.post || nextSelections.post
     }));
     setStatus("Studio ready");
   }, []);
 
+  const loadAssetCenterItems = useCallback(async () => {
+    const params = new URLSearchParams();
+    params.set("itemType", assetTab);
+    params.set("pageSize", "200");
+    if (assetSearch) params.set("search", assetSearch);
+    if (assetTagFilter) params.set("tag", assetTagFilter);
+    if (assetLibraryCategoryFilter) params.set("category", assetLibraryCategoryFilter);
+    if (assetStatusFilter) params.set("status", assetStatusFilter);
+    if (assetSourceFilter) params.set("sourceModule", assetSourceFilter);
+    if (assetUpdatedDateFilter) params.set("updatedDate", assetUpdatedDateFilter);
+    const response = await api<AssetCenterItemsResponse>(`/asset-center/items?${params.toString()}`);
+    const items = assetAttributeFilter
+      ? response.items.filter((item) => Object.keys(item.attributes ?? {}).includes(assetAttributeFilter))
+      : response.items;
+    setAssetCenterItems(items);
+    setAssetCenterTotal(response.total);
+    setSelectedAssetCenterItemId((current) => current && items.some((item) => item.id === current) ? current : items[0]?.id ?? "");
+  }, [assetAttributeFilter, assetLibraryCategoryFilter, assetSearch, assetSourceFilter, assetStatusFilter, assetTab, assetTagFilter, assetUpdatedDateFilter]);
+
   useEffect(() => {
     loadData().catch((error) => setStatus(error instanceof Error ? error.message : "Could not load studio"));
   }, [loadData]);
+
+  useEffect(() => {
+    if (page !== "asset-center") return;
+    loadAssetCenterItems().catch((error) => setStatus(error instanceof Error ? error.message : "Could not load Asset Center"));
+  }, [loadAssetCenterItems, page]);
 
   useEffect(() => {
     window.localStorage.setItem("fbcm-language", language);
@@ -1641,6 +2554,16 @@ export function App() {
   }, [selectedWorkflow]);
 
   useEffect(() => {
+    if (!selectedWorkflow?.id) {
+      setWorkflowDetail(null);
+      return;
+    }
+    api<WorkflowDetailRecord>(`/workflows/${selectedWorkflow.id}/detail`)
+      .then(setWorkflowDetail)
+      .catch(() => setWorkflowDetail(null));
+  }, [selectedWorkflow?.id]);
+
+  useEffect(() => {
     if (!selectedAsset) return;
     setAssetForm({
       name: selectedAsset.name ?? "",
@@ -1683,7 +2606,7 @@ export function App() {
     let cancelled = false;
     async function renderAll() {
       if (!selectedPrimaryGroup) return;
-      const next: PromptPreviews = { image: "", video: "", music: "" };
+      const next: PromptPreviews = { image: "", video: "", music: "", post: "" };
 
       for (const kind of Object.keys(promptSelections) as PromptKind[]) {
         const templateId = promptSelections[kind];
@@ -1714,21 +2637,87 @@ export function App() {
     return {
       image: templates.filter((template) => normalizeCategory(template.category) === "image"),
       video: templates.filter((template) => normalizeCategory(template.category) === "video"),
-      music: templates.filter((template) => normalizeCategory(template.category) === "music")
+      music: templates.filter((template) => normalizeCategory(template.category) === "music"),
+      post: templates.filter((template) => normalizeCategory(template.category) === "post" || normalizePromptCategory(template.category) === "POST_CONTENT")
     };
   }, [templates]);
 
   const studioAttributes = useMemo(() => {
-    const wanted = new Set(["scene", "emotion", "outfit"]);
-    const fromBackend = attributes.filter((attribute) =>
-      wanted.has(attribute.key.toLowerCase()) || wanted.has(attribute.name.toLowerCase())
-    );
-    const existing = new Set(fromBackend.map((attribute) => attribute.name.toLowerCase()));
-    const fallback = ["scene", "emotion", "outfit"]
+    const fromBackend = attributes;
+    const existing = new Set(fromBackend.map((attribute) => attribute.key.toLowerCase()));
+    const fallback = ["background", "outfit", "emotion", "scene", "mood", "style", "tempo"]
       .filter((key) => !existing.has(key))
       .map((key) => ({ id: `fallback-${key}`, key, name: key, valueType: "SELECT" }));
     return [...fromBackend, ...fallback];
   }, [attributes]);
+  const selectedStudioGroup = useMemo(
+    () => groups.find((group) => group.id === selectedPrimaryGroup) ?? null,
+    [groups, selectedPrimaryGroup]
+  );
+  const selectedStudioMembers = useMemo(() => {
+    if (selectedGroupDetail?.group.id === selectedPrimaryGroup) return selectedGroupDetail.members;
+    return selectedStudioGroup?.membersPreview ?? [];
+  }, [selectedGroupDetail, selectedPrimaryGroup, selectedStudioGroup]);
+  const filteredStudioGroups = useMemo(() => {
+    const search = studioGroupFilters.search.toLowerCase();
+    const recentCutoff = Date.now() - 1000 * 60 * 60 * 24 * 7;
+    return groups.filter((group) => {
+      const readinessCode = group.readiness?.code ?? "";
+      const size = Number(group.memberCount ?? 0);
+      const createdAt = group.createdAt ? new Date(group.createdAt).getTime() : 0;
+      return (!search || `${group.name} ${group.attributesSummary ?? ""}`.toLowerCase().includes(search))
+        && (!studioGroupFilters.readyOnly || readinessCode === "READY")
+        && (!studioGroupFilters.groupSize || size === Number(studioGroupFilters.groupSize))
+        && (!studioGroupFilters.missingImages || readinessCode === "MISSING_IMAGES")
+        && (!studioGroupFilters.recentlyCreated || createdAt >= recentCutoff);
+    });
+  }, [groups, studioGroupFilters]);
+  const studioWorkflowCards = useMemo(() => workflows.filter((workflow) => String(workflow.status ?? "").toLowerCase() !== "archived"), [workflows]);
+  const studioPromptScriptRows = useMemo(() => {
+    const promptMapping = getRecord(selectedWorkflow?.promptMapping);
+    const scriptMapping = getRecord(selectedWorkflow?.scriptMapping);
+    return workflowJobTypes.map((jobType) => {
+      const promptId = getString(promptMapping[jobType]) || promptSelections[
+        jobType === "IMAGE_EDIT" ? "image" : jobType === "VIDEO_GENERATE" ? "video" : jobType === "MUSIC_GENERATE" ? "music" : jobType === "POST_CONTENT" ? "post" : "video"
+      ];
+      const scriptId = getString(scriptMapping[jobType]);
+      return {
+        jobType,
+        prompt: promptId ? templates.find((template) => template.id === promptId) ?? null : null,
+        script: scriptId ? scripts.find((script) => script.id === scriptId) ?? null : null
+      };
+    });
+  }, [promptSelections, scripts, selectedWorkflow, templates]);
+  const studioCapacityRows = useMemo(() => capacityStageOptions.map((stageType) => {
+    const required = Number(selectedWorkflow?.capacityConfig?.[stageType] ?? (stageType === "MUSIC_GENERATE" ? 0 : 1));
+    const available = instances.filter((instance) => instance.currentPoolType === "STANDBY" && instanceCanRun(instance, stageType) && isRuntimeIdle(instance.runtimeStatus)).length;
+    return { stageType, required, available, shortage: Math.max(0, required - available) };
+  }), [instances, selectedWorkflow]);
+  const studioSourceAssetsSnapshot = useMemo(() => selectedStudioMembers.map((member) => ({
+    characterId: member.character.id,
+    youngOriginalImage: member.youngOriginalImage ?? member.character.sourceImages?.youngOriginalImage ?? null,
+    oldOriginalImage: member.oldOriginalImage ?? member.character.sourceImages?.oldOriginalImage ?? null
+  })), [selectedStudioMembers]);
+  const studioReadinessWarnings = useMemo(() => {
+    const warnings: string[] = [];
+    if (!selectedStudioGroup) warnings.push("Select a Character Group.");
+    const missingImages = studioSourceAssetsSnapshot.filter((item) => !item.youngOriginalImage || !item.oldOriginalImage).length;
+    if (missingImages) warnings.push(`${missingImages} characters are missing young/old original source images.`);
+    for (const row of studioPromptScriptRows) {
+      if (["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "POST_CONTENT"].includes(row.jobType) && !row.prompt) warnings.push(`${row.jobType} is missing prompt template.`);
+      if (!row.script) warnings.push(`${row.jobType} is missing script mapping.`);
+    }
+    for (const row of studioCapacityRows.filter((item) => item.shortage > 0)) warnings.push(`${row.stageType} has no enough eligible STANDBY capacity.`);
+    if (musicPolicyMode === "REQUIRE_MATCHED" && !batches.some((batch) => batch.batchType === "MUSIC_TRACK" && batch.status === "READY" && ["AVAILABLE", "REUSABLE"].includes(batch.usageStatus))) warnings.push("No matching READY reusable MUSIC_TRACK is visible.");
+    return warnings;
+  }, [batches, musicPolicyMode, selectedStudioGroup, studioCapacityRows, studioPromptScriptRows, studioSourceAssetsSnapshot]);
+  const studioExpectedOutputs = useMemo(() => [
+    "IMAGE_BATCH",
+    "VIDEO_BATCH",
+    ...(musicPolicyMode === "CREATE_DEDICATED" ? ["MUSIC_TRACK"] : []),
+    "FINAL_VIDEO",
+    ...(postPolicyEnabled ? ["POST_CONTENT"] : [])
+  ], [musicPolicyMode, postPolicyEnabled]);
 
   function toggleGroup(groupId: string) {
     setSelectedGroups((current) =>
@@ -1828,6 +2817,43 @@ export function App() {
     if (!selectedAsset) return;
     await adminAction("Deleting asset", () => api(`/assets/${selectedAsset.id}`, { method: "DELETE" }));
     setSelectedAssetId("");
+  }
+
+  function assetCenterEmptyState(itemType = assetTab) {
+    if (itemType === "PROMPT_TEMPLATE") return "No prompt templates found. Create one in Management -> Prompt Templates.";
+    if (itemType === "POST_TEMPLATE") return "No post templates found. Create a POST_CONTENT template in Management -> Prompt Templates.";
+    if (itemType === "MUSIC_TRACK") return "No music tracks found. Upload or generate music tracks.";
+    if (itemType === "VIDEO_TEMPLATE") return "No video templates yet.";
+    if (itemType === "CHARACTER_IMAGE") return "No character images found. Import characters or upload source images.";
+    return "No production resources found.";
+  }
+
+  function openAssetCenterItem(item: AssetCenterItem) {
+    if (item.sourceModule === "prompt_templates") {
+      setPage("management");
+      setManagementSection("prompt-templates");
+      openPromptTemplate(item.sourceId, "overview");
+      return;
+    }
+    if (item.sourceModule === "assets") {
+      setSelectedAssetId(item.sourceId);
+      setSelectedAssetCenterItemId(item.id);
+      return;
+    }
+    if (item.sourceModule === "production_batches") {
+      setPage("management");
+      setManagementSection("production-resources");
+      setSelectedResourceId(item.sourceId);
+    }
+  }
+
+  function duplicateAssetCenterPrompt(item: AssetCenterItem) {
+    const template = templates.find((candidate) => candidate.id === item.sourceId);
+    if (!template) {
+      setStatus("Prompt template source is not loaded yet");
+      return;
+    }
+    duplicatePromptTemplate(template);
   }
 
   async function saveSelectedCharacter() {
@@ -1939,6 +2965,17 @@ export function App() {
     setGroupDrawerTab(tab);
     const detail = await api<CharacterGroupDetail>(`/character-groups/${groupId}/detail`);
     setSelectedGroupDetail(detail);
+    const nextDrafts: Record<string, string> = {};
+    const nextCustom: Array<{ key: string; value: string }> = [];
+    for (const attribute of detail.attributes ?? []) {
+      const key = normalizeAttributeKey(attribute.attributeKey ?? attribute.attributeName ?? attribute.attributeId);
+      const value = attribute.customValue ?? attribute.label ?? attribute.value ?? "";
+      if (!key || !value) continue;
+      if (standardGroupAttributeKeys.includes(key)) nextDrafts[key] = value;
+      else nextCustom.push({ key, value });
+    }
+    setGroupAttributeDrafts(nextDrafts);
+    setCustomGroupAttributes(nextCustom);
     setGroupForm((current) => ({
       ...current,
       name: detail.group.name ?? "",
@@ -2078,6 +3115,48 @@ export function App() {
       await loadData();
       await openCharacterGroup(selectedGroupDetail.group.id, "attributes");
       return result;
+    });
+  }
+
+  async function saveSelectedGroupAttributes() {
+    if (!selectedGroupDetail?.group.id) return;
+    const attributesPayload = [
+      ...standardGroupAttributeKeys.map((key) => ({
+        key,
+        name: key,
+        value: groupAttributeDrafts[key] ?? ""
+      })),
+      ...customGroupAttributes.map((attribute) => ({
+        key: normalizeAttributeKey(attribute.key),
+        name: normalizeAttributeKey(attribute.key),
+        value: attribute.value
+      }))
+    ].filter((attribute) => attribute.key && attribute.value.trim());
+    await adminAction("Saving group attributes", async () => {
+      const detail = await api<CharacterGroupDetail>(`/character-groups/${selectedGroupDetail.group.id}/attributes`, {
+        method: "PUT",
+        body: JSON.stringify({ attributes: attributesPayload })
+      });
+      setSelectedGroupDetail(detail);
+      await loadData();
+      await openCharacterGroup(selectedGroupDetail.group.id, "attributes");
+      return detail;
+    });
+  }
+
+  function applyGroupAttributeSuggestion(key?: string | null, value?: string | null) {
+    const normalizedKey = normalizeAttributeKey(key);
+    if (!normalizedKey || !value) return;
+    if (standardGroupAttributeKeys.includes(normalizedKey)) {
+      setGroupAttributeDrafts((current) => ({ ...current, [normalizedKey]: value }));
+      return;
+    }
+    setCustomGroupAttributes((current) => {
+      const existing = current.findIndex((attribute) => normalizeAttributeKey(attribute.key) === normalizedKey);
+      if (existing >= 0) {
+        return current.map((attribute, index) => index === existing ? { key: normalizedKey, value } : attribute);
+      }
+      return [...current, { key: normalizedKey, value }];
     });
   }
 
@@ -2360,7 +3439,7 @@ export function App() {
   }
 
   async function refreshQueue() {
-    const [latestCharacters, latestGroups, latestHosts, latestWorkflows, latestWorkflowRuns, latestInstances, latestPools, latestBatches, latestAssets, latestJobs, latestSessions, latestScriptRuns, latestScripts, latestRules] = await Promise.all([
+    const [latestCharacters, latestGroups, latestHosts, latestWorkflows, latestWorkflowRuns, latestInstances, latestPools, latestBatches, latestAssets, latestJobs, latestAllocations, latestSessions, latestScriptRuns, latestScripts, latestRules] = await Promise.all([
       api<CharacterRecord[]>("/characters"),
       api<CharacterGroup[]>("/character-groups"),
       api<HostRecord[]>("/hosts"),
@@ -2371,6 +3450,7 @@ export function App() {
       api<ProductionBatch[]>("/production-batches"),
       api<AssetRecord[]>("/assets"),
       api<OrchestratorJob[]>("/orchestrator/jobs"),
+      api<InstanceAllocationRecord[]>("/instance-allocations"),
       api<RuntimeSession[]>("/runtime-sessions"),
       api<ScriptRun[]>("/script-runs"),
       api<ScriptRecord[]>("/scripts"),
@@ -2390,14 +3470,19 @@ export function App() {
     setBatches(latestBatches);
     setAssets(latestAssets);
     setJobs(latestJobs);
+    setAllocations(latestAllocations);
     setRuntimeSessions(latestSessions);
     setScriptRuns(latestScriptRuns);
     setScripts(latestScripts);
+    await loadScriptVersionIndex(latestScripts);
     setOrchestratorRules(latestRules);
+    setLastJobsRefreshAt(new Date().toISOString());
+    setLastRuntimeRefreshAt(new Date().toISOString());
     return {
       batches: latestBatches,
       assets: latestAssets,
       jobs: latestJobs,
+      allocations: latestAllocations,
       groups: latestGroups,
       hosts: latestHosts,
       workflows: latestWorkflows,
@@ -2484,12 +3569,110 @@ export function App() {
   async function selectRuntimeSession(session: RuntimeSession) {
     setSelectedRuntimeId(session.id);
     setRuntimeSession(session);
+    const detail = await api<RuntimeSession>(`/runtime-sessions/${session.id}`).catch(() => session);
+    setRuntimeSession(detail);
     const related = scriptRuns.find((run) => run.runtimeSessionId === session.id);
     if (related) {
-      const detail = await api<ScriptRun>(`/script-runs/${related.id}`);
-      setScriptRun(detail);
+      const runDetail = await api<ScriptRun>(`/script-runs/${related.id}`);
+      setScriptRun(runDetail);
     } else {
       setScriptRun(null);
+    }
+    const relatedJob = detail.jobId ? jobs.find((job) => job.id === detail.jobId) : null;
+    if (relatedJob) {
+      setSelectedJobId(relatedJob.id);
+      const batch = batches.find((item) => batchMatchesJob(item, relatedJob)) ?? null;
+      setOutputBatch(batch);
+    }
+  }
+
+  function currentStudioDraft() {
+    return {
+      id: `draft-${Date.now()}`,
+      name: `${selectedStudioGroup?.name ?? "Studio Draft"} ${new Date().toLocaleString()}`,
+      groupId: selectedPrimaryGroup,
+      workflowId: selectedWorkflow?.id ?? "",
+      attributes: attributeValues,
+      promptOverrides: promptSelections,
+      scriptOverrides: Object.fromEntries(studioPromptScriptRows.map((row) => [row.jobType, row.script?.id ?? ""])),
+      musicPolicy: { mode: musicPolicyMode, matchAttributes: musicMatchAttributes },
+      postContentPolicy: { enabled: postPolicyEnabled, platform: postPolicyPlatform, hashtagPolicy: postHashtagPolicy, ctaPolicy: postCtaPolicy },
+      createdAt: new Date().toISOString()
+    };
+  }
+
+  function saveStudioDraft() {
+    const draft = currentStudioDraft();
+    const next = [draft, ...studioDrafts].slice(0, 12);
+    setStudioDrafts(next);
+    window.localStorage.setItem("fbcm-studio-drafts", JSON.stringify(next));
+    setStatus("Production Studio draft saved");
+  }
+
+  function loadStudioDraft(draft: Record<string, unknown>) {
+    const groupId = getString(draft.groupId);
+    const workflowId = getString(draft.workflowId);
+    if (groupId) setSelectedGroups([groupId]);
+    if (workflowId) setSelectedWorkflowId(workflowId);
+    setAttributeValues(Object.fromEntries(Object.entries(getRecord(draft.attributes)).map(([key, value]) => [key, String(value ?? "")])));
+    setPromptSelections((current) => ({ ...current, ...getRecord(draft.promptOverrides) } as PromptSelections));
+    const musicPolicy = getRecord(draft.musicPolicy);
+    if (getString(musicPolicy.mode)) setMusicPolicyMode(getString(musicPolicy.mode));
+    if (Array.isArray(musicPolicy.matchAttributes)) setMusicMatchAttributes(musicPolicy.matchAttributes.map(String));
+    const postPolicy = getRecord(draft.postContentPolicy);
+    if (typeof postPolicy.enabled === "boolean") setPostPolicyEnabled(postPolicy.enabled);
+    if (getString(postPolicy.platform)) setPostPolicyPlatform(getString(postPolicy.platform));
+    if (getString(postPolicy.hashtagPolicy)) setPostHashtagPolicy(getString(postPolicy.hashtagPolicy));
+    if (getString(postPolicy.ctaPolicy)) setPostCtaPolicy(getString(postPolicy.ctaPolicy));
+    setStatus("Production Studio draft loaded");
+  }
+
+  async function launchStudioProduction() {
+    if (!selectedPrimaryGroup || !selectedWorkflow) {
+      setStatus("Select a Character Group and Workflow Template first");
+      return;
+    }
+    if (studioReadinessWarnings.some((warning) => warning.includes("missing young/old original"))) {
+      setStatus("Cannot launch while source images are missing");
+      return;
+    }
+    setBusy(true);
+    setStatus("Launching production setup");
+    try {
+      const metadata = {
+        studio: "Production Studio",
+        groupId: selectedPrimaryGroup,
+        characterIds: selectedStudioMembers.map((member) => member.character.id),
+        sourceAssetsSnapshot: studioSourceAssetsSnapshot,
+        attributesSnapshot: attributeValues,
+        workflowId: selectedWorkflow.id,
+        promptOverrides: promptSelections,
+        scriptOverrides: Object.fromEntries(studioPromptScriptRows.map((row) => [row.jobType, row.script?.id ?? ""])),
+        musicPolicy: { mode: musicPolicyMode, matchAttributes: musicMatchAttributes },
+        postContentPolicy: { enabled: postPolicyEnabled, platform: postPolicyPlatform, hashtagPolicy: postHashtagPolicy, ctaPolicy: postCtaPolicy },
+        promptPreview: previews
+      };
+      const batch = await api<ProductionBatch>("/production-batches", {
+        method: "POST",
+        body: JSON.stringify({
+          batchType: "CHARACTER_GROUP",
+          sourceGroupId: selectedPrimaryGroup,
+          workflowId: selectedWorkflow.id,
+          status: "READY",
+          usageStatus: "AVAILABLE",
+          attributes: attributeValues,
+          metadata
+        })
+      });
+      const result = await api<{ createdJobs: OrchestratorJob[] }>(`/production-batches/${batch.id}/launch`, { method: "POST" });
+      setOutputBatch(batch);
+      setLaunchedJobs(result.createdJobs ?? []);
+      await refreshQueue();
+      setStatus(result.createdJobs?.length ? "Production launched and jobs created" : "Production batch created; no matching rule created a job");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not launch production");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -2516,6 +3699,56 @@ export function App() {
       setStatus("Queue updated");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Job action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleSelectedJob(jobId: string) {
+    setSelectedJobIds((current) => current.includes(jobId) ? current.filter((id) => id !== jobId) : [...current, jobId]);
+  }
+
+  async function releaseJobAllocation(job: OrchestratorJob) {
+    const allocationId = jobPayloadString(job, "allocationId")
+      || allocations.find((allocation) => allocation.orchestratorJobId === job.id && allocation.status === "ALLOCATED")?.id
+      || "";
+    if (!allocationId) {
+      setStatus("No active allocation found for this job");
+      return;
+    }
+    return adminAction("Releasing allocation", () => api(`/instance-allocations/${allocationId}/release`, { method: "POST" }));
+  }
+
+  async function bulkJobsAction(action: "allocate" | "execute-mock" | "fail") {
+    const selected = jobs.filter((job) => selectedJobIds.includes(job.id));
+    if (!selected.length) {
+      setStatus("Select at least one job");
+      return;
+    }
+    if (!window.confirm(`Run ${action} for ${selected.length} selected jobs?`)) return;
+    setBusy(true);
+    setStatus(`Running ${action} for selected jobs`);
+    const results: Array<Record<string, unknown>> = [];
+    try {
+      for (const job of selected) {
+        try {
+          const path = action === "execute-mock"
+            ? `/job-executor/jobs/${job.id}/execute-mock`
+            : `/orchestrator/jobs/${job.id}/${action}`;
+          const body = action === "fail" ? { errorMessage: "Bulk failed from Management Jobs" } : undefined;
+          const result = await api(path, {
+            method: "POST",
+            body: body ? JSON.stringify(body) : undefined
+          });
+          results.push({ jobId: job.id, ok: true, result });
+        } catch (error) {
+          results.push({ jobId: job.id, ok: false, error: error instanceof Error ? error.message : "Action failed" });
+        }
+      }
+      setAdminJson(compactJson({ action, results }));
+      await refreshQueue();
+      setSelectedJobIds([]);
+      setStatus("Bulk job action complete");
     } finally {
       setBusy(false);
     }
@@ -2632,8 +3865,145 @@ export function App() {
     if (!scriptId) return [];
     const versions = await api<ScriptVersionRecord[]>(`/scripts/${scriptId}/versions`);
     setScriptVersions(versions);
+    setScriptVersionIndex((current) => ({ ...current, [scriptId]: versions }));
     setSelectedScriptVersionId((current) => current || versions[0]?.id || "");
     return versions;
+  }
+
+  async function openScript(script: ScriptRecord, tab: typeof scriptDrawerTab = "overview") {
+    setSelectedScriptId(script.id);
+    setScriptDrawerTab(tab);
+    setScriptForm((current) => ({
+      ...current,
+      name: script.name,
+      category: script.category ?? "UTILITY",
+      description: script.description ?? "",
+      status: script.status
+    }));
+    const versions = await refreshScriptVersions(script.id);
+    const activeVersion = versions.find((version) => String(version.status).toLowerCase() === "active") ?? versions[0];
+    setSelectedScriptVersionId(activeVersion?.id ?? "");
+    if (activeVersion) {
+      setScriptForm((current) => ({
+        ...current,
+        steps: compactJson({
+          steps: activeVersion.steps ?? [],
+          variables: activeVersion.variables ?? {},
+          retryPolicy: activeVersion.retryPolicy ?? {},
+          detectionPolicy: activeVersion.detectionPolicy ?? {}
+        })
+      }));
+    }
+  }
+
+  async function runRuntimeHostAction(session: RuntimeSession, action: "send-text" | "download-latest") {
+    const instance = session.instanceId ? instances.find((item) => item.id === session.instanceId) ?? null : null;
+    const host = hosts.find((item) => item.id === session.hostId || item.hostId === session.hostId || item.hostId === instance?.hostId) ?? null;
+    const adbId = instance?.adbId ?? "";
+    if (!host || !session.instanceId || !adbId) {
+      setHostResult({ error: "ADB_ID_REQUIRED", message: "Runtime host, instance, or adbId is missing" });
+      setStatus("ADB mapping unknown");
+      return;
+    }
+
+    setBusy(true);
+    setStatus(`${action} runtime host`);
+    try {
+      const result = await api(`/hosts/${host.id}/${action}`, {
+        method: "POST",
+        body: JSON.stringify(action === "send-text"
+          ? { instanceId: session.instanceId, adbId, text: hostSendText }
+          : { instanceId: session.instanceId, adbId })
+      });
+      setHostResult(result);
+      setStatus("Runtime host action complete");
+    } catch (error) {
+      setHostResult({ error: error instanceof Error ? error.message : "Runtime host action failed" });
+      setStatus(error instanceof Error ? error.message : "Runtime host action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function setScriptDraftDefinition(next: Partial<{ steps: Array<Record<string, unknown>>; variables: Record<string, unknown>; retryPolicy: Record<string, unknown>; detectionPolicy: Record<string, unknown> }>) {
+    const current = parseScriptDefinitionJson(scriptForm.steps);
+    setScriptForm((form) => ({
+      ...form,
+      steps: compactJson({
+        steps: next.steps ?? current.steps,
+        variables: next.variables ?? current.variables,
+        retryPolicy: next.retryPolicy ?? current.retryPolicy,
+        detectionPolicy: next.detectionPolicy ?? current.detectionPolicy
+      })
+    }));
+  }
+
+  function updateScriptStep(index: number, step: Record<string, unknown>) {
+    const steps = [...scriptDraft.steps];
+    steps[index] = normalizeScriptStep(step, index);
+    setScriptDraftDefinition({ steps });
+  }
+
+  function updateScriptStepConfig(index: number, key: string, value: unknown) {
+    const step = scriptDraft.steps[index];
+    if (!step) return;
+    updateScriptStep(index, {
+      ...step,
+      config: {
+        ...scriptStepConfig(step),
+        [key]: value
+      }
+    });
+  }
+
+  function addScriptStep(type = "wait") {
+    const template = scriptStepTemplates[type];
+    const config = Object.fromEntries((template?.fields ?? []).map((field) => [field.key, field.type === "number" ? 0 : field.type === "json" ? [] : ""]));
+    const next = [...scriptDraft.steps, normalizeScriptStep({ type, config }, scriptDraft.steps.length)];
+    setSelectedScriptStepIndex(next.length - 1);
+    setScriptDraftDefinition({ steps: next });
+  }
+
+  function removeScriptStep(index: number) {
+    const next = scriptDraft.steps.filter((_, itemIndex) => itemIndex !== index).map((step, itemIndex) => normalizeScriptStep(step, itemIndex));
+    setSelectedScriptStepIndex(Math.max(0, Math.min(index, next.length - 1)));
+    setScriptDraftDefinition({ steps: next });
+  }
+
+  function moveScriptStep(index: number, direction: -1 | 1) {
+    const target = index + direction;
+    if (target < 0 || target >= scriptDraft.steps.length) return;
+    const next = [...scriptDraft.steps];
+    [next[index], next[target]] = [next[target], next[index]];
+    setSelectedScriptStepIndex(target);
+    setScriptDraftDefinition({ steps: next.map((step, itemIndex) => normalizeScriptStep(step, itemIndex)) });
+  }
+
+  function duplicateScriptStep(index: number) {
+    const step = scriptDraft.steps[index];
+    if (!step) return;
+    const next = [...scriptDraft.steps];
+    next.splice(index + 1, 0, normalizeScriptStep({ ...step, config: { ...scriptStepConfig(step) } }, index + 1));
+    setSelectedScriptStepIndex(index + 1);
+    setScriptDraftDefinition({ steps: next.map((item, itemIndex) => normalizeScriptStep(item, itemIndex)) });
+  }
+
+  function insertScriptVariable(variable: string) {
+    const step = scriptDraft.steps[selectedScriptStepIndex];
+    if (!step) return;
+    const config = scriptStepConfig(step);
+    const template = scriptStepTemplates[scriptStepType(step)];
+    const textField = template?.fields.find((field) => field.type !== "number" && field.type !== "json")?.key ?? "text";
+    updateScriptStepConfig(selectedScriptStepIndex, textField, `${getString(config[textField])}${variable}`);
+  }
+
+  function validateScriptDraftBeforeSave() {
+    const errors = validateScriptSteps(scriptDraft.steps).filter((message) => message.level === "error");
+    if (errors.length) {
+      setStatus(errors.map((error) => `Step ${error.index + 1}: ${error.message}`).join("; "));
+      return false;
+    }
+    return true;
   }
 
   async function saveScriptMetadata() {
@@ -2651,6 +4021,7 @@ export function App() {
 
   async function createScriptVersion() {
     if (!selectedScriptId) return;
+    if (!validateScriptDraftBeforeSave()) return;
     return adminAction("Creating script version", async () => {
       const parsed = parseJsonText(scriptForm.steps);
       const version = await api<ScriptVersionRecord>(`/scripts/${selectedScriptId}/versions`, {
@@ -2671,6 +4042,7 @@ export function App() {
 
   async function updateScriptVersion() {
     if (!selectedScriptVersionId) return;
+    if (!validateScriptDraftBeforeSave()) return;
     return adminAction("Updating script version", async () => {
       const parsed = parseJsonText(scriptForm.steps);
       const version = await api<ScriptVersionRecord>(`/script-versions/${selectedScriptVersionId}`, {
@@ -2681,6 +4053,76 @@ export function App() {
           retryPolicy: parsed.retryPolicy ?? {},
           detectionPolicy: parsed.detectionPolicy ?? {}
         })
+      });
+      await refreshScriptVersions(selectedScriptId);
+      return version;
+    });
+  }
+
+  async function duplicateSelectedScript(source = selectedScript) {
+    if (!source) return;
+    return adminAction("Duplicating script", async () => {
+      const clone = await api<ScriptRecord>("/scripts", {
+        method: "POST",
+        body: JSON.stringify({
+          name: `${source.name} Copy`,
+          category: source.category ?? "UTILITY",
+          description: source.description ?? "",
+          status: "draft"
+        })
+      });
+      const sourceVersions = scriptVersionIndex[source.id] ?? await api<ScriptVersionRecord[]>(`/scripts/${source.id}/versions`);
+      const activeVersion = sourceVersions.find((version) => String(version.status).toLowerCase() === "active") ?? sourceVersions[0];
+      if (activeVersion) {
+        await api<ScriptVersionRecord>(`/scripts/${clone.id}/versions`, {
+          method: "POST",
+          body: JSON.stringify({
+            status: "draft",
+            steps: activeVersion.steps ?? [],
+            variables: activeVersion.variables ?? {},
+            retryPolicy: activeVersion.retryPolicy ?? {},
+            detectionPolicy: activeVersion.detectionPolicy ?? {}
+          })
+        });
+      }
+      setSelectedScriptId(clone.id);
+      await loadScriptVersionIndex([clone, ...scripts]);
+      return clone;
+    });
+  }
+
+  async function duplicateSelectedScriptVersion(version = selectedScriptVersion) {
+    if (!selectedScriptId || !version) return;
+    return adminAction("Duplicating script version", async () => {
+      const clone = await api<ScriptVersionRecord>(`/scripts/${selectedScriptId}/versions`, {
+        method: "POST",
+        body: JSON.stringify({
+          status: "draft",
+          steps: version.steps ?? [],
+          variables: version.variables ?? {},
+          retryPolicy: version.retryPolicy ?? {},
+          detectionPolicy: version.detectionPolicy ?? {}
+        })
+      });
+      await refreshScriptVersions(selectedScriptId);
+      setSelectedScriptVersionId(clone.id);
+      return clone;
+    });
+  }
+
+  async function archiveSelectedScript() {
+    if (!selectedScriptId) return;
+    return adminAction("Archiving script", () => api(`/scripts/${selectedScriptId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "archived" })
+    }));
+  }
+
+  async function archiveScriptVersion(versionId: string) {
+    return adminAction("Archiving script version", async () => {
+      const version = await api<ScriptVersionRecord>(`/script-versions/${versionId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "archived" })
       });
       await refreshScriptVersions(selectedScriptId);
       return version;
@@ -2708,6 +4150,8 @@ export function App() {
       setStatus("Select host, instance, and adbId");
       return;
     }
+    const context = parseJsonText(scriptTestContext, {});
+    const runtimeContext = getRecord(context.runtime);
     return adminAction("Testing script", () => api(`/scripts/${selectedScriptId}/test-run`, {
       method: "POST",
       body: JSON.stringify({
@@ -2716,17 +4160,11 @@ export function App() {
         instanceId,
         adbId,
         context: {
-          prompt: {
-            image: previews.image,
-            video: previews.video,
-            music: previews.music,
-            post: ""
-          },
-          group: {
-            name: groups.find((group) => group.id === selectedPrimaryGroup)?.name ?? ""
-          },
+          ...context,
           runtime: {
-            instanceId
+            ...runtimeContext,
+            instanceId,
+            adbId
           }
         }
       })
@@ -2754,6 +4192,83 @@ export function App() {
             body: JSON.stringify(capacityForm)
           });
       return result;
+    });
+  }
+
+  function openWorkflow(workflow: WorkflowRecord, tab: typeof workflowDrawerTab = "overview") {
+    setSelectedWorkflowId(workflow.id);
+    const nextRun = workflowRuns.find((run) => run.workflowId === workflow.id);
+    setSelectedWorkflowRunId(nextRun?.id ?? "");
+    setWorkflowDrawerTab(tab);
+    setCapacityResult(null);
+  }
+
+  async function saveWorkflowMetadata() {
+    if (!selectedWorkflow) return;
+    return adminAction("Saving workflow", () => api(`/workflows/${selectedWorkflow.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: selectedWorkflow.name,
+        description: selectedWorkflow.description ?? "",
+        status: selectedWorkflow.status
+      })
+    }));
+  }
+
+  async function duplicateWorkflow(workflow = selectedWorkflow) {
+    if (!workflow) return;
+    return adminAction("Duplicating workflow", async () => {
+      const duplicated = await api<WorkflowRecord>(`/workflows/${workflow.id}/duplicate`, { method: "POST" });
+      setSelectedWorkflowId(duplicated.id);
+      await refreshQueue();
+      return duplicated;
+    });
+  }
+
+  function updateWorkflowWizardTemplate(templateType: string) {
+    setWorkflowWizard((current) => ({
+      ...current,
+      templateType,
+      resourceRules: JSON.stringify(workflowRulesForTemplate(templateType), null, 2)
+    }));
+  }
+
+  async function createWorkflowFromWizard() {
+    return adminAction("Creating workflow", async () => {
+      const workflow = await api<WorkflowRecord>("/workflows", {
+        method: "POST",
+        body: JSON.stringify({
+          name: workflowWizard.name || `${workflowWizard.templateType} Workflow`,
+          description: workflowWizard.description,
+          status: workflowWizard.status,
+          resourceRules: JSON.parse(workflowWizard.resourceRules || "[]"),
+          promptMapping: JSON.parse(workflowWizard.promptMapping || "{}"),
+          scriptMapping: JSON.parse(workflowWizard.scriptMapping || "{}"),
+          musicPolicy: JSON.parse(workflowWizard.musicPolicy || "{}"),
+          postContentPolicy: JSON.parse(workflowWizard.postContentPolicy || "{}")
+        })
+      });
+      await api(`/workflows/${workflow.id}/capacity`, {
+        method: "PATCH",
+        body: workflowWizard.capacity
+      });
+      setSelectedWorkflowId(workflow.id);
+      setShowWorkflowWizard(false);
+      await refreshQueue();
+      return workflow;
+    });
+  }
+
+  async function launchWorkflow(workflow = selectedWorkflow) {
+    if (!workflow) return;
+    return adminAction("Launching workflow run", async () => {
+      const run = await api<WorkflowRunRecord>(`/workflows/${workflow.id}/run`, {
+        method: "POST",
+        body: JSON.stringify({ input: { launchedFrom: "Management Workflows" } })
+      });
+      setSelectedWorkflowId(workflow.id);
+      setSelectedWorkflowRunId(run.id);
+      return run;
     });
   }
 
@@ -2983,6 +4498,408 @@ export function App() {
     );
   }
 
+  function selectCapacityInstance(instance: InstanceRecord, tab: CapacityDrawerTab = "overview") {
+    setSelectedInstanceId(instance.id);
+    setCapacityDrawerInstanceId(instance.id);
+    setCapacityDrawerTab(tab);
+    setCapacityCapabilityDraft(normalizeInstanceCapabilities(instance.capabilities));
+  }
+
+  function toggleCapacitySelectedInstance(instanceId: string) {
+    setSelectedCapacityInstanceIds((current) => (
+      current.includes(instanceId) ? current.filter((id) => id !== instanceId) : [...current, instanceId]
+    ));
+  }
+
+  function updateCapacityCanRun(stageType: string, checked: boolean) {
+    setCapacityCapabilityDraft((current) => {
+      const normalized = normalizeInstanceCapabilities(current);
+      const canRun = new Set(normalized.canRun ?? []);
+      if (checked) canRun.add(stageType);
+      else canRun.delete(stageType);
+      return { ...normalized, canRun: [...canRun] };
+    });
+  }
+
+  async function saveCapacityCapabilities(instance = selectedCapacityInstance) {
+    if (!instance) return;
+    return adminAction("Saving capabilities", () => api(`/instances/${instance.id}/capabilities`, {
+      method: "PATCH",
+      body: JSON.stringify(normalizeInstanceCapabilities(capacityCapabilityDraft))
+    }));
+  }
+
+  async function copyCapacityCapabilities() {
+    const source = instances.find((instance) => instance.id === capacityCopySourceInstanceId);
+    if (!source || !selectedCapacityInstance) return;
+    const capabilities = normalizeInstanceCapabilities(source.capabilities);
+    setCapacityCapabilityDraft(capabilities);
+    return adminAction("Copying capabilities", () => api(`/instances/${selectedCapacityInstance.id}/capabilities`, {
+      method: "PATCH",
+      body: JSON.stringify(capabilities)
+    }));
+  }
+
+  async function bulkApplyCapacityCapability(mode: "add" | "remove") {
+    if (!selectedCapacityInstanceIds.length) return;
+    const selected = instances.filter((instance) => selectedCapacityInstanceIds.includes(instance.id));
+    return adminAction("Updating selected capabilities", async () => {
+      await Promise.all(selected.map((instance) => {
+        const capabilities = normalizeInstanceCapabilities(instance.capabilities);
+        const canRun = new Set(capabilities.canRun ?? []);
+        if (mode === "add") canRun.add(capacityBulkCapability);
+        else canRun.delete(capacityBulkCapability);
+        return api(`/instances/${instance.id}/capabilities`, {
+          method: "PATCH",
+          body: JSON.stringify({ ...capabilities, canRun: [...canRun] })
+        });
+      }));
+    });
+  }
+
+  async function bulkMoveCapacityInstances(action: "move-standby" | "move-maintenance") {
+    if (!selectedCapacityInstanceIds.length) return;
+    const selected = instances.filter((instance) => selectedCapacityInstanceIds.includes(instance.id));
+    return adminAction("Moving selected instances", async () => {
+      await Promise.all(selected.map((instance) => {
+        const body = action === "move-maintenance" ? { reason: "Bulk moved from Capacity Pools" } : undefined;
+        return api(`/instances/${instance.id}/${action}`, {
+          method: "POST",
+          body: body ? JSON.stringify(body) : undefined
+        });
+      }));
+    });
+  }
+
+  function getProductionResourceGroup(batch?: ProductionBatch | null) {
+    const groupId = batchGroupId(batch);
+    return groupId ? groups.find((group) => group.id === groupId) ?? null : null;
+  }
+
+  function getProductionResourceLineageCount(batch: ProductionBatch) {
+    const groupId = batchGroupId(batch);
+    if (!groupId) return productionResourceLineage.filter((item) => item.id === batch.id).length || 1;
+    return batches.filter((item) => batchGroupId(item) === groupId).length || 1;
+  }
+
+  function getProductionResourcePreviewAssets(batch: ProductionBatch) {
+    const groupId = batchGroupId(batch);
+    const batchText = batch.id.toLowerCase();
+    return assets
+      .filter((asset) => {
+        const assetText = compactJson(asset).toLowerCase();
+        return assetText.includes(batchText)
+          || Boolean(groupId && (asset.groupId === groupId || assetText.includes(groupId.toLowerCase())));
+      })
+      .filter((asset) => Boolean(asset.thumbnailPublicUrl))
+      .slice(0, 6);
+  }
+
+  function openProductionResource(batch: ProductionBatch, tab: typeof resourceDrawerTab = "overview") {
+    setSelectedResourceId(batch.id);
+    setResourceDrawerTab(tab);
+  }
+
+  async function updateProductionResourceStatus(batch: ProductionBatch, statusValue: string) {
+    await adminAction(statusValue === "ARCHIVED" ? "Archiving resource" : "Restoring resource", () =>
+      api(`/production-batches/${batch.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: statusValue })
+      })
+    );
+    setSelectedResourceId(batch.id);
+  }
+
+  async function copyProductionPostContent(batch: ProductionBatch) {
+    const post = postContentMetadata(batch);
+    const content = [
+      post.title,
+      post.caption,
+      post.postText && post.postText !== post.caption ? post.postText : "",
+      post.hashtags.join(" "),
+      post.cta
+    ].filter(Boolean).join("\n\n");
+    await navigator.clipboard.writeText(content || compactJson(batch.metadata));
+    setStatus("Post content copied");
+  }
+
+  function renderResourcePreview(batch: ProductionBatch) {
+    const previewAssets = getProductionResourcePreviewAssets(batch);
+    const group = getProductionResourceGroup(batch);
+    const groupThumbs = (group?.membersPreview ?? [])
+      .flatMap((member) => [member.youngThumbnailUrl, member.oldThumbnailUrl])
+      .filter(Boolean)
+      .slice(0, 6) as string[];
+
+    if (batch.batchType === "POST_CONTENT") {
+      const post = postContentMetadata(batch);
+      return (
+        <div className="resourcePostPreview">
+          <strong>{post.title || "Post content"}</strong>
+          <p>{post.caption || post.postText || "No caption yet."}</p>
+          <small>{post.hashtags.join(" ") || post.platform}</small>
+        </div>
+      );
+    }
+
+    if (batch.batchType === "MUSIC_TRACK") {
+      const music = musicTrackMetadata(batch);
+      return (
+        <div className="resourceMusicPreview">
+          <Music size={22} />
+          <strong>{[music.mood, music.tempo, music.style].filter(Boolean).join(" / ") || "Music track"}</strong>
+          <small>{music.tags.join(", ") || [music.scene, music.emotion].filter(Boolean).join(" / ") || "No music attributes"}</small>
+        </div>
+      );
+    }
+
+    const urls = previewAssets.map((asset) => listImageUrl(asset)).filter(Boolean);
+    const fallbackUrls = urls.length ? urls : groupThumbs.map(mediaUrl).filter(Boolean);
+    return (
+      <div className="resourceThumbGrid">
+        {fallbackUrls.slice(0, 6).map((url, index) => (
+          <img src={url} alt={`${batch.batchType} thumbnail ${index + 1}`} key={`${batch.id}-${url}-${index}`} />
+        ))}
+        {!fallbackUrls.length ? (
+          <span className="resourcePreviewPlaceholder">
+            {batch.batchType === "VIDEO_BATCH" || batch.batchType === "FINAL_VIDEO" ? <Video size={22} /> : <Image size={22} />}
+            Thumbnail pending
+          </span>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderProductionResourceCard(batch: ProductionBatch) {
+    const group = getProductionResourceGroup(batch);
+    const post = postContentMetadata(batch);
+    const music = musicTrackMetadata(batch);
+    const lineageCount = getProductionResourceLineageCount(batch);
+    const relatedJobs = jobs.filter((job) => job.sourceBatchId === batch.id || batchMatchesJob(batch, job));
+    return (
+      <article className={`resourceLibraryCard ${selectedResourceId === batch.id ? "selected" : ""}`} key={batch.id} onClick={() => openProductionResource(batch)}>
+        <div className="resourcePreviewFrame">{renderResourcePreview(batch)}</div>
+        <div className="resourceCardHeader">
+          <strong>{batchDisplayName(batch, group)}</strong>
+          <span className="resourceTypeBadge">{batch.batchType}</span>
+        </div>
+        <div className="resourceBadgeRow">
+          <span className={`statusPill ${batch.status === "READY" ? "ready" : batch.status === "FAILED" ? "danger" : ""}`}>{batch.status}</span>
+          <span className="statusPill">{batch.usageStatus}</span>
+        </div>
+        <div className="resourceMetaGrid">
+          <span>Workflow</span><strong>{batch.workflowId ? displayShortId(batch.workflowId) : "-"}</strong>
+          <span>Group</span><strong>{group?.name ?? "-"}</strong>
+          <span>Created</span><strong>{displayDateTime(batch.createdAt)}</strong>
+          <span>Lineage</span><strong>{lineageCount}</strong>
+        </div>
+        {batch.batchType === "POST_CONTENT" ? <p className="resourceCaption">{post.caption || post.postText || "No post content."}</p> : null}
+        {batch.batchType === "MUSIC_TRACK" ? <p className="resourceCaption">{[music.mood, music.tempo, music.style].filter(Boolean).join(" / ") || "No music metadata."}</p> : null}
+        <div className="resourceActions">
+          <button onClick={(event) => { event.stopPropagation(); openProductionResource(batch); }} title="Open"><Eye size={15} /> Open</button>
+          <button onClick={(event) => { event.stopPropagation(); openProductionResource(batch, "lineage"); }} title="View Lineage"><Boxes size={15} /> Lineage</button>
+          <button onClick={(event) => { event.stopPropagation(); openProductionResource(batch, "jobs"); }} title="View Jobs"><ClipboardList size={15} /> Jobs {relatedJobs.length ? `(${relatedJobs.length})` : ""}</button>
+          {batch.batchType === "POST_CONTENT" ? (
+            <button onClick={(event) => { event.stopPropagation(); copyProductionPostContent(batch); }} title="Copy Content"><Copy size={15} /> Copy</button>
+          ) : null}
+          {batch.status === "ARCHIVED" ? (
+            <button onClick={(event) => { event.stopPropagation(); updateProductionResourceStatus(batch, "READY"); }} title="Restore"><RefreshCcw size={15} /> Restore</button>
+          ) : (
+            <button onClick={(event) => { event.stopPropagation(); updateProductionResourceStatus(batch, "ARCHIVED"); }} title="Archive"><Archive size={15} /> Archive</button>
+          )}
+        </div>
+      </article>
+    );
+  }
+
+  function jobRelationship(job: OrchestratorJob) {
+    const sourceBatch = batches.find((batch) => batch.id === job.sourceBatchId) ?? null;
+    const groupId = batchGroupId(sourceBatch);
+    const group = groupId ? groups.find((item) => item.id === groupId) ?? null : null;
+    const workflowId = sourceBatch?.workflowId || jobPayloadString(job, "workflowId");
+    const workflow = workflowId ? workflows.find((item) => item.id === workflowId) ?? null : null;
+    const allocation = allocations.find((item) => item.id === jobPayloadString(job, "allocationId") || item.orchestratorJobId === job.id) ?? null;
+    const runtime = runtimeSessions.find((session) => session.jobId === job.id) ?? null;
+    return { sourceBatch, group, workflow, allocation, runtime };
+  }
+
+  function productionJobStatus(job: OrchestratorJob) {
+    const { sourceBatch, runtime } = jobRelationship(job);
+    if (runtime?.status === "FAILED_RECOVERABLE") return "FAILED_RECOVERABLE";
+    if (job.status === "PENDING" && !sourceBatch) return "WAITING_RESOURCE";
+    if (job.status === "PENDING" && job.targetStageType === "VIDEO_COMPOSE") {
+      const hasMusic = batches.some((batch) => batch.batchType === "MUSIC_TRACK" && batch.status === "READY" && ["AVAILABLE", "REUSABLE"].includes(batch.usageStatus));
+      if (!hasMusic) return "WAITING_MUSIC";
+    }
+    if (productionQueueStatusOptions.includes(job.status)) return job.status;
+    return job.status === "FAILED" ? "FAILED" : "PENDING";
+  }
+
+  function renderJobStatusActions(job: OrchestratorJob) {
+    const { allocation, runtime } = jobRelationship(job);
+    if (job.status === "PENDING") {
+      return (
+        <>
+          <button disabled={busy} onClick={(event) => { event.stopPropagation(); runJobAction(job, "allocate"); }}>Allocate</button>
+          <button disabled title="Cancel endpoint is not available yet">Cancel</button>
+        </>
+      );
+    }
+    if (job.status === "ALLOCATED") {
+      return (
+        <>
+          <button disabled={busy} onClick={(event) => { event.stopPropagation(); runJobAction(job, "start"); }}>Start</button>
+          <button disabled={busy} onClick={(event) => { event.stopPropagation(); runJobAction(job, "execute-mock"); }}>Execute Mock</button>
+          <button disabled={busy || job.targetStageType !== "IMAGE_EDIT"} onClick={(event) => { event.stopPropagation(); runJobAction(job, "execute-image-edit"); }}>Execute IMAGE_EDIT</button>
+          <button disabled={busy || !allocation} onClick={(event) => { event.stopPropagation(); releaseJobAllocation(job); }}>Release Allocation</button>
+          <button disabled={busy} onClick={(event) => { event.stopPropagation(); runJobAction(job, "fail"); }}>Fail</button>
+        </>
+      );
+    }
+    if (job.status === "RUNNING") {
+      return (
+        <>
+          <button disabled={!runtime} onClick={(event) => { event.stopPropagation(); if (runtime) selectRuntimeSession(runtime); setJobDrawerTab("runtime"); }}>View Runtime</button>
+          <button disabled={busy} onClick={(event) => { event.stopPropagation(); runJobAction(job, "fail"); }}>Mark Failed</button>
+          <button disabled={busy} onClick={(event) => { event.stopPropagation(); refreshQueue(); }}>Refresh</button>
+        </>
+      );
+    }
+    if (job.status === "FAILED") {
+      return (
+        <>
+          <button onClick={(event) => { event.stopPropagation(); loadJobDetail(job); setJobDrawerTab("overview"); }}>View Error</button>
+          <button disabled={busy || runtime?.status !== "FAILED_RECOVERABLE"} onClick={(event) => { event.stopPropagation(); if (runtime) runtimeAction("recover", runtime); }}>Recover</button>
+          <button disabled title="Retry endpoint is not available yet">Retry</button>
+          <button disabled={busy || runtime?.status !== "FAILED_RECOVERABLE"} onClick={(event) => { event.stopPropagation(); if (runtime) runtimeAction("mark-unrecoverable", runtime); }}>Mark Unrecoverable</button>
+        </>
+      );
+    }
+    if (job.status === "COMPLETED") {
+      return (
+        <>
+          <button onClick={(event) => { event.stopPropagation(); loadJobDetail(job); setJobDrawerTab("output"); }}>View Output</button>
+          <button onClick={(event) => { event.stopPropagation(); loadJobDetail(job); setJobDrawerTab("lineage"); }}>View Lineage</button>
+        </>
+      );
+    }
+    return <button disabled>Refresh</button>;
+  }
+
+  function renderManagementJobCard(job: OrchestratorJob) {
+    const { sourceBatch, group, workflow, allocation, runtime } = jobRelationship(job);
+    const hasError = job.status === "FAILED" || Boolean(findJobError(job, runtime, scriptRuns.find((run) => run.runtimeSessionId === runtime?.id) ?? null));
+    return (
+      <article className={`managementJobCard ${selectedJobId === job.id ? "selected" : ""}`} key={job.id} onClick={() => loadJobDetail(job)}>
+        <header>
+          <label onClick={(event) => event.stopPropagation()}>
+            <input type="checkbox" checked={selectedJobIds.includes(job.id)} onChange={() => toggleSelectedJob(job.id)} />
+          </label>
+          <strong>{displayShortId(job.id)}</strong>
+          <span className="resourceTypeBadge">{job.targetStageType}</span>
+          <span className={`statusPill ${job.status === "FAILED" ? "danger" : job.status === "COMPLETED" ? "ready" : ""}`}>{job.status}</span>
+        </header>
+        <div className="resourceMetaGrid">
+          <span>Source</span><strong>{sourceBatch?.batchType ?? "-"} / {displayShortId(job.sourceBatchId)}</strong>
+          <span>Group</span><strong>{group?.name ?? "-"}</strong>
+          <span>Workflow</span><strong>{workflow?.name ?? "-"}</strong>
+          <span>Created</span><strong>{displayDateTime(job.createdAt)}</strong>
+          <span>Instance</span><strong>{displayShortId(displayJobInstance(job) !== "-" ? displayJobInstance(job) : allocation?.instanceId)}</strong>
+          <span>Allocation</span><strong>{displayJobAllocationMode(job) !== "-" ? displayJobAllocationMode(job) : allocation?.allocationMode ?? "-"}</strong>
+        </div>
+        {hasError ? <span className="jobErrorBadge">{findJobError(job, runtime, scriptRuns.find((run) => run.runtimeSessionId === runtime?.id) ?? null) || "Failed"}</span> : null}
+        {job.status === "PENDING" && !instances.some((instance) => (instance.currentPoolType ?? "") === "STANDBY" && instanceCapabilityLabels(instance).includes(job.targetStageType)) ? <small className="warningText">Reason: No eligible STANDBY instance with required capability.</small> : null}
+        <div className="jobCardActions">{renderJobStatusActions(job)}</div>
+      </article>
+    );
+  }
+
+  function runtimeRelationship(session: RuntimeSession) {
+    const job = session.jobId ? jobs.find((item) => item.id === session.jobId) ?? null : null;
+    const run = scriptRuns.find((item) => item.runtimeSessionId === session.id) ?? null;
+    const script = run ? scripts.find((item) => item.id === run.scriptId) ?? null : session.scriptId ? scripts.find((item) => item.id === session.scriptId) ?? null : null;
+    const instance = session.instanceId ? instances.find((item) => item.id === session.instanceId) ?? null : null;
+    const host = hosts.find((item) => item.id === session.hostId || item.hostId === session.hostId || item.hostId === instance?.hostId) ?? null;
+    const sourceBatch = job ? batches.find((batch) => batch.id === job.sourceBatchId) ?? null : null;
+    const output = job ? batches.find((batch) => batchMatchesJob(batch, job)) ?? null : null;
+    return { job, run, script, instance, host, sourceBatch, output };
+  }
+
+  function renderRuntimeActions(session: RuntimeSession) {
+    if (session.status === "PENDING") {
+      return (
+        <>
+          <button disabled title="Start is not exposed for runtime sessions yet">Start</button>
+          <button onClick={(event) => { event.stopPropagation(); selectRuntimeSession(session); }}>Open Detail</button>
+        </>
+      );
+    }
+    if (session.status === "RUNNING") {
+      return (
+        <>
+          <button onClick={(event) => { event.stopPropagation(); selectRuntimeSession(session); }}>Open Detail</button>
+          <button onClick={(event) => { event.stopPropagation(); runtimeAction("test-screenshot", session); }}>Test Screenshot</button>
+          <button onClick={(event) => { event.stopPropagation(); api(`/runtime-sessions/${session.id}/pause`, { method: "POST" }).then(refreshQueue); }}>Pause</button>
+          <button disabled title="Use related job fail action from Jobs page">Mark Failed</button>
+        </>
+      );
+    }
+    if (session.status === "FAILED_RECOVERABLE") {
+      return (
+        <>
+          <button onClick={(event) => { event.stopPropagation(); runtimeAction("recover", session); }}>Recover</button>
+          <button onClick={(event) => { event.stopPropagation(); runtimeAction("mark-unrecoverable", session); }}>Mark Unrecoverable</button>
+          <button onClick={(event) => { event.stopPropagation(); selectRuntimeSession(session); }}>Open Detail</button>
+        </>
+      );
+    }
+    if (session.status === "FAILED") {
+      return (
+        <>
+          <button onClick={(event) => { event.stopPropagation(); selectRuntimeSession(session); setRuntimeDrawerTab("recovery"); }}>View Error</button>
+          <button disabled title="Retry is not exposed for runtime sessions yet">Retry</button>
+          <button onClick={(event) => { event.stopPropagation(); selectRuntimeSession(session); }}>Open Detail</button>
+        </>
+      );
+    }
+    if (session.status === "COMPLETED") {
+      return (
+        <>
+          <button onClick={(event) => { event.stopPropagation(); selectRuntimeSession(session); setRuntimeDrawerTab("output"); }}>View Output</button>
+          <button onClick={(event) => { event.stopPropagation(); selectRuntimeSession(session); }}>Open Detail</button>
+        </>
+      );
+    }
+    return <button onClick={(event) => { event.stopPropagation(); selectRuntimeSession(session); }}>Open Detail</button>;
+  }
+
+  function renderRuntimeSessionCard(session: RuntimeSession) {
+    const { job, run, script, instance } = runtimeRelationship(session);
+    const progress = runtimeProgress(session, run);
+    const error = findJobError(job, session, run);
+    return (
+      <article className={`managementJobCard runtimeSessionCard ${selectedRuntimeId === session.id ? "selected" : ""}`} key={session.id} onClick={() => selectRuntimeSession(session)}>
+        <header>
+          <strong>{displayShortId(session.id)}</strong>
+          <span className={`statusPill ${session.status === "FAILED" || session.status === "FAILED_RECOVERABLE" ? "danger" : session.status === "COMPLETED" ? "ready" : ""}`}>{session.status}</span>
+        </header>
+        <div className="resourceMetaGrid">
+          <span>Job Type</span><strong>{job?.targetStageType ?? "-"}</strong>
+          <span>Script</span><strong>{script?.name ?? displayShortId(run?.scriptVersionId)}</strong>
+          <span>Step</span><strong>{session.currentStepNo}</strong>
+          <span>Progress</span><strong>{progress.completed}/{progress.total || "-"}</strong>
+          <span>Host</span><strong>{session.hostId ?? "-"}</strong>
+          <span>Instance</span><strong>{displayShortId(session.instanceId)}</strong>
+          <span>ADB</span><strong>{instance?.adbId ?? "-"}</strong>
+          <span>Started</span><strong>{displayDateTime(session.startedAt ?? session.updatedAt)}</strong>
+          <span>Duration</span><strong>{displayDuration(session.startedAt ?? session.updatedAt, session.finishedAt)}</strong>
+        </div>
+        {error ? <span className="jobErrorBadge">{error}</span> : null}
+        <div className="jobCardActions">{renderRuntimeActions(session)}</div>
+      </article>
+    );
+  }
+
   return (
     <main className="studio">
       <header className="topbar">
@@ -3158,84 +5075,216 @@ export function App() {
           ) : null}
 
           {managementSection === "workflows" ? (
-            <div className="adminGrid">
-              <div className="adminForm">
-                <label>Workflow<select value={selectedWorkflow?.id ?? ""} onChange={(event) => {
-                  setSelectedWorkflowId(event.target.value);
-                  const nextRun = workflowRuns.find((run) => run.workflowId === event.target.value);
-                  setSelectedWorkflowRunId(nextRun?.id ?? "");
-                  setCapacityResult(null);
-                }}><option value="">Select workflow</option>{workflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}</select></label>
-                <label>Workflow Run<select value={selectedWorkflowRun?.id ?? ""} onChange={(event) => { setSelectedWorkflowRunId(event.target.value); setCapacityResult(null); }}><option value="">Select run</option>{workflowRuns.filter((run) => !selectedWorkflow || run.workflowId === selectedWorkflow.id).map((run) => <option key={run.id} value={run.id}>{displayShortId(run.id)} / {run.status}</option>)}</select></label>
-                <div className="adminNotice">
-                  <strong>Resource-Driven Workflow Template</strong>
-                  <span>New workflows default to resource-driven rules. Legacy Sequential Stages are kept only for compatibility.</span>
-                </div>
-                {capacityStageOptions.map((stageType) => (
-                  <label key={stageType}>{stageType}<input type="number" min="0" value={capacityForm[stageType] ?? 0} onChange={(event) => setCapacityForm({ ...capacityForm, [stageType]: Number(event.target.value) })} /></label>
-                ))}
-                <button disabled={!selectedWorkflow} onClick={() => saveWorkflowCapacity("workflow")}>Save Workflow Capacity</button>
-                <button disabled={!selectedWorkflowRun} onClick={() => saveWorkflowCapacity("run")}>Save Run Capacity</button>
-                <button disabled={!selectedWorkflowRun} onClick={() => allocateWorkflowCapacity()}>Allocate Capacity</button>
-                <button disabled={!selectedWorkflowRun} onClick={loadWorkflowRunCapacity}>Refresh Capacity</button>
-                <label>Resource-Driven Rules (Recommended)<textarea rows={10} value={workflowTemplateJson.resourceRules} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, resourceRules: event.target.value })} /></label>
-                <button disabled={!selectedWorkflow} onClick={() => saveWorkflowTemplateField("resourceRules", "resource-rules", "Resource-Driven Rules")}>Save Resource-Driven Rules</button>
-                <div className="adminNotice muted">
-                  <strong>Legacy Sequential Stages</strong>
-                  <span>workflow_stages remains available for older workflow runs and APIs, but should not be used for new production templates.</span>
-                </div>
-                <label>Script Mapping<textarea rows={6} value={workflowTemplateJson.scriptMapping} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, scriptMapping: event.target.value })} /></label>
-                <button disabled={!selectedWorkflow} onClick={() => saveWorkflowTemplateField("scriptMapping", "script-mapping", "Script Mapping")}>Save Script Mapping</button>
-                <label>Prompt Mapping<textarea rows={6} value={workflowTemplateJson.promptMapping} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, promptMapping: event.target.value })} /></label>
-                <button disabled={!selectedWorkflow} onClick={() => saveWorkflowTemplateField("promptMapping", "prompt-mapping", "Prompt Mapping")}>Save Prompt Mapping</button>
-                <label>Music Policy<textarea rows={5} value={workflowTemplateJson.musicPolicy} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, musicPolicy: event.target.value })} /></label>
-                <button disabled={!selectedWorkflow} onClick={() => saveWorkflowTemplateField("musicPolicy", "music-policy", "Music Policy")}>Save Music Policy</button>
-                <label>Post Content Policy<textarea rows={5} value={workflowTemplateJson.postContentPolicy} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, postContentPolicy: event.target.value })} /></label>
-                <button disabled={!selectedWorkflow} onClick={() => saveWorkflowTemplateField("postContentPolicy", "post-content-policy", "Post Content Policy")}>Save Post Content Policy</button>
-              </div>
-              <div className="adminTable">
-                {workflows.filter((workflow) => compactJson(workflow).toLowerCase().includes(adminSearch.toLowerCase())).slice(0, 12).map((workflow) => (
-                  <div className="adminRow" key={workflow.id} onClick={() => {
-                    setSelectedWorkflowId(String(workflow.id));
-                    const nextRun = workflowRuns.find((run) => run.workflowId === workflow.id);
-                    setSelectedWorkflowRunId(nextRun?.id ?? "");
-                    setCapacityResult(null);
-                  }}>
-                    <b>{workflow.name}</b><span>{workflow.status}</span><span>{displayShortId(workflow.id)}</span><span>{workflow.description ?? "-"}</span>
-                    <pre>{compactJson(workflow.capacityConfig ?? {})}</pre>
-                    <pre>{compactJson({
-                      resourceRules: workflow.resourceRules ?? [],
-                      scriptMapping: workflow.scriptMapping ?? {},
-                      promptMapping: workflow.promptMapping ?? {},
-                      musicPolicy: workflow.musicPolicy ?? {},
-                      postContentPolicy: workflow.postContentPolicy ?? {}
-                    })}</pre>
-                    {workflowRuns.filter((run) => run.workflowId === workflow.id).slice(0, 4).map((run) => (
-                      <div className="nestedRow" key={run.id}>
-                        <span>{displayShortId(run.id)}</span><span>{run.status}</span><span>{run.currentStageNo ?? 0}</span><small>{displayDateTime(run.createdAt)}</small>
-                        <button onClick={(event) => { event.stopPropagation(); setSelectedWorkflowId(String(workflow.id)); setSelectedWorkflowRunId(String(run.id)); setCapacityResult(null); }}>Select Run</button>
-                        <button onClick={(event) => { event.stopPropagation(); setSelectedWorkflowId(String(workflow.id)); setSelectedWorkflowRunId(String(run.id)); allocateWorkflowCapacity(String(run.id)); }}>Allocate</button>
-                      </div>
-                    ))}
+            <div className="workflowManager">
+              <div className="resourceKpiBar">
+                {[
+                  { label: "Total Workflows", value: workflowKpis.total, Icon: Boxes },
+                  { label: "Active Workflows", value: workflowKpis.active, Icon: Check },
+                  { label: "Draft Workflows", value: workflowKpis.draft, Icon: Edit3 },
+                  { label: "Resource-Driven", value: workflowKpis.resourceDriven, Icon: Rocket },
+                  { label: "Legacy Sequential", value: workflowKpis.legacy, Icon: Archive },
+                  { label: "With Capacity", value: workflowKpis.capacity, Icon: Users },
+                  { label: "With Music Policy", value: workflowKpis.music, Icon: Music },
+                  { label: "With Post Content", value: workflowKpis.post, Icon: ClipboardList }
+                ].map(({ label, value, Icon }) => (
+                  <div className="resourceKpiCard" key={label}>
+                    <Icon size={17} />
+                    <span>{label}</span>
+                    <strong>{value}</strong>
                   </div>
                 ))}
-                {capacityResult ? (
-                  <div className="adminResult">
-                    <strong>{capacityResult.code ?? "Capacity"}</strong>
-                    <pre>{compactJson(capacityResult.details ?? capacityResult.capacityConfig)}</pre>
-                    <div className="capacityAllocationList">
-                      {capacityResult.allocations.map((allocation) => (
-                        <div key={allocation.id}>
-                          <b>{allocation.instanceId}</b>
-                          <span>{allocation.status}</span>
-                          <small>{getString(allocation.metadata?.stageType)} / {allocation.hostId ?? "-"} / {allocation.adbId ?? "-"}</small>
+              </div>
+
+              <div className="jobsOpsToolbar">
+                <button className="primaryButton compact" onClick={() => setShowWorkflowWizard(true)}>New Workflow</button>
+                <div className="segmentedControl">
+                  <button className={workflowViewMode === "card" ? "active" : ""} onClick={() => setWorkflowViewMode("card")}>Card View</button>
+                  <button className={workflowViewMode === "table" ? "active" : ""} onClick={() => setWorkflowViewMode("table")}>Table View</button>
+                </div>
+              </div>
+
+              <div className="resourceFiltersPanel">
+                <label>Search<input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder="workflow name..." /></label>
+                <label>Status<select value={workflowStatusFilter} onChange={(event) => setWorkflowStatusFilter(event.target.value)}><option value="">All</option><option value="active">Active</option><option value="draft">Draft</option><option value="archived">Archived</option></select></label>
+                <label>Mode<select value={workflowModeFilter} onChange={(event) => setWorkflowModeFilter(event.target.value)}><option value="">All</option><option value="Resource-Driven">Resource-Driven</option><option value="Legacy">Legacy</option><option value="Mixed">Mixed</option></select></label>
+                <div className="resourceFilterChecks">
+                  <label><input type="checkbox" checked={workflowHasCapacityFilter} onChange={(event) => setWorkflowHasCapacityFilter(event.target.checked)} /> Has capacity</label>
+                  <label><input type="checkbox" checked={workflowHasMusicFilter} onChange={(event) => setWorkflowHasMusicFilter(event.target.checked)} /> Has music policy</label>
+                  <label><input type="checkbox" checked={workflowHasPostFilter} onChange={(event) => setWorkflowHasPostFilter(event.target.checked)} /> Has post content</label>
+                  <label><input type="checkbox" checked={workflowRecentFilter} onChange={(event) => setWorkflowRecentFilter(event.target.checked)} /> Updated recently</label>
+                </div>
+              </div>
+
+              <div className="workflowLayout">
+                <section className="workflowMain">
+                  {workflowViewMode === "card" ? (
+                    <div className="workflowCardGrid">
+                      {filteredWorkflows.map((workflow) => {
+                        const mode = workflowModeLabel(workflow);
+                        const musicMode = getString(getRecord(workflow.musicPolicy).mode) || "-";
+                        return (
+                          <article className={`workflowCard ${selectedWorkflow?.id === workflow.id ? "selected" : ""}`} key={workflow.id} onClick={() => openWorkflow(workflow)}>
+                            <header>
+                              <strong>{workflow.name}</strong>
+                              <span className="resourceTypeBadge">{mode}</span>
+                            </header>
+                            <div className="resourceBadgeRow"><span className="statusPill">{workflow.status}</span><span className="statusPill">{(workflow.resourceRules ?? []).length} rules</span></div>
+                            <p>{workflow.description || "No description."}</p>
+                            <div className="resourceMetaGrid">
+                              <span>Capacity</span><strong>{workflowCapacitySummary(workflow.capacityConfig)}</strong>
+                              <span>Music</span><strong>{musicMode}</strong>
+                              <span>Post Content</span><strong>{Object.keys(workflow.postContentPolicy ?? {}).length ? "enabled" : "-"}</strong>
+                              <span>Updated</span><strong>{displayDateTime(workflow.updatedAt ?? undefined)}</strong>
+                            </div>
+                            <div className="resourceActions">
+                              <button onClick={(event) => { event.stopPropagation(); openWorkflow(workflow); }}><Eye size={15} /> Open</button>
+                              <button onClick={(event) => { event.stopPropagation(); duplicateWorkflow(workflow); }}><Copy size={15} /> Duplicate</button>
+                              <button onClick={(event) => { event.stopPropagation(); launchWorkflow(workflow); }}><Rocket size={15} /> Launch</button>
+                              <button onClick={(event) => { event.stopPropagation(); adminAction("Archiving workflow", () => api(`/workflows/${workflow.id}`, { method: "PATCH", body: JSON.stringify({ status: "archived" }) })); }}><Archive size={15} /> Archive</button>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="jobsTable operationsTable">
+                      <div className="jobsTableHeader"><span>Name</span><span>Status</span><span>Mode</span><span>Rules</span><span>Capacity</span><span>Music</span><span>Updated</span><span>Actions</span></div>
+                      {filteredWorkflows.map((workflow) => (
+                        <div className={`jobsTableRow ${selectedWorkflow?.id === workflow.id ? "selected" : ""}`} key={workflow.id} onClick={() => openWorkflow(workflow)}>
+                          <strong>{workflow.name}</strong><span>{workflow.status}</span><span>{workflowModeLabel(workflow)}</span><span>{workflow.resourceRules?.length ?? 0}</span><span>{workflowCapacitySummary(workflow.capacityConfig)}</span><span>{getString(getRecord(workflow.musicPolicy).mode) || "-"}</span><span>{displayDateTime(workflow.updatedAt ?? undefined)}</span>
+                          <div className="jobActions"><button onClick={(event) => { event.stopPropagation(); openWorkflow(workflow); }}>Open</button><button onClick={(event) => { event.stopPropagation(); duplicateWorkflow(workflow); }}>Duplicate</button></div>
                         </div>
                       ))}
-                      {!capacityResult.allocations.length ? <p className="emptyDetail">No capacity allocations yet.</p> : null}
                     </div>
-                  </div>
-                ) : null}
+                  )}
+                  {!filteredWorkflows.length ? <p className="emptyDetail">No workflows match current filters.</p> : null}
+                </section>
+
+                <aside className="workflowDrawer">
+                  {selectedWorkflow ? (
+                    <>
+                      <div className="drawerHeader">
+                        <div><strong>{selectedWorkflow.name}</strong><small>{workflowModeLabel(selectedWorkflow, workflowDetail?.legacyStages ?? [])} / {displayShortId(selectedWorkflow.id)}</small></div>
+                        <button className="iconButton" onClick={() => setSelectedWorkflowId("")}>x</button>
+                      </div>
+                      <div className="resourceDrawerTabs">
+                        {[
+                          ["overview", "Overview"], ["rules", "Resource Rules"], ["prompts", "Prompt Mapping"], ["scripts", "Script Mapping"], ["capacity", "Capacity"], ["music", "Music Policy"], ["post", "Post Content"], ["legacy", "Legacy Stages"], ["runs", "Runs"], ["json", "Debug JSON"]
+                        ].map(([tab, label]) => <button key={tab} className={workflowDrawerTab === tab ? "active" : ""} onClick={() => setWorkflowDrawerTab(tab as typeof workflowDrawerTab)}>{label}</button>)}
+                      </div>
+
+                      {workflowDrawerTab === "overview" ? (
+                        <div className="resourceDrawerBody">
+                          <div className="workflowPipelinePreview">
+                            <span>CHARACTER_GROUP</span><b>IMAGE_EDIT</b><span>IMAGE_BATCH</span><b>VIDEO_GENERATE</b><span>VIDEO_BATCH</span><b>VIDEO_COMPOSE</b><span>FINAL_VIDEO</span><b>POST_CONTENT</b><span>POST_CONTENT</span>
+                          </div>
+                          <div className="resourceMetaGrid detail">
+                            <span>Name</span><strong>{selectedWorkflow.name}</strong>
+                            <span>Status</span><strong>{selectedWorkflow.status}</strong>
+                            <span>Mode</span><strong>{workflowModeLabel(selectedWorkflow, workflowDetail?.legacyStages ?? [])}</strong>
+                            <span>Created</span><strong>{displayDateTime(selectedWorkflow.createdAt ?? undefined)}</strong>
+                            <span>Updated</span><strong>{displayDateTime(selectedWorkflow.updatedAt ?? undefined)}</strong>
+                            <span>Production Summary</span><strong>{workflowRuns.filter((run) => run.workflowId === selectedWorkflow.id).length} runs / {batches.filter((batch) => batch.workflowId === selectedWorkflow.id).length} batches</strong>
+                          </div>
+                          {(workflowDetail?.warnings ?? []).map((warning) => <span className="jobErrorBadge" key={warning}>{warning}</span>)}
+                        </div>
+                      ) : null}
+
+                      {workflowDrawerTab === "rules" ? (
+                        <div className="resourceDrawerBody">
+                          {(JSON.parse(workflowTemplateJson.resourceRules || "[]") as Array<Record<string, unknown>>).map((rule, index) => (
+                            <article className="workflowRuleCard" key={index}>
+                              <strong>{String(rule.trigger)} → {String(rule.targetJobType)} → {String(rule.outputBatchType ?? "-")}</strong>
+                              <small>requires {(Array.isArray(rule.requires) ? rule.requires : []).join(", ") || "-"} / script {String(rule.scriptCategory ?? "-")} / prompt {String(rule.promptCategory ?? "-")}</small>
+                              <div className="resourceActions"><button onClick={() => {
+                                const rules = JSON.parse(workflowTemplateJson.resourceRules || "[]") as Array<Record<string, unknown>>;
+                                rules.splice(index + 1, 0, { ...rule });
+                                setWorkflowTemplateJson({ ...workflowTemplateJson, resourceRules: JSON.stringify(rules, null, 2) });
+                              }}>Duplicate</button><button onClick={() => {
+                                const rules = JSON.parse(workflowTemplateJson.resourceRules || "[]") as Array<Record<string, unknown>>;
+                                rules[index] = { ...rule, enabled: rule.enabled === false };
+                                setWorkflowTemplateJson({ ...workflowTemplateJson, resourceRules: JSON.stringify(rules, null, 2) });
+                              }}>Enable/Disable</button><button onClick={() => {
+                                const rules = JSON.parse(workflowTemplateJson.resourceRules || "[]") as Array<Record<string, unknown>>;
+                                rules.splice(index, 1);
+                                setWorkflowTemplateJson({ ...workflowTemplateJson, resourceRules: JSON.stringify(rules, null, 2) });
+                              }}>Delete</button></div>
+                            </article>
+                          ))}
+                          <button onClick={() => setWorkflowTemplateJson({ ...workflowTemplateJson, resourceRules: JSON.stringify([...JSON.parse(workflowTemplateJson.resourceRules || "[]"), { trigger: "CHARACTER_GROUP.READY", targetJobType: "IMAGE_EDIT", outputBatchType: "IMAGE_BATCH" }], null, 2) })}>Add Rule</button>
+                          <label>Resource-Driven Rules (Recommended)<textarea rows={10} value={workflowTemplateJson.resourceRules} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, resourceRules: event.target.value })} /></label>
+                          <button onClick={() => saveWorkflowTemplateField("resourceRules", "resource-rules", "Resource-Driven Rules")}>Save Resource Rules</button>
+                        </div>
+                      ) : null}
+
+                      {workflowDrawerTab === "prompts" ? (
+                        <div className="resourceDrawerBody">{workflowJobTypes.map((jobType) => {
+                          const mapping = getRecord(JSON.parse(workflowTemplateJson.promptMapping || "{}"));
+                          const selectedId = getString(mapping[jobType]);
+                          return <label key={jobType}>{jobType} → Prompt Template<select value={selectedId} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, promptMapping: JSON.stringify({ ...mapping, [jobType]: event.target.value }, null, 2) })}><option value="">Select template</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>;
+                        })}<button onClick={() => saveWorkflowTemplateField("promptMapping", "prompt-mapping", "Prompt Mapping")}>Save Prompt Mapping</button></div>
+                      ) : null}
+
+                      {workflowDrawerTab === "scripts" ? (
+                        <div className="resourceDrawerBody">{workflowJobTypes.map((jobType) => {
+                          const mapping = getRecord(JSON.parse(workflowTemplateJson.scriptMapping || "{}"));
+                          const selectedId = getString(mapping[jobType]);
+                          return <label key={jobType}>{jobType} → Script<select value={selectedId} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, scriptMapping: JSON.stringify({ ...mapping, [jobType]: event.target.value }, null, 2) })}><option value="">Select script</option>{scripts.filter((script) => !script.category || script.category === jobType || script.category === "UTILITY").map((script) => <option key={script.id} value={script.id}>{script.name}</option>)}</select></label>;
+                        })}<button onClick={() => saveWorkflowTemplateField("scriptMapping", "script-mapping", "Script Mapping")}>Save Script Mapping</button></div>
+                      ) : null}
+
+                      {workflowDrawerTab === "capacity" ? (
+                        <div className="resourceDrawerBody">
+                          {capacityStageOptions.map((stageType) => <label key={stageType}>{stageType}<input type="number" min="0" value={capacityForm[stageType] ?? 0} onChange={(event) => setCapacityForm({ ...capacityForm, [stageType]: Number(event.target.value) })} /></label>)}
+                          <div className="resourceActions"><button onClick={() => saveWorkflowCapacity("workflow")}>Save Capacity</button><button disabled={!selectedWorkflowRun} onClick={() => allocateWorkflowCapacity()}>Allocate Capacity</button></div>
+                          {capacityResult ? <pre className="jsonBlock">{compactJson(capacityResult)}</pre> : null}
+                        </div>
+                      ) : null}
+
+                      {workflowDrawerTab === "music" ? (
+                        <div className="resourceDrawerBody">
+                          <div className="adminNotice"><strong>Music Policy</strong><span>RANDOM_LIBRARY selects reusable music randomly. REQUIRE_MATCHED waits for suitable music. CREATE_DEDICATED generates suitable music first.</span></div>
+                          <label>Music Policy JSON<textarea rows={6} value={workflowTemplateJson.musicPolicy} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, musicPolicy: event.target.value })} /></label>
+                          <button onClick={() => saveWorkflowTemplateField("musicPolicy", "music-policy", "Music Policy")}>Save Music Policy</button>
+                        </div>
+                      ) : null}
+
+                      {workflowDrawerTab === "post" ? (
+                        <div className="resourceDrawerBody"><label>Post Content Policy JSON<textarea rows={6} value={workflowTemplateJson.postContentPolicy} onChange={(event) => setWorkflowTemplateJson({ ...workflowTemplateJson, postContentPolicy: event.target.value })} /></label><button onClick={() => saveWorkflowTemplateField("postContentPolicy", "post-content-policy", "Post Content Policy")}>Save Post Content Policy</button></div>
+                      ) : null}
+
+                      {workflowDrawerTab === "legacy" ? (
+                        <div className="resourceDrawerBody"><div className="adminNotice muted"><strong>Legacy Sequential Stages - Compatibility Only</strong><span>workflow_stages remains available for old APIs and runs. New templates should use Resource-Driven Rules.</span></div>{(workflowDetail?.legacyStages ?? []).map((stage) => <div className="resourceRelatedRow" key={stage.id}><strong>{stage.stageNo}. {stage.name}</strong><span>{stage.stageType}</span><small>{stage.poolType ?? "-"}</small></div>)}</div>
+                      ) : null}
+
+                      {workflowDrawerTab === "runs" ? (
+                        <div className="resourceDrawerBody">{(workflowDetail?.runs ?? workflowRuns.filter((run) => run.workflowId === selectedWorkflow.id)).map((run) => <button className="resourceRelatedRow" key={run.id} onClick={() => setSelectedWorkflowRunId(run.id)}><strong>{displayShortId(run.id)}</strong><span>{run.status}</span><small>{displayDateTime(run.createdAt)}</small></button>)}<button onClick={() => launchWorkflow()}>Launch Workflow Run</button></div>
+                      ) : null}
+
+                      {workflowDrawerTab === "json" ? <div className="resourceDrawerBody"><pre className="jsonBlock">{compactJson(workflowDetail ?? selectedWorkflow)}</pre></div> : null}
+                    </>
+                  ) : <p className="emptyDetail">Select a workflow.</p>}
+                </aside>
               </div>
+
+              {showWorkflowWizard ? (
+                <div className="instanceDrawerOverlay">
+                  <aside className="workflowWizard">
+                    <div className="drawerHeader"><div><strong>New Workflow</strong><small>Step {workflowWizardStep} / 8</small></div><button className="iconButton" onClick={() => setShowWorkflowWizard(false)}>x</button></div>
+                    <div className="scriptDrawerBody">
+                      {workflowWizardStep === 1 ? <><label>Name<input value={workflowWizard.name} onChange={(event) => setWorkflowWizard({ ...workflowWizard, name: event.target.value })} /></label><label>Description<textarea value={workflowWizard.description} onChange={(event) => setWorkflowWizard({ ...workflowWizard, description: event.target.value })} /></label><label>Status<select value={workflowWizard.status} onChange={(event) => setWorkflowWizard({ ...workflowWizard, status: event.target.value })}><option value="draft">draft</option><option value="active">active</option></select></label></> : null}
+                      {workflowWizardStep === 2 ? <label>Template Type<select value={workflowWizard.templateType} onChange={(event) => updateWorkflowWizardTemplate(event.target.value)}>{workflowTemplateOptions.map((option) => <option key={option}>{option}</option>)}</select></label> : null}
+                      {workflowWizardStep === 3 ? <label>Resource Rules<textarea rows={10} value={workflowWizard.resourceRules} onChange={(event) => setWorkflowWizard({ ...workflowWizard, resourceRules: event.target.value })} /></label> : null}
+                      {workflowWizardStep === 4 ? <label>Prompt Mapping<textarea rows={8} value={workflowWizard.promptMapping} onChange={(event) => setWorkflowWizard({ ...workflowWizard, promptMapping: event.target.value })} /></label> : null}
+                      {workflowWizardStep === 5 ? <label>Script Mapping<textarea rows={8} value={workflowWizard.scriptMapping} onChange={(event) => setWorkflowWizard({ ...workflowWizard, scriptMapping: event.target.value })} /></label> : null}
+                      {workflowWizardStep === 6 ? <label>Capacity<textarea rows={8} value={workflowWizard.capacity} onChange={(event) => setWorkflowWizard({ ...workflowWizard, capacity: event.target.value })} /></label> : null}
+                      {workflowWizardStep === 7 ? <><label>Music Policy<textarea rows={6} value={workflowWizard.musicPolicy} onChange={(event) => setWorkflowWizard({ ...workflowWizard, musicPolicy: event.target.value })} /></label><label>Post Content Policy<textarea rows={6} value={workflowWizard.postContentPolicy} onChange={(event) => setWorkflowWizard({ ...workflowWizard, postContentPolicy: event.target.value })} /></label></> : null}
+                      {workflowWizardStep === 8 ? <pre className="jsonBlock">{compactJson(workflowWizard)}</pre> : null}
+                      <div className="resourceActions"><button disabled={workflowWizardStep <= 1} onClick={() => setWorkflowWizardStep((step) => Math.max(1, step - 1))}>Back</button><button disabled={workflowWizardStep >= 8} onClick={() => setWorkflowWizardStep((step) => Math.min(8, step + 1))}>Next</button><button onClick={createWorkflowFromWizard}>Create Workflow</button></div>
+                    </div>
+                  </aside>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -3274,95 +5323,554 @@ export function App() {
           ) : null}
 
           {managementSection === "instance-pools" ? (
-            <div className="adminGrid">
-              <div className="adminForm">
-                <label>Name<input value={poolForm.name} onChange={(event) => setPoolForm({ ...poolForm, name: event.target.value })} /></label>
-                <label>Pool Type<select value={poolForm.poolType} onChange={(event) => setPoolForm({ ...poolForm, poolType: event.target.value })}>{Object.keys(stageTypeToPoolType).map((type) => <option key={type}>{type}</option>)}</select></label>
-                <label>Status<input value={poolForm.status} onChange={(event) => setPoolForm({ ...poolForm, status: event.target.value })} /></label>
-                <button onClick={() => adminAction("Creating pool", () => api("/instance-pools", { method: "POST", body: JSON.stringify(poolForm) }))}>Create Pool</button>
-                <hr />
-                <label>Selected Pool<select value={selectedPoolId} onChange={(event) => { setSelectedPoolId(event.target.value); loadPoolDetail(event.target.value); }}>{pools.map((pool) => <option key={pool.id} value={pool.id}>{pool.name}</option>)}</select></label>
-                <label>Discovered Instance<select value={selectedInstanceId} onChange={(event) => setSelectedInstanceId(event.target.value)}>{instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.id} / {instance.adbId ?? "no adb"}</option>)}</select></label>
-                <label>Priority<input value={memberForm.priority} onChange={(event) => setMemberForm({ ...memberForm, priority: event.target.value })} /></label>
-                <label>Status<input value={memberForm.status} onChange={(event) => setMemberForm({ ...memberForm, status: event.target.value })} /></label>
-                <label>Notes<input value={memberForm.metadata} onChange={(event) => setMemberForm({ ...memberForm, metadata: event.target.value })} /></label>
-                <button disabled={!selectedPoolId || !selectedInstanceId} onClick={() => addInstanceToPool()}>Add Instance</button>
+            <div className="capacityPoolsPage">
+              <div className="sectionIntro">
+                <div>
+                  <h3>Capacity Pools</h3>
+                  <p>Manage instance availability, capabilities, and production capacity.</p>
+                </div>
+                <span className="statusPill">Dynamic Standby + Capability Matching</span>
               </div>
-              <div className="adminTable">
-                {pools.slice(0, 20).map((pool) => (
-                  <div className="adminRow" key={pool.id} onClick={() => { setSelectedPoolId(pool.id); loadPoolDetail(pool.id); }}>
-                    <b>{pool.name}</b><span>{pool.poolType}</span><span>{pool.status}</span>
-                    {(pool.members ?? []).map((member) => (
-                      <div className="nestedRow" key={member.id}>
-                        <span>{member.instanceId}</span><span>{member.status}</span><span>{member.priority}</span><small>{member.instance?.adbId ?? compactJson(member.metadata)}</small>
-                        <button onClick={(event) => { event.stopPropagation(); adminAction("Updating member", () => api(`/instance-pools/${pool.id}/members/${member.id}`, { method: "PATCH", body: JSON.stringify({ status: member.status === "ACTIVE" ? "INACTIVE" : "ACTIVE", metadata: member.metadata ?? {} }) }).then(() => loadPoolDetail(pool.id))); }}>Toggle Status</button>
-                        <button onClick={(event) => { event.stopPropagation(); adminAction("Mark error", () => api(`/instance-pools/${pool.id}/members/${member.id}`, { method: "PATCH", body: JSON.stringify({ status: "ERROR" }) }).then(() => loadPoolDetail(pool.id))); }}>Mark Error</button>
-                        <button onClick={(event) => { event.stopPropagation(); adminAction("Removing member", () => api(`/instance-pools/${pool.id}/members/${member.id}`, { method: "DELETE" }).then(() => loadPoolDetail(pool.id))); }}>Remove</button>
-                      </div>
-                    ))}
+
+              <div className="resourceKpiBar">
+                {[
+                  ["Total", capacityPoolKpis.total],
+                  ["AVAILABLE", capacityPoolKpis.available],
+                  ["STANDBY", capacityPoolKpis.standby],
+                  ["WORKFLOW", capacityPoolKpis.workflow],
+                  ["MAINTENANCE", capacityPoolKpis.maintenance],
+                  ["DISABLED", capacityPoolKpis.disabled],
+                  ["RETIRED", capacityPoolKpis.retired]
+                ].map(([label, value]) => (
+                  <div className="resourceKpiCard" key={label}>
+                    <Boxes size={17} />
+                    <span>{label}</span>
+                    <strong>{value}</strong>
                   </div>
                 ))}
               </div>
+
+              <div className="resourceTabs">
+                {([
+                  ["operational", "Operational Pools"],
+                  ["capabilities", "Capabilities"],
+                  ["workflow", "Workflow Capacity"],
+                  ["legacy", "Legacy Pools"]
+                ] as Array<[CapacityPoolsTab, string]>).map(([tab, label]) => (
+                  <button key={tab} className={capacityPoolsTab === tab ? "active" : ""} onClick={() => setCapacityPoolsTab(tab)}>{label}</button>
+                ))}
+              </div>
+
+              <div className="capacityHints">
+                {capacityPoolHints.map((hint) => <span key={hint}>{hint}</span>)}
+              </div>
+
+              <div className="resourceFiltersPanel">
+                <label>Search<input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder="instanceId, hostId, adbId..." /></label>
+                <label>Host<select value={selectedHostId} onChange={(event) => setSelectedHostId(event.target.value)}><option value="">All hosts</option>{hosts.map((host) => <option key={host.id} value={host.hostId}>{host.name}</option>)}</select></label>
+                <label>Current Pool State<select value={instancePoolStateFilter} onChange={(event) => setInstancePoolStateFilter(event.target.value)}><option value="">All states</option>{instancePoolStateOptions.map((state) => <option key={state} value={state}>{state}</option>)}</select></label>
+                <label>Capability<select value={instanceCapabilityFilter} onChange={(event) => setInstanceCapabilityFilter(event.target.value)}><option value="">All capabilities</option>{instanceCapabilityOptions.map((capability) => <option key={capability} value={capability}>{capability}</option>)}</select></label>
+                <label>Runtime<select value={instanceRuntimeFilter} onChange={(event) => setInstanceRuntimeFilter(event.target.value)}><option value="">All runtime states</option>{instanceRuntimeOptions.map((runtimeStatus) => <option key={runtimeStatus} value={runtimeStatus}>{runtimeStatus}</option>)}</select></label>
+              </div>
+
+              {capacityPoolsTab === "operational" ? (
+                <div className="capacityBoard">
+                  {capacityInstanceColumns.map((column) => (
+                    <section className="managementJobColumn" key={column.poolType}>
+                      <header><strong>{column.poolType}</strong><span>{column.items.length}</span></header>
+                      <div className="managementJobCards">
+                        {column.items.map((instance) => (
+                          <article className={`capacityInstanceCard ${capacityDrawerInstanceId === instance.id ? "selected" : ""}`} key={instance.id} onClick={() => selectCapacityInstance(instance)}>
+                            <header>
+                              <strong>{instance.id}</strong>
+                              <span className="statusPill">{instance.status}</span>
+                            </header>
+                            <div className="resourceMetaGrid">
+                              <span>Host</span><strong>{instance.hostId}</strong>
+                              <span>Local</span><strong>{instance.localId ?? "-"}</strong>
+                              <span>ADB</span><strong>{instance.adbId ?? "Unknown"}</strong>
+                              <span>Runtime</span><strong>{instance.runtimeStatus || "-"}</strong>
+                              <span>Last Seen</span><strong>{displayDateTime(instance.lastSeenAt ?? undefined)}</strong>
+                            </div>
+                            {hasUnknownAdbMapping(instance) ? <span className="poolBadge warningBadge">ADB mapping unknown</span> : null}
+                            <div className="resourceBadgeRow">{renderCapabilityBadges(instance)}</div>
+                            {instance.currentWorkflowRunId ? <small>Workflow run: {displayShortId(instance.currentWorkflowRunId)}</small> : null}
+                            {instance.maintenanceReason ? <small className="jobErrorBadge">{instance.maintenanceReason}</small> : null}
+                            <div className="jobCardActions">
+                              <button onClick={(event) => { event.stopPropagation(); moveInstance(instance, "move-available"); }}>Available</button>
+                              <button onClick={(event) => { event.stopPropagation(); moveInstance(instance, "move-standby"); }}>Standby</button>
+                              <button onClick={(event) => { event.stopPropagation(); moveInstance(instance, "move-maintenance"); }}>Maintenance</button>
+                              <button onClick={(event) => { event.stopPropagation(); moveInstance(instance, "disable"); }}>Disable</button>
+                              <button onClick={(event) => { event.stopPropagation(); moveInstance(instance, "retire"); }}>Retire</button>
+                              <button disabled={!instance.adbId} onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "screenshot"); }}>Screenshot</button>
+                              <button onClick={(event) => { event.stopPropagation(); selectCapacityInstance(instance); }}>Detail</button>
+                            </div>
+                          </article>
+                        ))}
+                        {!column.items.length ? <p className="emptyDetail">No instances.</p> : null}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              ) : null}
+
+              {capacityPoolsTab === "capabilities" ? (
+                <div className="capacityCapabilityLayout">
+                  <section className="capacityInstanceList">
+                    <div className="bulkJobBar">
+                      <strong>{selectedCapacityInstanceIds.length} selected</strong>
+                      <label>Capability<select value={capacityBulkCapability} onChange={(event) => setCapacityBulkCapability(event.target.value)}>{capacityStageOptions.map((stageType) => <option key={stageType}>{stageType}</option>)}</select></label>
+                      <button disabled={!selectedCapacityInstanceIds.length} onClick={() => bulkApplyCapacityCapability("add")}>Set capability</button>
+                      <button disabled={!selectedCapacityInstanceIds.length} onClick={() => bulkApplyCapacityCapability("remove")}>Remove capability</button>
+                      <button disabled={!selectedCapacityInstanceIds.length} onClick={() => bulkMoveCapacityInstances("move-standby")}>Move selected to Standby</button>
+                      <button disabled={!selectedCapacityInstanceIds.length} onClick={() => bulkMoveCapacityInstances("move-maintenance")}>Move selected to Maintenance</button>
+                    </div>
+                    {filteredInstances.map((instance) => (
+                      <div className={`capacityListRow ${selectedCapacityInstance?.id === instance.id ? "active" : ""}`} key={instance.id} role="button" tabIndex={0} onClick={() => selectCapacityInstance(instance, "capabilities")} onKeyDown={(event) => { if (event.key === "Enter") selectCapacityInstance(instance, "capabilities"); }}>
+                        <input type="checkbox" checked={selectedCapacityInstanceIds.includes(instance.id)} onChange={(event) => { event.stopPropagation(); toggleCapacitySelectedInstance(instance.id); }} onClick={(event) => event.stopPropagation()} />
+                        <span>{instance.id}</span>
+                        <small>{instance.hostId} / {instance.adbId ?? "no adb"}</small>
+                        <span className="statusPill">{instance.currentPoolType ?? "AVAILABLE"}</span>
+                        <span className="poolBadgeList">{renderCapabilityBadges(instance)}</span>
+                      </div>
+                    ))}
+                  </section>
+                  <aside className="capacityEditor">
+                    {selectedCapacityInstance ? (
+                      <>
+                        <div className="drawerHeader">
+                          <div>
+                            <strong>{selectedCapacityInstance.id}</strong>
+                            <small>{selectedCapacityInstance.hostId} / {selectedCapacityInstance.adbId ?? "ADB unknown"}</small>
+                          </div>
+                          <button onClick={() => setInstanceCapabilities(selectedCapacityInstance)}>JSON</button>
+                        </div>
+                        <div className="capacityCheckboxGrid">
+                          {capacityStageOptions.map((stageType) => (
+                            <label key={stageType}><input type="checkbox" checked={(capacityCapabilityDraft.canRun ?? []).includes(stageType)} onChange={(event) => updateCapacityCanRun(stageType, event.target.checked)} /> {stageType}</label>
+                          ))}
+                        </div>
+                        <label>Apps<input value={(capacityCapabilityDraft.apps ?? []).join(", ")} onChange={(event) => setCapacityCapabilityDraft({ ...capacityCapabilityDraft, apps: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} placeholder="chatgpt, pixverse" /></label>
+                        <label>Browser Profile<input value={String(capacityCapabilityDraft.browserProfile ?? "")} onChange={(event) => setCapacityCapabilityDraft({ ...capacityCapabilityDraft, browserProfile: event.target.value })} /></label>
+                        <div className="resourceFilterChecks">
+                          <label><input type="checkbox" checked={Boolean(capacityCapabilityDraft.supportsUpload)} onChange={(event) => setCapacityCapabilityDraft({ ...capacityCapabilityDraft, supportsUpload: event.target.checked })} /> Supports Upload</label>
+                          <label><input type="checkbox" checked={Boolean(capacityCapabilityDraft.supportsDownload)} onChange={(event) => setCapacityCapabilityDraft({ ...capacityCapabilityDraft, supportsDownload: event.target.checked })} /> Supports Download</label>
+                        </div>
+                        <label>Notes<textarea rows={4} value={String(capacityCapabilityDraft.notes ?? "")} onChange={(event) => setCapacityCapabilityDraft({ ...capacityCapabilityDraft, notes: event.target.value })} /></label>
+                        <div className="resourceActions">
+                          <button onClick={() => saveCapacityCapabilities()}>Save Capabilities</button>
+                          <label>Copy From<select value={capacityCopySourceInstanceId} onChange={(event) => setCapacityCopySourceInstanceId(event.target.value)}><option value="">Select instance</option>{instances.filter((instance) => instance.id !== selectedCapacityInstance.id).map((instance) => <option key={instance.id} value={instance.id}>{instance.id}</option>)}</select></label>
+                          <button disabled={!capacityCopySourceInstanceId} onClick={copyCapacityCapabilities}>Copy Capabilities</button>
+                        </div>
+                      </>
+                    ) : <p className="emptyDetail">Select an instance to edit capabilities.</p>}
+                  </aside>
+                </div>
+              ) : null}
+
+              {capacityPoolsTab === "workflow" ? (
+                <div className="capacityWorkflowGrid">
+                  {capacityWorkflowRows.map(({ workflow, stages }) => (
+                    <article className="workflowCard" key={workflow.id}>
+                      <div className="scriptCardHeader">
+                        <strong>{workflow.name}</strong>
+                        <span className="resourceTypeBadge">{workflow.status}</span>
+                      </div>
+                      <small>{workflowCapacitySummary(workflow.capacityConfig)}</small>
+                      <div className="capacityStageRows">
+                        {stages.map((stage) => (
+                          <div className={`capacityStageRow ${stage.shortage ? "warning" : ""}`} key={stage.stageType}>
+                            <strong>{stage.stageType}</strong>
+                            <span>Required {stage.required}</span>
+                            <span>Standby capable {stage.standbyCapable}</span>
+                            <span>Allocated {stage.allocated}</span>
+                            {stage.shortage ? <b>Shortage {stage.shortage}</b> : <b>OK</b>}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="resourceActions">
+                        <button onClick={() => { setSelectedWorkflowId(workflow.id); setManagementSection("workflows"); }}>Open Workflow</button>
+                        <button onClick={() => { setJobsWorkflowFilter(workflow.id); setManagementSection("jobs"); }}>Open Jobs</button>
+                        <button onClick={() => setStatus("Allocate Capacity is available from Workflow detail when a workflow run is selected.")}>Allocate Capacity</button>
+                        <button onClick={() => setStatus("Release Capacity remains managed by allocation/job completion APIs.")}>Release Capacity</button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
+
+              {capacityPoolsTab === "legacy" ? (
+                <div className="adminGrid">
+                  <div className="adminForm">
+                    <div className="adminNotice muted"><strong>Legacy Static Instance Pools - Compatibility Only</strong><span>New scheduling prefers Dynamic Standby + Capability matching.</span></div>
+                    <label>Name<input value={poolForm.name} onChange={(event) => setPoolForm({ ...poolForm, name: event.target.value })} /></label>
+                    <label>Pool Type<select value={poolForm.poolType} onChange={(event) => setPoolForm({ ...poolForm, poolType: event.target.value })}>{Object.keys(stageTypeToPoolType).map((type) => <option key={type}>{type}</option>)}</select></label>
+                    <label>Status<input value={poolForm.status} onChange={(event) => setPoolForm({ ...poolForm, status: event.target.value })} /></label>
+                    <button onClick={() => adminAction("Creating pool", () => api("/instance-pools", { method: "POST", body: JSON.stringify(poolForm) }))}>Create Legacy Pool</button>
+                    <hr />
+                    <label>Selected Pool<select value={selectedPoolId} onChange={(event) => { setSelectedPoolId(event.target.value); loadPoolDetail(event.target.value); }}>{pools.map((pool) => <option key={pool.id} value={pool.id}>{pool.name}</option>)}</select></label>
+                    <label>Discovered Instance<select value={selectedInstanceId} onChange={(event) => setSelectedInstanceId(event.target.value)}>{instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.id} / {instance.adbId ?? "no adb"}</option>)}</select></label>
+                    <label>Priority<input value={memberForm.priority} onChange={(event) => setMemberForm({ ...memberForm, priority: event.target.value })} /></label>
+                    <label>Status<input value={memberForm.status} onChange={(event) => setMemberForm({ ...memberForm, status: event.target.value })} /></label>
+                    <label>Notes<input value={memberForm.metadata} onChange={(event) => setMemberForm({ ...memberForm, metadata: event.target.value })} /></label>
+                    <button disabled={!selectedPoolId || !selectedInstanceId} onClick={() => addInstanceToPool()}>Add Instance</button>
+                  </div>
+                  <div className="adminTable">
+                    {pools.slice(0, 20).map((pool) => (
+                      <div className="adminRow" key={pool.id} onClick={() => { setSelectedPoolId(pool.id); loadPoolDetail(pool.id); }}>
+                        <b>{pool.name}</b><span>{pool.poolType}</span><span>{pool.status}</span>
+                        {(pool.members ?? []).map((member) => (
+                          <div className="nestedRow" key={member.id}>
+                            <span>{member.instanceId}</span><span>{member.status}</span><span>{member.priority}</span><small>{member.instance?.adbId ?? compactJson(member.metadata)}</small>
+                            <button onClick={(event) => { event.stopPropagation(); adminAction("Updating member", () => api(`/instance-pools/${pool.id}/members/${member.id}`, { method: "PATCH", body: JSON.stringify({ status: member.status === "ACTIVE" ? "INACTIVE" : "ACTIVE", metadata: member.metadata ?? {} }) }).then(() => loadPoolDetail(pool.id))); }}>Toggle Status</button>
+                            <button onClick={(event) => { event.stopPropagation(); adminAction("Mark error", () => api(`/instance-pools/${pool.id}/members/${member.id}`, { method: "PATCH", body: JSON.stringify({ status: "ERROR" }) }).then(() => loadPoolDetail(pool.id))); }}>Mark Error</button>
+                            <button onClick={(event) => { event.stopPropagation(); adminAction("Removing member", () => api(`/instance-pools/${pool.id}/members/${member.id}`, { method: "DELETE" }).then(() => loadPoolDetail(pool.id))); }}>Remove</button>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {selectedCapacityInstance && capacityPoolsTab !== "capabilities" ? (
+                <aside className="capacityDrawer">
+                  <div className="drawerHeader">
+                    <div>
+                      <strong>{selectedCapacityInstance.id}</strong>
+                      <small>{selectedCapacityInstance.currentPoolType ?? "AVAILABLE"} / {selectedCapacityInstance.runtimeStatus || "-"}</small>
+                    </div>
+                    <button className="iconButton" onClick={() => setCapacityDrawerInstanceId("")}>x</button>
+                  </div>
+                  <div className="resourceDrawerTabs">
+                    {([
+                      ["overview", "Overview"],
+                      ["capabilities", "Capabilities"],
+                      ["allocation", "Current Allocation"],
+                      ["history", "History"],
+                      ["host", "Host Test"],
+                      ["json", "Debug JSON"]
+                    ] as Array<[CapacityDrawerTab, string]>).map(([tab, label]) => (
+                      <button key={tab} className={capacityDrawerTab === tab ? "active" : ""} onClick={() => setCapacityDrawerTab(tab)}>{label}</button>
+                    ))}
+                  </div>
+                  <div className="resourceDrawerBody">
+                    {capacityDrawerTab === "overview" ? <div className="resourceMetaGrid detail"><span>Host</span><strong>{selectedCapacityInstance.hostId}</strong><span>Local ID</span><strong>{selectedCapacityInstance.localId ?? "-"}</strong><span>ADB ID</span><strong>{selectedCapacityInstance.adbId ?? "Unknown"}</strong><span>Status</span><strong>{selectedCapacityInstance.status}</strong><span>Last Seen</span><strong>{displayDateTime(selectedCapacityInstance.lastSeenAt ?? undefined)}</strong><span>Workflow Run</span><strong>{selectedCapacityInstance.currentWorkflowRunId ?? "-"}</strong></div> : null}
+                    {capacityDrawerTab === "capabilities" ? <><div className="resourceBadgeRow">{renderCapabilityBadges(selectedCapacityInstance)}</div><pre className="jsonBlock">{compactJson(selectedCapacityInstance.capabilities)}</pre><button onClick={() => { setCapacityPoolsTab("capabilities"); selectCapacityInstance(selectedCapacityInstance, "capabilities"); }}>Edit in Capabilities tab</button></> : null}
+                    {capacityDrawerTab === "allocation" ? <pre className="jsonBlock">{compactJson(selectedCapacityAllocation ?? { message: "No active allocation" })}</pre> : null}
+                    {capacityDrawerTab === "history" ? <div>{allocations.filter((allocation) => allocation.instanceId === selectedCapacityInstance.id).slice(0, 10).map((allocation) => <div className="resourceRelatedRow" key={allocation.id}><strong>{allocation.status}</strong><span>{allocation.allocationMode ?? getString(allocationMetadata(allocation).allocationMode) ?? "-"}</span><small>{displayDateTime(allocation.createdAt ?? undefined)}</small></div>)}</div> : null}
+                    {capacityDrawerTab === "host" ? <div className="resourceActions"><button disabled={!selectedCapacityInstance.adbId} onClick={() => instanceHostAction(selectedCapacityInstance, "screenshot")}>Test Screenshot</button><button onClick={() => instanceHostAction(selectedCapacityInstance, "start")}>Start</button><button onClick={() => instanceHostAction(selectedCapacityInstance, "stop")}>Stop</button><button onClick={() => instanceHostAction(selectedCapacityInstance, "restart")}>Restart</button></div> : null}
+                    {capacityDrawerTab === "json" ? <pre className="jsonBlock">{compactJson(selectedCapacityInstance)}</pre> : null}
+                  </div>
+                </aside>
+              ) : null}
             </div>
           ) : null}
 
           {managementSection === "scripts" ? (
-            <div className="adminGrid">
-              <div className="adminForm">
-                <label>Name<input value={scriptForm.name} onChange={(event) => setScriptForm({ ...scriptForm, name: event.target.value })} /></label>
-                <label>Category<select value={scriptForm.category} onChange={(event) => setScriptForm({ ...scriptForm, category: event.target.value })}>{scriptCategoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
-                <label>Description<input value={scriptForm.description} onChange={(event) => setScriptForm({ ...scriptForm, description: event.target.value })} /></label>
-                <label>Status<input value={scriptForm.status} onChange={(event) => setScriptForm({ ...scriptForm, status: event.target.value })} /></label>
-                <button onClick={() => adminAction("Creating script", () => api<ScriptRecord>("/scripts", { method: "POST", body: JSON.stringify({ name: scriptForm.name, category: scriptForm.category, description: scriptForm.description, status: scriptForm.status }) }).then((script) => { setSelectedScriptId(script.id); return script; }))}>Create Script</button>
-                <button disabled={!selectedScriptId} onClick={saveScriptMetadata}>Save Metadata</button>
-                <label>Script<select value={selectedScriptId} onChange={(event) => {
-                  const scriptId = event.target.value;
-                  const script = scripts.find((item) => item.id === scriptId);
-                  setSelectedScriptId(scriptId);
-                  if (script) setScriptForm({ ...scriptForm, name: script.name, category: script.category ?? "UTILITY", description: script.description ?? "", status: script.status });
-                }}>{scripts.map((script) => <option key={script.id} value={script.id}>{script.name} / {script.category ?? "UTILITY"}</option>)}</select></label>
-                <label>Version<select value={selectedScriptVersionId} onChange={(event) => {
-                  const versionId = event.target.value;
-                  const version = scriptVersions.find((item) => item.id === versionId);
-                  setSelectedScriptVersionId(versionId);
-                  if (version) setScriptForm({ ...scriptForm, steps: compactJson({ steps: version.steps ?? [], variables: version.variables ?? {}, retryPolicy: version.retryPolicy ?? {}, detectionPolicy: version.detectionPolicy ?? {} }) });
-                }}><option value="">Latest active</option>{scriptVersions.map((version) => <option key={version.id} value={version.id}>v{version.versionNo} / {version.status}</option>)}</select></label>
-                <label>Steps JSON<textarea value={scriptForm.steps} onChange={(event) => setScriptForm({ ...scriptForm, steps: event.target.value })} /></label>
-                <button disabled={!selectedScriptId} onClick={createScriptVersion}>Create Version</button>
-                <button disabled={!selectedScriptVersionId} onClick={updateScriptVersion}>Save Version</button>
-                <button disabled={!selectedScriptVersionId} onClick={activateScriptVersion}>Activate Version</button>
-                <label>Host<select value={selectedHost?.id ?? ""} onChange={(event) => setSelectedHostId(event.target.value)}>{hosts.map((host) => <option key={host.id} value={host.id}>{host.name} / {host.hostId}</option>)}</select></label>
-                <label>Instance<select value={selectedInstanceId} onChange={(event) => {
-                  const instance = instances.find((item) => item.id === event.target.value);
-                  setSelectedInstanceId(event.target.value);
-                  setHostInstanceId(event.target.value);
-                  setHostAdbId(instance?.adbId ?? "");
-                }}><option value="">Select instance</option>{instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.id} / {instance.adbId ?? "no adb"}</option>)}</select></label>
-                <label>ADB ID<input value={hostAdbId} onChange={(event) => setHostAdbId(event.target.value)} /></label>
-                <button disabled={!selectedScriptId} onClick={testRunSelectedScript}>Test Run</button>
-              </div>
-              <div className="adminTable">
-                {scripts.filter((script) => compactJson(script).toLowerCase().includes(adminSearch.toLowerCase())).slice(0, 12).map((script) => (
-                  <div className="adminRow" key={script.id} onClick={() => {
-                    setSelectedScriptId(script.id);
-                    setScriptForm({ ...scriptForm, name: script.name, category: script.category ?? "UTILITY", description: script.description ?? "", status: script.status });
-                  }}>
-                    <b>{script.name}</b><span>{script.category ?? "UTILITY"}</span><span>{script.status}</span><small>{displayShortId(script.id)}</small>
-                    <span>{script.description ?? "-"}</span>
-                  </div>
+            <div className="scriptManager">
+              <aside className="scriptCategorySidebar">
+                <button className="primaryButton" onClick={() => adminAction("Creating script", () => api<ScriptRecord>("/scripts", { method: "POST", body: JSON.stringify({ name: scriptForm.name || `New ${scriptForm.category} Script`, category: scriptForm.category, description: scriptForm.description, status: "draft" }) }).then((script) => { setSelectedScriptId(script.id); openScript(script, "steps"); return script; }))}>New Script</button>
+                <button className={!scriptCategoryFilter ? "active" : ""} onClick={() => setScriptCategoryFilter("")}>
+                  <span>All Categories</span>
+                  <b>{scripts.length}</b>
+                </button>
+                {scriptCategoryOptions.map((category) => (
+                  <button key={category} className={scriptCategoryFilter === category ? "active" : ""} onClick={() => setScriptCategoryFilter(category)}>
+                    <span>{category}</span>
+                    <b>{scriptCategoryCounts[category] ?? 0}</b>
+                  </button>
                 ))}
-                {latestSelectedScriptRuns.map((run) => (
-                  <div className="adminRow" key={run.id}>
-                    <b>Run {displayShortId(run.id)}</b><span>{run.status}</span><span>Step {run.currentStepNo}</span><small>{displayShortId(run.runtimeSessionId)}</small>
-                    <button onClick={() => selectRuntimeSession(runtimeSessions.find((session) => session.id === run.runtimeSessionId) ?? { id: run.runtimeSessionId, status: run.status, currentStepNo: run.currentStepNo })}>View Timeline</button>
-                    {(run.steps ?? []).slice(0, 6).map((step) => (
-                      <div className="nestedRow" key={step.id}>
-                        <span>{step.stepNo}. {step.stepType}</span><span>{step.status}</span><span>{step.errorMessage ?? "-"}</span><small>{displayDateTime(step.finishedAt ?? undefined)}</small>
-                      </div>
-                    ))}
+              </aside>
+
+              <section className="scriptMainPanel">
+                <div className="resourceKpiBar">
+                  {[
+                    { label: "Total Scripts", value: scriptKpis.total, Icon: ClipboardList },
+                    { label: "Active Scripts", value: scriptKpis.active, Icon: Check },
+                    { label: "Draft Scripts", value: scriptKpis.draft, Icon: Edit3 },
+                    { label: "Failed Test Runs", value: scriptKpis.failedRuns, Icon: Archive },
+                    { label: "Recent Script Runs", value: scriptKpis.recentRuns, Icon: Play }
+                  ].map(({ label, value, Icon }) => (
+                    <div className="resourceKpiCard" key={label}>
+                      <Icon size={17} />
+                      <span>{label}</span>
+                      <strong>{value}</strong>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="scriptFilters">
+                  <label>Search<input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder="Search script name..." /></label>
+                  <label>Category<select value={scriptCategoryFilter} onChange={(event) => setScriptCategoryFilter(event.target.value)}><option value="">All</option>{scriptCategoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+                  <label>Status<select value={scriptStatusFilter} onChange={(event) => setScriptStatusFilter(event.target.value)}><option value="">All</option><option value="active">active</option><option value="draft">draft</option><option value="archived">archived</option></select></label>
+                  <label>Last Test<select value={scriptLastTestFilter} onChange={(event) => setScriptLastTestFilter(event.target.value)}><option value="">All</option><option value="success">Success</option><option value="failed">Failed</option><option value="not-tested">Not tested</option><option value="running">Running</option></select></label>
+                  <div className="resourceFilterChecks">
+                    <label><input type="checkbox" checked={scriptHasActiveFilter} onChange={(event) => setScriptHasActiveFilter(event.target.checked)} /> Has active version</label>
+                    <label><input type="checkbox" checked={scriptRecentFilter} onChange={(event) => setScriptRecentFilter(event.target.checked)} /> Updated recently</label>
                   </div>
-                ))}
-              </div>
+                </div>
+
+                <div className="scriptWorkspace">
+                  <div className="scriptCardGrid">
+                    {filteredScripts.map((script) => {
+                      const versions = scriptVersionIndex[script.id] ?? [];
+                      const activeVersion = versions.find((version) => String(version.status).toLowerCase() === "active") ?? null;
+                      const latestVersion = activeVersion ?? versions[0] ?? null;
+                      const lastRun = scriptRuns.find((run) => run.scriptId === script.id);
+                      return (
+                        <article className={`scriptCard ${selectedScriptId === script.id ? "selected" : ""}`} key={script.id} onClick={() => openScript(script)}>
+                          <div className="scriptCardHeader">
+                            <strong>{script.name}</strong>
+                            <span className="resourceTypeBadge">{script.category ?? "UTILITY"}</span>
+                          </div>
+                          <div className="resourceBadgeRow">
+                            <span className="statusPill">{script.status}</span>
+                            <span className="statusPill">v{activeVersion?.versionNo ?? latestVersion?.versionNo ?? "-"}</span>
+                          </div>
+                          <p>{script.description || "No description."}</p>
+                          <div className="resourceMetaGrid">
+                            <span>Steps</span><strong>{latestVersion?.steps?.length ?? 0}</strong>
+                            <span>Last test</span><strong>{lastRun?.status ?? "Not tested"}</strong>
+                            <span>Updated</span><strong>{displayDateTime(script.updatedAt ?? undefined)}</strong>
+                          </div>
+                          <div className="resourceActions">
+                            <button onClick={(event) => { event.stopPropagation(); openScript(script); }} title="Open"><Eye size={15} /> Open</button>
+                            <button onClick={(event) => { event.stopPropagation(); duplicateSelectedScript(script); }} title="Duplicate"><Copy size={15} /> Duplicate</button>
+                            <button onClick={(event) => {
+                              event.stopPropagation();
+                              adminAction("Creating script version", async () => {
+                                const source = latestVersion;
+                                const version = await api<ScriptVersionRecord>(`/scripts/${script.id}/versions`, {
+                                  method: "POST",
+                                  body: JSON.stringify({
+                                    status: "draft",
+                                    steps: source?.steps?.length ? source.steps : [{ type: "wait", config: { ms: 500 } }],
+                                    variables: source?.variables ?? {},
+                                    retryPolicy: source?.retryPolicy ?? {},
+                                    detectionPolicy: source?.detectionPolicy ?? {}
+                                  })
+                                });
+                                setSelectedScriptId(script.id);
+                                setSelectedScriptVersionId(version.id);
+                                setScriptDrawerTab("steps");
+                                await refreshScriptVersions(script.id);
+                                return version;
+                              });
+                            }} title="New Version"><PackagePlus size={15} /> Version</button>
+                            <button onClick={(event) => { event.stopPropagation(); openScript(script, "test"); }} title="Test Run"><Play size={15} /> Test</button>
+                            <button onClick={(event) => { event.stopPropagation(); adminAction("Archiving script", () => api(`/scripts/${script.id}`, { method: "PATCH", body: JSON.stringify({ status: "archived" }) })); }} title="Archive"><Archive size={15} /> Archive</button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                    {!filteredScripts.length ? <p className="emptyDetail">No scripts match current filters.</p> : null}
+                  </div>
+
+                  <aside className="scriptDetailDrawer">
+                    {selectedScript ? (
+                      <>
+                        <div className="drawerHeader">
+                          <div>
+                            <strong>{selectedScript.name}</strong>
+                            <small>{selectedScript.category ?? "UTILITY"} / {displayShortId(selectedScript.id)}</small>
+                          </div>
+                          <button className="iconButton" onClick={() => setSelectedScriptId("")} title="Close">x</button>
+                        </div>
+                        <div className="resourceDrawerTabs">
+                          {[
+                            ["overview", "Overview"],
+                            ["versions", "Versions"],
+                            ["steps", "Step Editor"],
+                            ["variables", "Variables"],
+                            ["test", "Test Run"],
+                            ["runs", "Runs"],
+                            ["json", "Debug JSON"]
+                          ].map(([tab, label]) => (
+                            <button key={tab} className={scriptDrawerTab === tab ? "active" : ""} onClick={() => setScriptDrawerTab(tab as typeof scriptDrawerTab)}>{label}</button>
+                          ))}
+                        </div>
+
+                        {scriptDrawerTab === "overview" ? (
+                          <div className="scriptDrawerBody">
+                            <label>Name<input value={scriptForm.name} onChange={(event) => setScriptForm({ ...scriptForm, name: event.target.value })} /></label>
+                            <label>Category<select value={scriptForm.category} onChange={(event) => setScriptForm({ ...scriptForm, category: event.target.value })}>{scriptCategoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+                            <label>Status<select value={scriptForm.status} onChange={(event) => setScriptForm({ ...scriptForm, status: event.target.value })}><option value="active">active</option><option value="draft">draft</option><option value="archived">archived</option></select></label>
+                            <label>Description<textarea value={scriptForm.description} onChange={(event) => setScriptForm({ ...scriptForm, description: event.target.value })} /></label>
+                            <div className="resourceMetaGrid detail">
+                              <span>Active Version</span><strong>{selectedScriptVersion?.versionNo ? `v${selectedScriptVersion.versionNo}` : "-"}</strong>
+                              <span>Created</span><strong>{displayDateTime(selectedScript.createdAt ?? undefined)}</strong>
+                              <span>Updated</span><strong>{displayDateTime(selectedScript.updatedAt ?? undefined)}</strong>
+                              <span>Latest Test</span><strong>{latestSelectedScriptRuns[0]?.status ?? "Not tested"}</strong>
+                            </div>
+                            <div className="resourceActions">
+                              <button onClick={saveScriptMetadata}><Check size={15} /> Save Metadata</button>
+                              <button onClick={() => duplicateSelectedScript()}><Copy size={15} /> Duplicate</button>
+                              <button onClick={archiveSelectedScript}><Archive size={15} /> Archive</button>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {scriptDrawerTab === "versions" ? (
+                          <div className="scriptDrawerBody">
+                            <div className="resourceActions">
+                              <button onClick={createScriptVersion}><PackagePlus size={15} /> New Version</button>
+                              <button disabled={!selectedScriptVersion} onClick={() => duplicateSelectedScriptVersion()}><Copy size={15} /> Duplicate Version</button>
+                            </div>
+                            {scriptVersions.map((version) => (
+                              <button className={`scriptVersionRow ${selectedScriptVersionId === version.id ? "selected" : ""}`} key={version.id} onClick={() => {
+                                setSelectedScriptVersionId(version.id);
+                                setScriptForm({ ...scriptForm, steps: compactJson({ steps: version.steps ?? [], variables: version.variables ?? {}, retryPolicy: version.retryPolicy ?? {}, detectionPolicy: version.detectionPolicy ?? {} }) });
+                              }}>
+                                <strong>v{version.versionNo}</strong>
+                                <span>{version.status}</span>
+                                <span>{version.steps?.length ?? 0} steps</span>
+                                <small>{displayDateTime(version.createdAt)}</small>
+                                <em onClick={(event) => { event.stopPropagation(); adminAction("Activating script version", async () => { const result = await api<ScriptVersionRecord>(`/script-versions/${version.id}/activate`, { method: "POST" }); await refreshScriptVersions(selectedScriptId); return result; }); }}>activate</em>
+                                <em onClick={(event) => { event.stopPropagation(); duplicateSelectedScriptVersion(version); }}>duplicate</em>
+                                <em onClick={(event) => { event.stopPropagation(); archiveScriptVersion(version.id); }}>archive</em>
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {scriptDrawerTab === "steps" ? (
+                          <div className="scriptDrawerBody">
+                            <div className="stepEditorToolbar">
+                              <select onChange={(event) => { if (event.target.value) addScriptStep(event.target.value); event.currentTarget.value = ""; }} defaultValue="">
+                                <option value="">Add step...</option>
+                                {Object.keys(scriptStepTemplates).map((type) => <option key={type} value={type}>{type}</option>)}
+                              </select>
+                              <button onClick={createScriptVersion}><PackagePlus size={15} /> Save as New Version</button>
+                              <button disabled={!selectedScriptVersionId} onClick={updateScriptVersion}><Check size={15} /> Save Draft</button>
+                              <button disabled={!selectedScriptVersionId} onClick={activateScriptVersion}><Rocket size={15} /> Activate</button>
+                            </div>
+                            <div className="scriptValidationPanel">
+                              <strong>Validation</strong>
+                              {scriptValidationMessages.length ? scriptValidationMessages.map((message) => <span className={message.level} key={`${message.index}-${message.message}`}>Step {message.index + 1}: {message.message}</span>) : <span className="ok">All steps look valid.</span>}
+                            </div>
+                            <div className="scriptStepList">
+                              {scriptDraft.steps.map((step, index) => {
+                                const type = scriptStepType(step);
+                                const template = scriptStepTemplates[type];
+                                const config = scriptStepConfig(step);
+                                return (
+                                  <article className={`scriptStepCard ${selectedScriptStepIndex === index ? "selected" : ""}`} key={`${index}-${type}`} onClick={() => setSelectedScriptStepIndex(index)}>
+                                    <header>
+                                      <span>#{index + 1}</span>
+                                      <select value={type} onChange={(event) => updateScriptStep(index, { ...step, type: event.target.value, config: {} })}>
+                                        {Object.keys(scriptStepTemplates).map((option) => <option key={option} value={option}>{option}</option>)}
+                                      </select>
+                                      <small>{scriptStepSummary(step)}</small>
+                                    </header>
+                                    <div className="scriptStepFields">
+                                      {(template?.fields ?? []).map((field) => (
+                                        <label key={field.key}>{field.label}
+                                          {field.type === "json" ? (
+                                            <textarea value={compactJson(config[field.key] ?? [])} onChange={(event) => updateScriptStepConfig(index, field.key, parseJsonText(event.target.value, [] as unknown as Record<string, unknown>))} />
+                                          ) : (
+                                            <input
+                                              type={field.type === "number" ? "number" : "text"}
+                                              value={String(config[field.key] ?? "")}
+                                              onChange={(event) => updateScriptStepConfig(index, field.key, field.type === "number" ? Number(event.target.value) : event.target.value)}
+                                            />
+                                          )}
+                                        </label>
+                                      ))}
+                                    </div>
+                                    <div className="resourceActions">
+                                      <button onClick={(event) => { event.stopPropagation(); moveScriptStep(index, -1); }} title="Move up">↑</button>
+                                      <button onClick={(event) => { event.stopPropagation(); moveScriptStep(index, 1); }} title="Move down">↓</button>
+                                      <button onClick={(event) => { event.stopPropagation(); duplicateScriptStep(index); }} title="Duplicate"><Copy size={14} /></button>
+                                      <button onClick={(event) => { event.stopPropagation(); removeScriptStep(index); }} title="Delete"><Trash2 size={14} /></button>
+                                    </div>
+                                  </article>
+                                );
+                              })}
+                            </div>
+                            <details className="resourceCreatePanel">
+                              <summary>JSON Editor Fallback</summary>
+                              <textarea className="scriptJsonEditor" value={scriptForm.steps} onChange={(event) => setScriptForm({ ...scriptForm, steps: event.target.value })} />
+                            </details>
+                          </div>
+                        ) : null}
+
+                        {scriptDrawerTab === "variables" ? (
+                          <div className="scriptDrawerBody">
+                            <strong>Runtime Variables</strong>
+                            <div className="variableChipGrid">
+                              {scriptRuntimeVariables.map((variable) => <button key={variable} onClick={() => insertScriptVariable(variable)}>{variable}</button>)}
+                            </div>
+                            <small>Click inserts into the selected step config text field.</small>
+                          </div>
+                        ) : null}
+
+                        {scriptDrawerTab === "test" ? (
+                          <div className="scriptDrawerBody">
+                            <label>Host<select value={selectedHost?.id ?? ""} onChange={(event) => setSelectedHostId(event.target.value)}>{hosts.map((host) => <option key={host.id} value={host.id}>{host.name} / {host.hostId}</option>)}</select></label>
+                            <label>Instance<select value={selectedInstanceId} onChange={(event) => {
+                              const instance = instances.find((item) => item.id === event.target.value);
+                              setSelectedInstanceId(event.target.value);
+                              setHostInstanceId(event.target.value);
+                              setHostAdbId(instance?.adbId ?? "");
+                            }}><option value="">Select instance</option>{instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.id} / {instance.adbId ?? "no adb"}</option>)}</select></label>
+                            <label>ADB ID<input value={hostAdbId} onChange={(event) => setHostAdbId(event.target.value)} /></label>
+                            <label>Script Version<select value={selectedScriptVersionId} onChange={(event) => setSelectedScriptVersionId(event.target.value)}>{scriptVersions.map((version) => <option key={version.id} value={version.id}>v{version.versionNo} / {version.status}</option>)}</select></label>
+                            <label>Context JSON<textarea value={scriptTestContext} onChange={(event) => setScriptTestContext(event.target.value)} /></label>
+                            <div className="resourceActions">
+                              <button disabled={!selectedScriptId} onClick={testRunSelectedScript}><Play size={15} /> Run Test</button>
+                              <button disabled={!hostAdbId} onClick={() => runHostAction("screenshot")}><Image size={15} /> Screenshot</button>
+                              <button disabled={!hostAdbId} onClick={() => runHostAction("send-text")}><Edit3 size={15} /> Send Text</button>
+                            </div>
+                            {findUrl(hostResult) ? (
+                              <div className="liveCapturePreview">
+                                <img src={mediaUrl(findUrl(hostResult))} alt="Live capture screenshot" onClick={(event) => {
+                                  const rect = event.currentTarget.getBoundingClientRect();
+                                  const x = Math.round(event.clientX - rect.left);
+                                  const y = Math.round(event.clientY - rect.top);
+                                  const next = [...scriptDraft.steps, normalizeScriptStep({ type: "tap", config: { x, y } }, scriptDraft.steps.length)];
+                                  setScriptDraftDefinition({ steps: next });
+                                  setSelectedScriptStepIndex(next.length - 1);
+                                  setScriptDrawerTab("steps");
+                                }} />
+                                <small>Click screenshot to add a tap step.</small>
+                              </div>
+                            ) : null}
+                            <pre className="jsonBlock">{compactJson(hostResult)}</pre>
+                          </div>
+                        ) : null}
+
+                        {scriptDrawerTab === "runs" ? (
+                          <div className="scriptDrawerBody">
+                            {latestSelectedScriptRuns.map((run) => (
+                              <div className="scriptRunCard" key={run.id}>
+                                <div className="scriptCardHeader">
+                                  <strong>{run.status}</strong>
+                                  <span className="resourceTypeBadge">Step {run.currentStepNo}</span>
+                                </div>
+                                <small>Runtime {displayShortId(run.runtimeSessionId)} / {displayDateTime(run.startedAt ?? undefined)}</small>
+                                <button onClick={() => selectRuntimeSession(runtimeSessions.find((session) => session.id === run.runtimeSessionId) ?? { id: run.runtimeSessionId, status: run.status, currentStepNo: run.currentStepNo })}>Open run detail</button>
+                                {(run.steps ?? []).map((step) => (
+                                  <div className="nestedRow" key={step.id}>
+                                    <span>{step.stepNo}. {step.stepType}</span><span>{step.status}</span><span>{step.errorMessage ?? "-"}</span><small>{displayDateTime(step.finishedAt ?? undefined)}</small>
+                                  </div>
+                                ))}
+                              </div>
+                            ))}
+                            {!latestSelectedScriptRuns.length ? <p className="emptyDetail">No script runs yet.</p> : null}
+                          </div>
+                        ) : null}
+
+                        {scriptDrawerTab === "json" ? (
+                          <div className="scriptDrawerBody">
+                            <pre className="jsonBlock">{compactJson({ script: selectedScript, version: selectedScriptVersion, steps: scriptDraft.steps, runs: latestSelectedScriptRuns })}</pre>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : <p className="emptyDetail">Select a script to view details.</p>}
+                  </aside>
+                </div>
+              </section>
             </div>
           ) : null}
 
@@ -3883,13 +6391,53 @@ export function App() {
                     ) : null}
                     {groupDrawerTab === "attributes" ? (
                       <section className="drawerSection">
-                        <div className="addToGroupRow">
-                          <select value={groupForm.attributeId} onChange={(event) => setGroupForm({ ...groupForm, attributeId: event.target.value })}><option value="">Select attribute</option>{attributes.map((attr) => <option key={attr.id} value={attr.id}>{attr.name}</option>)}</select>
-                          <input value={groupForm.customValue} onChange={(event) => setGroupForm({ ...groupForm, customValue: event.target.value })} placeholder="Custom value" />
-                          <button disabled={!groupForm.attributeId} onClick={assignSelectedGroupAttribute}>Add</button>
+                        <div className="groupAttributeEditor">
+                          {standardGroupAttributeKeys.map((key) => (
+                            <label key={key}>{key}<input value={groupAttributeDrafts[key] ?? ""} onChange={(event) => setGroupAttributeDrafts({ ...groupAttributeDrafts, [key]: event.target.value })} placeholder={`Enter ${key}`} /></label>
+                          ))}
                         </div>
-                        <div className="characterRelationList">
-                          {selectedGroupDetail.attributes.map((attribute) => <div key={attribute.id ?? attribute.attributeId}><b>{attribute.attributeName ?? attribute.attributeKey}</b><span>{attribute.customValue ?? attribute.label ?? attribute.value ?? "-"}</span></div>)}
+                        <div className="customAttributeList">
+                          <div className="drawerSectionHeader">
+                            <strong>Custom Attributes</strong>
+                            <button onClick={() => setCustomGroupAttributes((current) => [...current, { key: "", value: "" }])}>Add Custom</button>
+                          </div>
+                          {customGroupAttributes.map((attribute, index) => (
+                            <div className="customAttributeRow" key={`${attribute.key}-${index}`}>
+                              <input value={attribute.key} onChange={(event) => setCustomGroupAttributes((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} placeholder="attribute key" />
+                              <input value={attribute.value} onChange={(event) => setCustomGroupAttributes((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} placeholder="value" />
+                              <button className="iconButton dangerIconButton" title="Remove custom attribute" aria-label="Remove custom attribute" onClick={() => setCustomGroupAttributes((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={15} /></button>
+                            </div>
+                          ))}
+                          {!customGroupAttributes.length ? <p className="emptyDetail">No custom attributes.</p> : null}
+                        </div>
+                        <div className="controlActions">
+                          <button className="primaryButton" onClick={saveSelectedGroupAttributes}>Save Attributes</button>
+                        </div>
+                        <div className="attributeSuggestionPanel">
+                          <strong>Quick values used by other groups</strong>
+                          {standardGroupAttributeKeys.map((key) => {
+                            const suggestions = (selectedGroupDetail.attributeSuggestions ?? []).filter((item) => normalizeAttributeKey(item.key) === key && item.value);
+                            return (
+                              <div className="attributeSuggestionGroup" key={key}>
+                                <span>{key}</span>
+                                <div>
+                                  {suggestions.slice(0, 10).map((item) => (
+                                    <button key={`${key}-${item.value}`} onClick={() => applyGroupAttributeSuggestion(item.key, item.value)}>{item.value}</button>
+                                  ))}
+                                  {!suggestions.length ? <small>No suggestions yet.</small> : null}
+                                </div>
+                              </div>
+                            );
+                          })}
+                          <div className="attributeSuggestionGroup">
+                            <span>custom</span>
+                            <div>
+                              {(selectedGroupDetail.attributeSuggestions ?? [])
+                                .filter((item) => item.value && !standardGroupAttributeKeys.includes(normalizeAttributeKey(item.key)))
+                                .slice(0, 16)
+                                .map((item) => <button key={`${item.key}-${item.value}`} onClick={() => applyGroupAttributeSuggestion(item.key, item.value)}>{item.key}: {item.value}</button>)}
+                            </div>
+                          </div>
                         </div>
                       </section>
                     ) : null}
@@ -3976,46 +6524,227 @@ export function App() {
           ) : null}
 
           {managementSection === "production-resources" ? (
-            <div className="adminGrid">
-              <div className="adminForm">
-                <label>Batch Type<select value={batchForm.batchType} onChange={(event) => setBatchForm({ ...batchForm, batchType: event.target.value })}>{productionBatchTypeOptions.map((type) => <option key={type}>{type}</option>)}</select></label>
-                <label>Filter<select value={resourceTypeFilter} onChange={(event) => setResourceTypeFilter(event.target.value)}><option value="">All batch types</option>{productionBatchTypeOptions.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
-                <label>Status<input value={batchForm.status} onChange={(event) => setBatchForm({ ...batchForm, status: event.target.value })} /></label>
-                <label>Usage Status<input value={batchForm.usageStatus} onChange={(event) => setBatchForm({ ...batchForm, usageStatus: event.target.value })} /></label>
-                <label>Metadata JSON<textarea value={batchForm.metadata} onChange={(event) => setBatchForm({ ...batchForm, metadata: event.target.value })} /></label>
-                <button onClick={() => adminAction("Creating production batch", () => api("/production-batches", { method: "POST", body: JSON.stringify({ batchType: batchForm.batchType, status: batchForm.status, usageStatus: batchForm.usageStatus, metadata: parseJsonText(batchForm.metadata), attributes: {} }) }))}>Create Batch</button>
-                <label>Selected Batch<select value={selectedResourceId} onChange={(event) => setSelectedResourceId(event.target.value)}>{batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.batchType} {displayShortId(batch.id)}</option>)}</select></label>
-                <div className="controlActions">{["mark-ready", "reserve", "release", "mark-used"].map((action) => <button disabled={!selectedResourceId} key={action} onClick={() => adminAction(action, () => api(`/production-batches/${selectedResourceId}/${action}`, { method: "POST" }))}>{action}</button>)}<button disabled={!selectedResourceId} onClick={() => adminAction("Lineage", () => api(`/production-batches/${selectedResourceId}/lineage`))}>Lineage</button></div>
+            <div className="productionResourceLibrary">
+              <div className="resourceKpiBar">
+                {[
+                  { label: "Character Groups", value: productionResourceKpis.characterGroups, Icon: Users },
+                  { label: "Image Batches", value: productionResourceKpis.imageBatches, Icon: Image },
+                  { label: "Video Batches", value: productionResourceKpis.videoBatches, Icon: Video },
+                  { label: "Music Tracks", value: productionResourceKpis.musicTracks, Icon: Music },
+                  { label: "Final Videos", value: productionResourceKpis.finalVideos, Icon: Rocket },
+                  { label: "Post Contents", value: productionResourceKpis.postContents, Icon: ClipboardList },
+                  { label: "Ready Resources", value: productionResourceKpis.readyResources, Icon: Check },
+                  { label: "Failed Resources", value: productionResourceKpis.failedResources, Icon: Archive },
+                  { label: "Recently Created", value: productionResourceKpis.recentlyCreated, Icon: Sparkles }
+                ].map(({ label, value, Icon }) => (
+                  <div className="resourceKpiCard" key={label}>
+                    <Icon size={17} />
+                    <span>{label}</span>
+                    <strong>{value}</strong>
+                  </div>
+                ))}
               </div>
-              <div className="adminTable">
-                {batches
-                  .filter((batch) => (!resourceTypeFilter || batch.batchType === resourceTypeFilter) && compactJson(batch).toLowerCase().includes(adminSearch.toLowerCase()))
-                  .slice(0, 20)
-                  .map((batch) => {
+
+              <div className="resourceTabs">
+                {(["CHARACTER_GROUP", "IMAGE_BATCH", "VIDEO_BATCH", "MUSIC_TRACK", "FINAL_VIDEO", "POST_CONTENT", "ALL"] as ProductionResourceTab[]).map((tab) => (
+                  <button
+                    key={tab}
+                    className={productionResourceTab === tab ? "active" : ""}
+                    onClick={() => {
+                      setProductionResourceTab(tab);
+                      setProductionResourceFilters((current) => ({ ...current, type: "" }));
+                    }}
+                  >
+                    {resourceTabLabel(tab)}
+                  </button>
+                ))}
+              </div>
+
+              <div className="resourceFiltersPanel">
+                <label>Search<input value={productionResourceFilters.search} onChange={(event) => setProductionResourceFilters({ ...productionResourceFilters, search: event.target.value })} placeholder="Name, group, metadata..." /></label>
+                <label>Resource Type<select value={productionResourceFilters.type} onChange={(event) => setProductionResourceFilters({ ...productionResourceFilters, type: event.target.value })}><option value="">Tab default</option>{productionBatchTypeOptions.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+                <label>Status<select value={productionResourceFilters.status} onChange={(event) => setProductionResourceFilters({ ...productionResourceFilters, status: event.target.value })}><option value="">All</option>{productionResourceStatusOptions.map((statusOption) => <option key={statusOption} value={statusOption}>{statusOption}</option>)}</select></label>
+                <label>Usage Status<select value={productionResourceFilters.usageStatus} onChange={(event) => setProductionResourceFilters({ ...productionResourceFilters, usageStatus: event.target.value })}><option value="">All</option>{productionResourceUsageOptions.map((usageOption) => <option key={usageOption} value={usageOption}>{usageOption}</option>)}</select></label>
+                <label>Workflow<select value={productionResourceFilters.workflowId} onChange={(event) => setProductionResourceFilters({ ...productionResourceFilters, workflowId: event.target.value })}><option value="">All</option>{workflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}</select></label>
+                <label>Character Group<select value={productionResourceFilters.groupId} onChange={(event) => setProductionResourceFilters({ ...productionResourceFilters, groupId: event.target.value })}><option value="">All</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+                <label>Created Date<input type="date" value={productionResourceFilters.createdDate} onChange={(event) => setProductionResourceFilters({ ...productionResourceFilters, createdDate: event.target.value })} /></label>
+                <div className="resourceFilterChecks">
+                  <label><input type="checkbox" checked={productionResourceFilters.hasLineage} onChange={(event) => setProductionResourceFilters({ ...productionResourceFilters, hasLineage: event.target.checked })} /> Has Lineage</label>
+                  <label><input type="checkbox" checked={productionResourceFilters.readyOnly} onChange={(event) => setProductionResourceFilters({ ...productionResourceFilters, readyOnly: event.target.checked })} /> Ready Only</label>
+                  <label><input type="checkbox" checked={productionResourceFilters.reusableOnly} onChange={(event) => setProductionResourceFilters({ ...productionResourceFilters, reusableOnly: event.target.checked })} /> Reusable Only</label>
+                  <label><input type="checkbox" checked={productionResourceFilters.includeArchived} onChange={(event) => setProductionResourceFilters({ ...productionResourceFilters, includeArchived: event.target.checked })} /> Show Archived</label>
+                  <label><input type="checkbox" checked={productionGrouped} onChange={(event) => setProductionGrouped(event.target.checked)} /> Grouped by Character Group</label>
+                </div>
+              </div>
+
+              <details className="resourceCreatePanel">
+                <summary>Technical Create Batch</summary>
+                <div className="resourceCreateGrid">
+                  <label>Batch Type<select value={batchForm.batchType} onChange={(event) => setBatchForm({ ...batchForm, batchType: event.target.value })}>{productionBatchTypeOptions.map((type) => <option key={type}>{type}</option>)}</select></label>
+                  <label>Status<input value={batchForm.status} onChange={(event) => setBatchForm({ ...batchForm, status: event.target.value })} /></label>
+                  <label>Usage Status<input value={batchForm.usageStatus} onChange={(event) => setBatchForm({ ...batchForm, usageStatus: event.target.value })} /></label>
+                  <label>Metadata JSON<textarea value={batchForm.metadata} onChange={(event) => setBatchForm({ ...batchForm, metadata: event.target.value })} /></label>
+                  <button onClick={() => adminAction("Creating production batch", () => api("/production-batches", { method: "POST", body: JSON.stringify({ batchType: batchForm.batchType, status: batchForm.status, usageStatus: batchForm.usageStatus, metadata: parseJsonText(batchForm.metadata), attributes: {} }) }))}>Create Batch</button>
+                </div>
+              </details>
+
+              <div className="resourceLibraryLayout">
+                <section className="resourceLibraryMain">
+                  <div className="resourceLibraryHeader">
+                    <div>
+                      <strong>{resourceTabLabel(productionResourceTab)}</strong>
+                      <small>{productionResourceCards.length} resources</small>
+                    </div>
+                    <button className="secondaryButton" onClick={() => refreshQueue()} disabled={busy}><RefreshCcw size={15} /> Refresh</button>
+                  </div>
+
+                  {productionGrouped ? (
+                    <div className="groupedResourceList">
+                      {productionResourceGroups.map((entry) => (
+                        <section className="groupedResourceSection" key={entry.groupId}>
+                          <header>
+                            <div>
+                              <strong>{entry.group?.name ?? "Ungrouped Resources"}</strong>
+                              <small>{entry.resources.length} resources</small>
+                            </div>
+                            {entry.group ? <span>{entry.group.attributesSummary || "No attributes"}</span> : null}
+                          </header>
+                          <div className="groupedResourceRows">
+                            {entry.resources.map((batch) => (
+                              <button className={selectedResourceId === batch.id ? "groupedResourceRow selected" : "groupedResourceRow"} key={batch.id} onClick={() => openProductionResource(batch)}>
+                                <span className="resourceTypeBadge">{batch.batchType}</span>
+                                <strong>{batchDisplayName(batch, entry.group)}</strong>
+                                <span>{batch.status}</span>
+                                <small>{displayDateTime(batch.createdAt)}</small>
+                              </button>
+                            ))}
+                          </div>
+                        </section>
+                      ))}
+                      {!productionResourceGroups.length ? <p className="emptyDetail">No resources match current filters.</p> : null}
+                    </div>
+                  ) : (
+                    <div className="resourceCardGrid">
+                      {productionResourceCards.map((batch) => renderProductionResourceCard(batch))}
+                      {!productionResourceCards.length ? <p className="emptyDetail">No resources match current filters.</p> : null}
+                    </div>
+                  )}
+                </section>
+
+                <aside className="resourceDetailDrawer">
+                  {selectedProductionResource ? (() => {
+                    const batch = selectedProductionResource;
+                    const group = getProductionResourceGroup(batch);
                     const post = postContentMetadata(batch);
                     const music = musicTrackMetadata(batch);
                     return (
-                      <div className="adminRow" key={batch.id} onClick={() => setSelectedResourceId(batch.id)}>
-                        <b>{batch.batchType}</b><span>{batch.status}</span><span>{batch.usageStatus}</span><small>{displayShortId(batch.id)}</small>
-                        {batch.batchType === "POST_CONTENT" ? (
-                          <div className="postPreview">
-                            <strong>{post.title || "Untitled post"}</strong>
-                            <p>{post.caption || post.postText || "No post text yet."}</p>
-                            {post.postText && post.postText !== post.caption ? <p>{post.postText}</p> : null}
-                            <small>{post.hashtags.join(" ")} {post.cta ? `/ ${post.cta}` : ""} / {post.platform}</small>
+                      <>
+                        <div className="drawerHeader">
+                          <div>
+                            <strong>{batchDisplayName(batch, group)}</strong>
+                            <small>{batch.batchType} / {displayShortId(batch.id)}</small>
                           </div>
-                        ) : batch.batchType === "MUSIC_TRACK" ? (
-                          <div className="postPreview">
-                            <strong>{[music.mood, music.tempo, music.style].filter(Boolean).join(" / ") || "Music track"}</strong>
-                            <p>{[music.scene, music.emotion].filter(Boolean).join(" scene / ") || "No scene or emotion metadata."}</p>
-                            <small>{music.tags.join(", ") || "No tags"}</small>
+                          <button className="iconButton" onClick={() => setSelectedResourceId("")} title="Close">x</button>
+                        </div>
+                        <div className="resourceDrawerTabs">
+                          {[
+                            ["overview", "Overview"],
+                            ["group", "Group"],
+                            ["lineage", "Lineage"],
+                            ["jobs", "Jobs"],
+                            ["runtime", "Runtime"],
+                            ["json", "Raw JSON"]
+                          ].map(([tab, label]) => (
+                            <button key={tab} className={resourceDrawerTab === tab ? "active" : ""} onClick={() => setResourceDrawerTab(tab as typeof resourceDrawerTab)}>{label}</button>
+                          ))}
+                        </div>
+
+                        {resourceDrawerTab === "overview" ? (
+                          <div className="resourceDrawerBody">
+                            <div className="resourcePreviewHero">{renderResourcePreview(batch)}</div>
+                            <div className="resourceMetaGrid detail">
+                              <span>Status</span><strong>{batch.status}</strong>
+                              <span>Usage</span><strong>{batch.usageStatus}</strong>
+                              <span>Workflow</span><strong>{batch.workflowId ? displayShortId(batch.workflowId) : "-"}</strong>
+                              <span>Created</span><strong>{displayDateTime(batch.createdAt)}</strong>
+                            </div>
+                            {batch.batchType === "POST_CONTENT" ? <div className="postPreview"><strong>{post.title || "Post content"}</strong><p>{post.caption || post.postText}</p><small>{post.hashtags.join(" ")} {post.cta ? `/ ${post.cta}` : ""}</small></div> : null}
+                            {batch.batchType === "MUSIC_TRACK" ? <div className="postPreview"><strong>{[music.mood, music.tempo, music.style].filter(Boolean).join(" / ") || "Music track"}</strong><p>{[music.scene, music.emotion].filter(Boolean).join(" / ")}</p><small>{music.tags.join(", ")}</small></div> : null}
                           </div>
-                        ) : (
-                          <pre>{compactJson(batch.metadata)}</pre>
-                        )}
-                      </div>
+                        ) : null}
+
+                        {resourceDrawerTab === "group" ? (
+                          <div className="resourceDrawerBody">
+                            {group ? (
+                              <>
+                                <strong>{group.name}</strong>
+                                <span>{group.description}</span>
+                                <small>{group.memberCount ?? 0} members / {group.attributesSummary || "No attributes"}</small>
+                                <div className="resourceGroupThumbs">
+                                  {(group.membersPreview ?? []).map((member) => (
+                                    <div key={member.memberId ?? member.character.id}>
+                                      {member.youngThumbnailUrl ? <img src={mediaUrl(member.youngThumbnailUrl)} alt="Young thumbnail" /> : <span>Young</span>}
+                                      {member.oldThumbnailUrl ? <img src={mediaUrl(member.oldThumbnailUrl)} alt="Old thumbnail" /> : <span>Old</span>}
+                                      <small>{member.character.name}</small>
+                                    </div>
+                                  ))}
+                                </div>
+                              </>
+                            ) : <p className="emptyDetail">No related Character Group found.</p>}
+                          </div>
+                        ) : null}
+
+                        {resourceDrawerTab === "lineage" ? (
+                          <div className="resourceDrawerBody">
+                            <div className="resourceTimeline">
+                              {productionResourceLineage.map((item, index) => (
+                                <button className={item.id === batch.id ? "resourceTimelineItem active" : "resourceTimelineItem"} key={item.id} onClick={() => setSelectedResourceId(item.id)}>
+                                  <span>{index + 1}</span>
+                                  <div>
+                                    <strong>{item.batchType}</strong>
+                                    <small>{batchDisplayName(item, getProductionResourceGroup(item))} / {item.status}</small>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {resourceDrawerTab === "jobs" ? (
+                          <div className="resourceDrawerBody">
+                            {productionResourceJobs.map((job) => (
+                              <button className="resourceRelatedRow" key={job.id} onClick={() => loadJobDetail(job)}>
+                                <strong>{job.targetStageType}</strong>
+                                <span>{job.status}</span>
+                                <small>{displayShortId(job.id)} / {displayDateTime(job.createdAt)}</small>
+                              </button>
+                            ))}
+                            {!productionResourceJobs.length ? <p className="emptyDetail">No related jobs found.</p> : null}
+                          </div>
+                        ) : null}
+
+                        {resourceDrawerTab === "runtime" ? (
+                          <div className="resourceDrawerBody">
+                            {productionResourceRuntimeSessions.map((session) => (
+                              <button className="resourceRelatedRow" key={session.id} onClick={() => selectRuntimeSession(session)}>
+                                <strong>{session.status}</strong>
+                                <span>{session.hostId ?? "-"}</span>
+                                <small>{displayShortId(session.id)} / {displayDateTime(session.createdAt)}</small>
+                              </button>
+                            ))}
+                            {!productionResourceRuntimeSessions.length ? <p className="emptyDetail">No related runtime sessions found.</p> : null}
+                          </div>
+                        ) : null}
+
+                        {resourceDrawerTab === "json" ? (
+                          <div className="resourceDrawerBody">
+                            <pre className="jsonBlock">{compactJson({ resource: batch, group, lineage: productionResourceLineage, jobs: productionResourceJobs, runtimeSessions: productionResourceRuntimeSessions })}</pre>
+                          </div>
+                        ) : null}
+                      </>
                     );
-                  })}
+                  })() : <p className="emptyDetail">Select a resource to view details.</p>}
+                </aside>
               </div>
             </div>
           ) : null}
@@ -4036,8 +6765,461 @@ export function App() {
             </div>
           ) : null}
 
-          {managementSection === "jobs" ? <AdminJobsPanel jobs={jobs} pools={pools} busy={busy} runJobAction={runJobAction} search={adminSearch} /> : null}
-          {managementSection === "runtime-sessions" ? <AdminRuntimePanel sessions={runtimeSessions} scriptRuns={scriptRuns} busy={busy} selectRuntimeSession={selectRuntimeSession} runtimeAction={runtimeAction} search={adminSearch} /> : null}
+          {managementSection === "jobs" ? (
+            <div className="managementJobsPage">
+              <div className="resourceKpiBar">
+                {[
+                  { label: "Pending Jobs", value: managementJobKpis.pending, Icon: ClipboardList },
+                  { label: "Allocated Jobs", value: managementJobKpis.allocated, Icon: Boxes },
+                  { label: "Running Jobs", value: managementJobKpis.running, Icon: Play },
+                  { label: "Completed Today", value: managementJobKpis.completedToday, Icon: Check },
+                  { label: "Failed Jobs", value: managementJobKpis.failed, Icon: Archive },
+                  { label: "Recoverable Failures", value: managementJobKpis.recoverable, Icon: RefreshCcw },
+                  { label: "Waiting Instance", value: managementJobKpis.waitingInstance, Icon: Users },
+                  { label: "Waiting Resource", value: managementJobKpis.waitingResource, Icon: PackagePlus }
+                ].map(({ label, value, Icon }) => (
+                  <div className="resourceKpiCard" key={label}>
+                    <Icon size={17} />
+                    <span>{label}</span>
+                    <strong>{value}</strong>
+                  </div>
+                ))}
+              </div>
+
+              <div className="jobsOpsToolbar">
+                <div className="segmentedControl">
+                  <button className={jobsViewMode === "kanban" ? "active" : ""} onClick={() => setJobsViewMode("kanban")}>Kanban View</button>
+                  <button className={jobsViewMode === "table" ? "active" : ""} onClick={() => setJobsViewMode("table")}>Table View</button>
+                </div>
+                <button className="secondaryButton" onClick={() => refreshQueue()} disabled={busy}><RefreshCcw size={15} /> Refresh</button>
+                <label className="toggleControl"><input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} /> Auto refresh 5s</label>
+                <small>Last refresh: {lastJobsRefreshAt ? displayDateTime(lastJobsRefreshAt) : "-"}</small>
+              </div>
+
+              <div className="resourceFiltersPanel">
+                <label>Search<input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder="job id / batch id / group name" /></label>
+                <label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">All</option>{jobBoardStatusOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                <label>Target Stage<select value={stageFilter} onChange={(event) => setStageFilter(event.target.value)}><option value="">All</option>{["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT"].map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                <label>Workflow<select value={jobsWorkflowFilter} onChange={(event) => setJobsWorkflowFilter(event.target.value)}><option value="">All</option>{workflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}</select></label>
+                <label>Character Group<select value={jobsGroupFilter} onChange={(event) => setJobsGroupFilter(event.target.value)}><option value="">All</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+                <label>Instance<select value={jobsInstanceFilter} onChange={(event) => setJobsInstanceFilter(event.target.value)}><option value="">All</option>{instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.id}</option>)}</select></label>
+                <label>Allocation Mode<select value={jobsAllocationModeFilter} onChange={(event) => setJobsAllocationModeFilter(event.target.value)}><option value="">All</option>{allocationModeOptions.map((mode) => <option key={mode} value={mode}>{mode}</option>)}</select></label>
+                <label>Created Date<input type="date" value={jobsCreatedDateFilter} onChange={(event) => setJobsCreatedDateFilter(event.target.value)} /></label>
+                <div className="resourceFilterChecks">
+                  <label><input type="checkbox" checked={jobsFailedOnly} onChange={(event) => setJobsFailedOnly(event.target.checked)} /> Failed only</label>
+                  <label><input type="checkbox" checked={jobsRecoverableOnly} onChange={(event) => setJobsRecoverableOnly(event.target.checked)} /> Recoverable only</label>
+                </div>
+              </div>
+
+              <div className="bulkJobBar">
+                <strong>{selectedJobIds.length} selected</strong>
+                <button disabled={!selectedJobIds.length || busy} onClick={() => bulkJobsAction("allocate")}>Allocate selected</button>
+                <button disabled={!selectedJobIds.length || busy} onClick={() => bulkJobsAction("execute-mock")}>Execute mock selected</button>
+                <button disabled={!selectedJobIds.length || busy} onClick={() => bulkJobsAction("fail")}>Cancel/Fail selected</button>
+                <button disabled={!selectedJobIds.length} onClick={() => setSelectedJobIds([])}>Clear</button>
+              </div>
+
+              <div className="managementJobsLayout">
+                <section className="managementJobsMain">
+                  {jobsViewMode === "kanban" ? (
+                    <div className="managementJobBoard">
+                      {managementJobColumns.map((column) => (
+                        <section className="managementJobColumn" key={column.status}>
+                          <header>
+                            <strong>{column.status}</strong>
+                            <span>{column.items.length}</span>
+                          </header>
+                          <div className="managementJobCards">
+                            {column.items.map((job) => renderManagementJobCard(job))}
+                            {!column.items.length ? (
+                              <p className="emptyDetail">
+                                {column.status === "PENDING"
+                                  ? "No pending jobs. Run orchestrator scan or launch production from Production Studio."
+                                  : column.status === "ALLOCATED"
+                                    ? "No allocated jobs. Allocate a pending job to an eligible standby instance."
+                                    : `No ${column.status.toLowerCase()} jobs.`}
+                              </p>
+                            ) : null}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="jobsTable operationsTable" role="table" aria-label="Management jobs">
+                      <div className="jobsTableHeader" role="row">
+                        <span></span><span>Job ID</span><span>Stage</span><span>Status</span><span>Source</span><span>Group</span><span>Instance</span><span>Allocation</span><span>Created</span><span>Actions</span>
+                      </div>
+                      {managementFilteredJobs.map((job) => {
+                        const { sourceBatch, group, allocation } = jobRelationship(job);
+                        return (
+                          <div className={`jobsTableRow ${selectedJobId === job.id ? "selected" : ""}`} role="row" key={job.id} onClick={() => loadJobDetail(job)}>
+                            <span onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={selectedJobIds.includes(job.id)} onChange={() => toggleSelectedJob(job.id)} /></span>
+                            <span title={job.id}>{displayShortId(job.id)}</span>
+                            <strong>{job.targetStageType}</strong>
+                            <span className="statusPill">{job.status}</span>
+                            <span>{sourceBatch?.batchType ?? "-"} / {displayShortId(job.sourceBatchId)}</span>
+                            <span>{group?.name ?? "-"}</span>
+                            <span>{displayShortId(displayJobInstance(job) !== "-" ? displayJobInstance(job) : allocation?.instanceId)}</span>
+                            <span>{displayJobAllocationMode(job) !== "-" ? displayJobAllocationMode(job) : allocation?.allocationMode ?? "-"}</span>
+                            <span>{displayDateTime(job.createdAt)}</span>
+                            <div className="jobActions">{renderJobStatusActions(job)}</div>
+                          </div>
+                        );
+                      })}
+                      {!managementFilteredJobs.length ? <div className="jobsEmpty">No jobs match the current filters.</div> : null}
+                    </div>
+                  )}
+                </section>
+
+                <aside className="managementJobDrawer">
+                  <div className="drawerHeader">
+                    <div>
+                      <strong>Job Detail</strong>
+                      <small>{selectedJob ? `${selectedJob.targetStageType} / ${displayShortId(selectedJob.id)}` : "Select a job"}</small>
+                    </div>
+                    {selectedJob ? <button className="iconButton" onClick={() => setSelectedJobId("")} title="Close">x</button> : null}
+                  </div>
+                  {jobDetailLoading ? <div className="detailLoading"><Loader2 className="spin" size={15} /> Loading job detail</div> : null}
+                  {jobDetailError ? <div className="detailError">{jobDetailError}</div> : null}
+                  {selectedJob ? (
+                    <>
+                      <div className="resourceDrawerTabs">
+                        {[
+                          ["overview", "Overview"],
+                          ["source", "Source Resource"],
+                          ["allocation", "Allocation"],
+                          ["runtime", "Runtime Session"],
+                          ["script", "Script Run"],
+                          ["output", "Output"],
+                          ["lineage", "Lineage"],
+                          ["json", "Debug JSON"]
+                        ].map(([tab, label]) => <button key={tab} className={jobDrawerTab === tab ? "active" : ""} onClick={() => setJobDrawerTab(tab as typeof jobDrawerTab)}>{label}</button>)}
+                      </div>
+
+                      {jobDrawerTab === "overview" ? (
+                        <div className="resourceDrawerBody">
+                          <div className="resourceMetaGrid detail">
+                            <span>Job ID</span><strong>{selectedJob.id}</strong>
+                            <span>Status</span><strong>{selectedJob.status}</strong>
+                            <span>Target Stage</span><strong>{selectedJob.targetStageType}</strong>
+                            <span>Source Batch</span><strong>{displayShortId(selectedJob.sourceBatchId)}</strong>
+                            <span>Workflow</span><strong>{selectedJobWorkflow?.name ?? "-"}</strong>
+                            <span>Character Group</span><strong>{selectedJobGroup?.name ?? "-"}</strong>
+                            <span>Created</span><strong>{displayDateTime(selectedJob.createdAt)}</strong>
+                            <span>Updated</span><strong>{displayDateTime(selectedJob.updatedAt)}</strong>
+                          </div>
+                          <div className="postPreview"><strong>Error</strong><p>{findJobError(selectedJob, runtimeSession, scriptRun) || "No error reported."}</p></div>
+                          <div className="jobCardActions">{renderJobStatusActions(selectedJob)}</div>
+                        </div>
+                      ) : null}
+
+                      {jobDrawerTab === "source" ? (
+                        <div className="resourceDrawerBody">
+                          {selectedJobSourceBatch ? (
+                            <>
+                              <strong>{selectedJobSourceBatch.batchType}</strong>
+                              <small>{selectedJobSourceBatch.id} / {selectedJobSourceBatch.status} / {selectedJobSourceBatch.usageStatus}</small>
+                              <div className="resourceGroupThumbs">
+                                {selectedJobOutputAssets.slice(0, 6).map((asset) => listImageUrl(asset) ? <img key={asset.id} src={listImageUrl(asset)} alt={asset.name} /> : null)}
+                              </div>
+                              <pre className="jsonBlock">{compactJson(selectedJobSourceBatch.metadata)}</pre>
+                            </>
+                          ) : <p className="emptyDetail">Source batch not found.</p>}
+                        </div>
+                      ) : null}
+
+                      {jobDrawerTab === "allocation" ? (
+                        <div className="resourceDrawerBody">
+                          {selectedJobAllocation ? (
+                            <div className="resourceMetaGrid detail">
+                              <span>Allocation ID</span><strong>{selectedJobAllocation.id}</strong>
+                              <span>Instance</span><strong>{selectedJobAllocation.instanceId}</strong>
+                              <span>Host</span><strong>{selectedJobAllocation.hostId ?? "-"}</strong>
+                              <span>ADB</span><strong>{selectedJobAllocation.adbId ?? "-"}</strong>
+                              <span>Mode</span><strong>{selectedJobAllocation.allocationMode ?? "-"}</strong>
+                              <span>Status</span><strong>{selectedJobAllocation.status}</strong>
+                              <span>Allocated</span><strong>{displayDateTime(selectedJobAllocation.allocatedAt ?? undefined)}</strong>
+                              <span>Released</span><strong>{displayDateTime(selectedJobAllocation.releasedAt ?? undefined)}</strong>
+                            </div>
+                          ) : <p className="emptyDetail">No allocation found yet.</p>}
+                        </div>
+                      ) : null}
+
+                      {jobDrawerTab === "runtime" ? (
+                        <div className="resourceDrawerBody">
+                          {runtimeSession ? (
+                            <>
+                              <div className="resourceMetaGrid detail">
+                                <span>Runtime Session</span><strong>{runtimeSession.id}</strong>
+                                <span>Status</span><strong>{runtimeSession.status}</strong>
+                                <span>Current Step</span><strong>{runtimeSession.currentStepNo}</strong>
+                                <span>Host</span><strong>{runtimeSession.hostId ?? "-"}</strong>
+                                <span>Instance</span><strong>{runtimeSession.instanceId ?? "-"}</strong>
+                              </div>
+                              <div className="resourceActions">
+                                <button onClick={() => runHostAction("screenshot")} disabled={!runtimeSession.instanceId}>Test Screenshot</button>
+                                <button onClick={recoverRuntimeSession} disabled={runtimeSession.status !== "FAILED_RECOVERABLE"}>Recover</button>
+                                <button onClick={() => runtimeAction("mark-unrecoverable", runtimeSession)} disabled={runtimeSession.status !== "FAILED_RECOVERABLE"}>Mark Unrecoverable</button>
+                              </div>
+                              <pre className="jsonBlock">{compactJson(runtimeSession.checkpoint)}</pre>
+                            </>
+                          ) : <p className="emptyDetail">Runtime not started yet.</p>}
+                        </div>
+                      ) : null}
+
+                      {jobDrawerTab === "script" ? (
+                        <div className="resourceDrawerBody">
+                          {scriptRun ? (
+                            <>
+                              <div className="resourceMetaGrid detail">
+                                <span>Script Run</span><strong>{scriptRun.id}</strong>
+                                <span>Status</span><strong>{scriptRun.status}</strong>
+                                <span>Script</span><strong>{scripts.find((item) => item.id === scriptRun.scriptId)?.name ?? displayShortId(scriptRun.scriptId)}</strong>
+                                <span>Version</span><strong>{displayShortId(scriptRun.scriptVersionId)}</strong>
+                              </div>
+                              <div className="scriptStepTable">
+                                {(scriptRun.steps ?? []).map((step) => (
+                                  <div key={step.id}>
+                                    <span>{step.stepNo}</span><span>{step.stepType}</span><b>{step.status}</b><small>{step.errorMessage ?? ""}</small>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          ) : <p className="emptyDetail">No script run yet.</p>}
+                        </div>
+                      ) : null}
+
+                      {jobDrawerTab === "output" ? (
+                        <div className="resourceDrawerBody">
+                          {outputBatches.map((batch) => <button className="resourceRelatedRow" key={batch.id} onClick={() => { setManagementSection("production-resources"); setSelectedResourceId(batch.id); }}><strong>{batch.batchType}</strong><span>{batch.status}</span><small>{batch.id}</small></button>)}
+                          {selectedJobOutputAssets.map((asset) => <div className="assetPreview" key={asset.id}>{listImageUrl(asset) ? <img src={listImageUrl(asset)} alt={asset.name} /> : <span>{asset.name}</span>}</div>)}
+                          {!outputBatches.length ? <p className="emptyDetail">No output batch yet.</p> : null}
+                        </div>
+                      ) : null}
+
+                      {jobDrawerTab === "lineage" ? (
+                        <div className="resourceDrawerBody">
+                          <div className="resourceTimeline">
+                            {selectedJobLineage.map((item, index) => (
+                              <div className="resourceTimelineItem" key={`${item.type}-${item.id}`}>
+                                <span>{index + 1}</span>
+                                <div><strong>{item.type}</strong><small>{item.label} / {item.status} / {displayShortId(item.id)}</small></div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {jobDrawerTab === "json" ? (
+                        <div className="resourceDrawerBody">
+                          <pre className="jsonBlock">{compactJson({ job: selectedJob, payload: selectedJob.payload, sourceBatch: selectedJobSourceBatch, allocation: selectedJobAllocation, runtimeSession, scriptRun, outputBatches })}</pre>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : <p className="emptyDetail">Select a job to inspect linked resources, allocation, runtime, script run, and output.</p>}
+                </aside>
+              </div>
+            </div>
+          ) : null}
+          {managementSection === "runtime-sessions" ? (
+            <div className="managementJobsPage runtimeSessionsPage">
+              <div className="resourceKpiBar">
+                {[
+                  { label: "Running Sessions", value: runtimeKpis.running, Icon: Play },
+                  { label: "Completed Today", value: runtimeKpis.completedToday, Icon: Check },
+                  { label: "Failed Sessions", value: runtimeKpis.failed, Icon: Archive },
+                  { label: "Recoverable Sessions", value: runtimeKpis.recoverable, Icon: RefreshCcw },
+                  { label: "Paused Sessions", value: runtimeKpis.paused, Icon: Edit3 },
+                  { label: "Avg Duration", value: runtimeKpis.averageDuration, Icon: ClipboardList },
+                  { label: "Waiting Host", value: runtimeKpis.waitingHost, Icon: Users },
+                  { label: "Waiting Recovery", value: runtimeKpis.waitingRecovery, Icon: Rocket }
+                ].map(({ label, value, Icon }) => (
+                  <div className="resourceKpiCard" key={label}>
+                    <Icon size={17} />
+                    <span>{label}</span>
+                    <strong>{value}</strong>
+                  </div>
+                ))}
+              </div>
+
+              <div className="jobsOpsToolbar">
+                <div className="segmentedControl">
+                  <button className={runtimeViewMode === "board" ? "active" : ""} onClick={() => setRuntimeViewMode("board")}>Board View</button>
+                  <button className={runtimeViewMode === "table" ? "active" : ""} onClick={() => setRuntimeViewMode("table")}>Table View</button>
+                </div>
+                <button className="secondaryButton" onClick={() => refreshQueue()} disabled={busy}><RefreshCcw size={15} /> Refresh</button>
+                <label className="toggleControl"><input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} /> Auto refresh 5s</label>
+                <small>Last refresh: {lastRuntimeRefreshAt ? displayDateTime(lastRuntimeRefreshAt) : "-"}</small>
+              </div>
+
+              <div className="resourceFiltersPanel">
+                <label>Search<input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder="runtime / job / script / instance" /></label>
+                <label>Status<select value={runtimeStatusFilter} onChange={(event) => setRuntimeStatusFilter(event.target.value)}><option value="">All</option>{runtimeStatusBoardOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                <label>Host<select value={runtimeHostFilter} onChange={(event) => setRuntimeHostFilter(event.target.value)}><option value="">All</option>{hosts.map((host) => <option key={host.id} value={host.hostId}>{host.name}</option>)}</select></label>
+                <label>Instance<select value={runtimeInstanceFilter} onChange={(event) => setRuntimeInstanceFilter(event.target.value)}><option value="">All</option>{instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.id}</option>)}</select></label>
+                <label>Job Type<select value={runtimeJobTypeFilter} onChange={(event) => setRuntimeJobTypeFilter(event.target.value)}><option value="">All</option>{workflowJobTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+                <label>Script Category<select value={runtimeScriptCategoryFilter} onChange={(event) => setRuntimeScriptCategoryFilter(event.target.value)}><option value="">All</option>{scriptCategoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+                <label>Created Date<input type="date" value={runtimeCreatedDateFilter} onChange={(event) => setRuntimeCreatedDateFilter(event.target.value)} /></label>
+                <div className="resourceFilterChecks">
+                  <label><input type="checkbox" checked={runtimeRecoverableOnly} onChange={(event) => setRuntimeRecoverableOnly(event.target.checked)} /> Recoverable only</label>
+                  <label><input type="checkbox" checked={runtimeFailedOnly} onChange={(event) => setRuntimeFailedOnly(event.target.checked)} /> Failed only</label>
+                  <label><input type="checkbox" checked={runtimeRunningOnly} onChange={(event) => setRuntimeRunningOnly(event.target.checked)} /> Running only</label>
+                </div>
+              </div>
+
+              <div className="managementJobsLayout">
+                <section className="managementJobsMain">
+                  {runtimeViewMode === "board" ? (
+                    <div className="managementJobBoard runtimeBoardGrid">
+                      {runtimeColumns.map((column) => (
+                        <section className="managementJobColumn" key={column.status}>
+                          <header><strong>{column.status}</strong><span>{column.items.length}</span></header>
+                          <div className="managementJobCards">
+                            {column.items.map((session) => renderRuntimeSessionCard(session))}
+                            {!column.items.length ? <p className="emptyDetail">{column.status === "RUNNING" ? "No runtime sessions are currently running." : column.status === "FAILED_RECOVERABLE" ? "No recoverable failures." : `No ${column.status.toLowerCase()} sessions.`}</p> : null}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="jobsTable operationsTable" role="table" aria-label="Runtime sessions">
+                      <div className="jobsTableHeader" role="row"><span>Runtime</span><span>Status</span><span>Job</span><span>Script</span><span>Step</span><span>Progress</span><span>Host</span><span>Instance</span><span>Duration</span><span>Actions</span></div>
+                      {filteredRuntimeSessions.map((session) => {
+                        const { job, run, script } = runtimeRelationship(session);
+                        const progress = runtimeProgress(session, run);
+                        return (
+                          <div className={`jobsTableRow ${selectedRuntimeId === session.id ? "selected" : ""}`} role="row" key={session.id} onClick={() => selectRuntimeSession(session)}>
+                            <span>{displayShortId(session.id)}</span><span className="statusPill">{session.status}</span><span>{job?.targetStageType ?? "-"}</span><span>{script?.name ?? displayShortId(run?.scriptVersionId)}</span><span>{session.currentStepNo}</span><span>{progress.completed}/{progress.total || "-"}</span><span>{session.hostId ?? "-"}</span><span>{displayShortId(session.instanceId)}</span><span>{displayDuration(session.startedAt ?? session.updatedAt, session.finishedAt)}</span><div className="jobActions">{renderRuntimeActions(session)}</div>
+                          </div>
+                        );
+                      })}
+                      {!filteredRuntimeSessions.length ? <div className="jobsEmpty">Run or execute a job to create a runtime session.</div> : null}
+                    </div>
+                  )}
+                </section>
+
+                <aside className="managementJobDrawer runtimeDetailDrawer">
+                  <div className="drawerHeader">
+                    <div><strong>Runtime Detail</strong><small>{selectedRuntime ? `${selectedRuntime.status} / ${displayShortId(selectedRuntime.id)}` : "Select a runtime session"}</small></div>
+                    {selectedRuntime ? <button className="iconButton" onClick={() => setSelectedRuntimeId("")}>x</button> : null}
+                  </div>
+                  {selectedRuntime ? (
+                    <>
+                      <div className="resourceDrawerTabs">
+                        {[
+                          ["overview", "Overview"], ["checkpoint", "Checkpoint"], ["timeline", "Script Timeline"], ["host", "Host / Instance"], ["job", "Related Job"], ["output", "Output"], ["recovery", "Recovery"], ["json", "Debug JSON"]
+                        ].map(([tab, label]) => <button key={tab} className={runtimeDrawerTab === tab ? "active" : ""} onClick={() => setRuntimeDrawerTab(tab as typeof runtimeDrawerTab)}>{label}</button>)}
+                      </div>
+
+                      {runtimeDrawerTab === "overview" ? (
+                        <div className="resourceDrawerBody">
+                          <div className="resourceMetaGrid detail">
+                            <span>Runtime ID</span><strong>{selectedRuntime.id}</strong>
+                            <span>Status</span><strong>{selectedRuntime.status}</strong>
+                            <span>Job</span><strong>{displayShortId(selectedRuntime.jobId)}</strong>
+                            <span>Target Stage</span><strong>{selectedRuntimeJob?.targetStageType ?? "-"}</strong>
+                            <span>Workflow</span><strong>{selectedRuntimeSourceBatch?.workflowId ? displayShortId(selectedRuntimeSourceBatch.workflowId) : "-"}</strong>
+                            <span>Character Group</span><strong>{batchGroupId(selectedRuntimeSourceBatch) ? groups.find((group) => group.id === batchGroupId(selectedRuntimeSourceBatch))?.name ?? "-" : "-"}</strong>
+                            <span>Source Batch</span><strong>{displayShortId(selectedRuntimeSourceBatch?.id)}</strong>
+                            <span>Host</span><strong>{selectedRuntime.hostId ?? "-"}</strong>
+                            <span>Instance</span><strong>{selectedRuntime.instanceId ?? "-"}</strong>
+                            <span>ADB</span><strong>{selectedRuntimeInstance?.adbId ?? "-"}</strong>
+                            <span>Started</span><strong>{displayDateTime(selectedRuntime.startedAt ?? selectedRuntime.updatedAt)}</strong>
+                            <span>Finished</span><strong>{displayDateTime(selectedRuntime.finishedAt ?? undefined)}</strong>
+                            <span>Duration</span><strong>{displayDuration(selectedRuntime.startedAt ?? selectedRuntime.updatedAt, selectedRuntime.finishedAt)}</strong>
+                          </div>
+                          <div className="postPreview"><strong>Error</strong><p>{findJobError(selectedRuntimeJob, selectedRuntime, scriptRun) || "No error reported."}</p></div>
+                        </div>
+                      ) : null}
+
+                      {runtimeDrawerTab === "checkpoint" ? (
+                        <div className="resourceDrawerBody">
+                          <div className="resourceMetaGrid detail">
+                            <span>Current Step</span><strong>{selectedRuntime.currentStepNo}</strong>
+                            <span>Last Successful Step</span><strong>{getString(getRecord(selectedRuntime.checkpoint).lastSuccessfulStepNo) || "-"}</strong>
+                            <span>Job</span><strong>{displayShortId(selectedRuntime.jobId)}</strong>
+                            <span>Allocation</span><strong>{getString(getRecord(selectedRuntime.checkpoint).allocationId) || jobPayloadString(selectedRuntimeJob ?? { id: "", sourceBatchId: "", targetStageType: "", status: "", createdAt: "" }, "allocationId") || "-"}</strong>
+                            <span>Host</span><strong>{selectedRuntime.hostId ?? "-"}</strong>
+                            <span>Instance</span><strong>{selectedRuntime.instanceId ?? "-"}</strong>
+                            <span>Updated</span><strong>{displayDateTime(selectedRuntime.updatedAt)}</strong>
+                          </div>
+                          <details className="resourceCreatePanel"><summary>Raw checkpoint JSON</summary><pre className="jsonBlock">{compactJson(selectedRuntime.checkpoint)}</pre></details>
+                        </div>
+                      ) : null}
+
+                      {runtimeDrawerTab === "timeline" ? (
+                        <div className="resourceDrawerBody">
+                          <div className="runtimeTimelineStrip">{(scriptRun?.steps ?? selectedRuntime.steps ?? []).map((step) => <span className={step.status.toLowerCase()} key={step.id}>{step.stepType} {step.status === "COMPLETED" ? "✓" : step.status === "FAILED" ? "✗" : ""}</span>)}</div>
+                          {(scriptRun?.steps ?? selectedRuntime.steps ?? []).map((step) => {
+                            const url = findUrl(step.output);
+                            return (
+                              <article className="runtimeStepCard" key={step.id}>
+                                <header><strong>{step.stepNo}. {step.stepType}</strong><span className="statusPill">{step.status}</span></header>
+                                <small>{displayDateTime(step.startedAt ?? undefined)} → {displayDateTime(step.finishedAt ?? undefined)} / {displayDuration(step.startedAt, step.finishedAt)}</small>
+                                <p>Input: {scriptStepSummary({ config: step.input ?? {} })}</p>
+                                <p>Output: {scriptStepSummary({ config: step.output ?? {} })}</p>
+                                {step.errorMessage ? <span className="jobErrorBadge">{step.errorMessage}</span> : null}
+                                {url ? <img src={mediaUrl(url)} alt={`${step.stepType} output`} /> : null}
+                              </article>
+                            );
+                          })}
+                          {!(scriptRun?.steps ?? selectedRuntime.steps ?? []).length ? <p className="emptyDetail">No script steps recorded.</p> : null}
+                        </div>
+                      ) : null}
+
+                      {runtimeDrawerTab === "host" ? (
+                        <div className="resourceDrawerBody">
+                          <div className="resourceMetaGrid detail">
+                            <span>Host</span><strong>{selectedRuntimeHost?.name ?? selectedRuntime.hostId ?? "-"}</strong>
+                            <span>Host Health</span><strong>{selectedRuntimeHost?.status ?? "-"}</strong>
+                            <span>Instance</span><strong>{selectedRuntime.instanceId ?? "-"}</strong>
+                            <span>ADB</span><strong>{selectedRuntimeInstance?.adbId ?? "-"}</strong>
+                            <span>Pool</span><strong>{selectedRuntimeInstance?.currentPoolType ?? "-"}</strong>
+                            <span>Capabilities</span><strong>{selectedRuntimeInstance ? instanceCapabilityLabels(selectedRuntimeInstance).join(", ") || "-" : "-"}</strong>
+                          </div>
+                          <div className="resourceActions">
+                            <button disabled={!selectedRuntime.instanceId} onClick={() => runtimeAction("test-screenshot", selectedRuntime)}>Test Screenshot</button>
+                            <button disabled={!selectedRuntimeInstance?.adbId} onClick={() => runRuntimeHostAction(selectedRuntime, "send-text")}>Send Test Text</button>
+                            <button disabled={!selectedRuntimeInstance?.adbId} onClick={() => runRuntimeHostAction(selectedRuntime, "download-latest")}>Download Latest</button>
+                          </div>
+                          <pre className="jsonBlock">{compactJson(hostResult)}</pre>
+                        </div>
+                      ) : null}
+
+                      {runtimeDrawerTab === "job" ? (
+                        <div className="resourceDrawerBody">
+                          {selectedRuntimeJob ? (
+                            <>
+                              <div className="resourceMetaGrid detail"><span>Job</span><strong>{selectedRuntimeJob.id}</strong><span>Status</span><strong>{selectedRuntimeJob.status}</strong><span>Stage</span><strong>{selectedRuntimeJob.targetStageType}</strong><span>Source Batch</span><strong>{displayShortId(selectedRuntimeJob.sourceBatchId)}</strong><span>Output Batch</span><strong>{displayShortId(selectedRuntimeOutputBatches[0]?.id)}</strong></div>
+                              <button onClick={() => { setManagementSection("jobs"); loadJobDetail(selectedRuntimeJob); }}>Open job</button>
+                            </>
+                          ) : <p className="emptyDetail">No related job found.</p>}
+                        </div>
+                      ) : null}
+
+                      {runtimeDrawerTab === "output" ? (
+                        <div className="resourceDrawerBody">
+                          {selectedRuntimeOutputBatches.map((batch) => <button className="resourceRelatedRow" key={batch.id} onClick={() => { setManagementSection("production-resources"); setSelectedResourceId(batch.id); }}><strong>{batch.batchType}</strong><span>{batch.status}</span><small>{batch.id}</small></button>)}
+                          {selectedRuntimeOutputAssets.map((asset) => <div className="assetPreview" key={asset.id}>{listImageUrl(asset) ? <img src={listImageUrl(asset)} alt={asset.name} /> : <span>{asset.name}</span>}</div>)}
+                          {!selectedRuntimeOutputBatches.length ? <p className="emptyDetail">No output batch yet.</p> : null}
+                        </div>
+                      ) : null}
+
+                      {runtimeDrawerTab === "recovery" ? (
+                        <div className="resourceDrawerBody">
+                          {selectedRuntime.status === "FAILED_RECOVERABLE" ? <div className="adminNotice"><strong>Recoverable Runtime</strong><span>This runtime failed with a recoverable error. Factory can allocate a new eligible STANDBY instance and resume from checkpoint.</span></div> : <p className="emptyDetail">No recoverable failure.</p>}
+                          <div className="resourceActions"><button disabled={selectedRuntime.status !== "FAILED_RECOVERABLE"} onClick={() => runtimeAction("recover", selectedRuntime)}>Recover</button><button disabled={selectedRuntime.status !== "FAILED_RECOVERABLE"} onClick={() => runtimeAction("mark-unrecoverable", selectedRuntime)}>Mark Unrecoverable</button></div>
+                          <pre className="jsonBlock">{compactJson({ checkpoint: selectedRuntime.checkpoint, eligibleStandbyInstances: instances.filter((instance) => (instance.currentPoolType ?? "") === "STANDBY") })}</pre>
+                        </div>
+                      ) : null}
+
+                      {runtimeDrawerTab === "json" ? <div className="resourceDrawerBody"><pre className="jsonBlock">{compactJson({ runtimeSession: selectedRuntime, checkpoint: selectedRuntime.checkpoint, context: selectedRuntime.context, scriptRun, job: selectedRuntimeJob })}</pre></div> : null}
+                    </>
+                  ) : <p className="emptyDetail">Run or execute a job to create a runtime session.</p>}
+                </aside>
+              </div>
+            </div>
+          ) : null}
 
           <div className="adminResult">
             <strong>Result JSON</strong>
@@ -4332,7 +7514,7 @@ export function App() {
             <strong>Production Asset Center</strong>
             <small>Catalog source images, prompts, music, templates, versions, and lineage</small>
           </div>
-          <button className="secondaryButton" onClick={() => refreshQueue()} disabled={busy}>
+          <button className="secondaryButton" onClick={() => { refreshQueue(); loadAssetCenterItems(); }} disabled={busy}>
             <RefreshCcw size={15} />
             Refresh
           </button>
@@ -4345,6 +7527,11 @@ export function App() {
               className={assetTab === tab.id ? "active" : ""}
               onClick={() => {
                 setAssetTab(tab.id);
+                setAssetLibraryCategoryFilter("");
+                setAssetStatusFilter("");
+                setAssetSourceFilter("");
+                setAssetTagFilter("");
+                setAssetAttributeFilter("");
                 setAssetForm((current) => ({
                   ...current,
                   assetCategory: tab.id,
@@ -4359,65 +7546,89 @@ export function App() {
 
         <div className="assetLayout">
           <aside className="panel assetFormPanel">
-            <div className="panelHeader compact">
-              <Image size={18} />
-              <h2>{selectedAsset ? "Edit Asset" : "Register Asset"}</h2>
-            </div>
-            <label>Name<input value={assetForm.name} onChange={(event) => setAssetForm({ ...assetForm, name: event.target.value })} /></label>
-            <label>Subtype<select value={assetForm.assetSubType} onChange={(event) => setAssetForm({ ...assetForm, assetSubType: event.target.value })}>
-              <option value="">No subtype</option>
-              {(assetCategories.find((category) => category.id === assetForm.assetCategory)?.subTypes ?? []).map((subType) => <option key={subType} value={subType}>{subType}</option>)}
-            </select></label>
-            <label>Media Type<input value={assetForm.mediaType} onChange={(event) => setAssetForm({ ...assetForm, mediaType: event.target.value })} /></label>
-            <label>Character Group<select disabled={assetForm.assetCategory === "CHARACTER_IMAGE"} value={assetForm.groupId} onChange={(event) => setAssetForm({ ...assetForm, groupId: event.target.value })}><option value="">No group</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
-            {assetForm.assetCategory === "CHARACTER_IMAGE" ? <small className="emptyDetail">Character source images attach to Character, not Character Group.</small> : null}
-            <label>Character ID<input value={assetForm.characterId} onChange={(event) => setAssetForm({ ...assetForm, characterId: event.target.value })} /></label>
-            <label>Public or Preview URL<input value={assetForm.publicUrl} onChange={(event) => setAssetForm({ ...assetForm, publicUrl: event.target.value })} /></label>
-            <label>File Path<input value={assetForm.filePath} onChange={(event) => setAssetForm({ ...assetForm, filePath: event.target.value })} /></label>
-            <label>Tags<input value={assetForm.tags} onChange={(event) => setAssetForm({ ...assetForm, tags: event.target.value })} placeholder="portrait, young, reusable" /></label>
-            <label>Attributes JSON<textarea rows={5} value={assetForm.attributes} onChange={(event) => setAssetForm({ ...assetForm, attributes: event.target.value })} /></label>
-            <label>Metadata JSON<textarea rows={5} value={assetForm.metadata} onChange={(event) => setAssetForm({ ...assetForm, metadata: event.target.value })} /></label>
-            <label>Source Asset<select value={assetForm.sourceAssetId} onChange={(event) => setAssetForm({ ...assetForm, sourceAssetId: event.target.value })}><option value="">No source asset</option>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name} / {displayShortId(asset.id)}</option>)}</select></label>
-            <div className="assetMiniGrid">
-              <label>Usage Status<input value={assetForm.usageStatus} onChange={(event) => setAssetForm({ ...assetForm, usageStatus: event.target.value })} /></label>
-              <label>Usage Policy<input value={assetForm.usagePolicy} onChange={(event) => setAssetForm({ ...assetForm, usagePolicy: event.target.value })} /></label>
-              <label>Quality<input value={assetForm.qualityStatus} onChange={(event) => setAssetForm({ ...assetForm, qualityStatus: event.target.value })} /></label>
-            </div>
-            <div className="controlActions">
-              <button onClick={createAsset} disabled={busy || !assetForm.name}>Upload/Register</button>
-              <button onClick={updateSelectedAsset} disabled={busy || !selectedAsset}>Save</button>
-              <button onClick={createAssetVersion} disabled={busy || !selectedAsset}>Create Version</button>
-              <button onClick={() => setBestAsset()} disabled={busy || !selectedAsset}>Set Best Version</button>
-              <button className="dangerButton" onClick={deleteSelectedAsset} disabled={busy || !selectedAsset}>Delete</button>
-            </div>
+            {["PROMPT_TEMPLATE", "POST_TEMPLATE", "PRODUCTION_RESOURCE"].includes(assetTab) ? (
+              <>
+                <div className="panelHeader compact">
+                  <ClipboardList size={18} />
+                  <h2>Source Module</h2>
+                </div>
+                <p className="emptyDetail">
+                  Asset Center aggregates this tab from original modules. It does not create duplicate asset rows.
+                </p>
+                {assetTab === "PROMPT_TEMPLATE" || assetTab === "POST_TEMPLATE" ? (
+                  <button className="primaryButton" onClick={() => { setPage("management"); setManagementSection("prompt-templates"); }}>Open Prompt Templates</button>
+                ) : (
+                  <button className="primaryButton" onClick={() => { setPage("management"); setManagementSection("production-resources"); }}>Open Production Resources</button>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="panelHeader compact">
+                  <Image size={18} />
+                  <h2>{selectedAsset ? "Edit Asset" : "Register Asset"}</h2>
+                </div>
+                <label>Name<input value={assetForm.name} onChange={(event) => setAssetForm({ ...assetForm, name: event.target.value })} /></label>
+                <label>Subtype<select value={assetForm.assetSubType} onChange={(event) => setAssetForm({ ...assetForm, assetSubType: event.target.value })}>
+                  <option value="">No subtype</option>
+                  {(assetCategories.find((category) => category.id === assetForm.assetCategory)?.subTypes ?? []).map((subType) => <option key={subType} value={subType}>{subType}</option>)}
+                </select></label>
+                <label>Media Type<input value={assetForm.mediaType} onChange={(event) => setAssetForm({ ...assetForm, mediaType: event.target.value })} /></label>
+                <label>Character Group<select disabled={assetForm.assetCategory === "CHARACTER_IMAGE"} value={assetForm.groupId} onChange={(event) => setAssetForm({ ...assetForm, groupId: event.target.value })}><option value="">No group</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+                {assetForm.assetCategory === "CHARACTER_IMAGE" ? <small className="emptyDetail">Character source images attach to Character, not Character Group.</small> : null}
+                <label>Character ID<input value={assetForm.characterId} onChange={(event) => setAssetForm({ ...assetForm, characterId: event.target.value })} /></label>
+                <label>Public or Preview URL<input value={assetForm.publicUrl} onChange={(event) => setAssetForm({ ...assetForm, publicUrl: event.target.value })} /></label>
+                <label>File Path<input value={assetForm.filePath} onChange={(event) => setAssetForm({ ...assetForm, filePath: event.target.value })} /></label>
+                <label>Tags<input value={assetForm.tags} onChange={(event) => setAssetForm({ ...assetForm, tags: event.target.value })} placeholder="portrait, young, reusable" /></label>
+                <label>Attributes JSON<textarea rows={5} value={assetForm.attributes} onChange={(event) => setAssetForm({ ...assetForm, attributes: event.target.value })} /></label>
+                <label>Metadata JSON<textarea rows={5} value={assetForm.metadata} onChange={(event) => setAssetForm({ ...assetForm, metadata: event.target.value })} /></label>
+                <label>Source Asset<select value={assetForm.sourceAssetId} onChange={(event) => setAssetForm({ ...assetForm, sourceAssetId: event.target.value })}><option value="">No source asset</option>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name} / {displayShortId(asset.id)}</option>)}</select></label>
+                <div className="assetMiniGrid">
+                  <label>Usage Status<input value={assetForm.usageStatus} onChange={(event) => setAssetForm({ ...assetForm, usageStatus: event.target.value })} /></label>
+                  <label>Usage Policy<input value={assetForm.usagePolicy} onChange={(event) => setAssetForm({ ...assetForm, usagePolicy: event.target.value })} /></label>
+                  <label>Quality<input value={assetForm.qualityStatus} onChange={(event) => setAssetForm({ ...assetForm, qualityStatus: event.target.value })} /></label>
+                </div>
+                <div className="controlActions">
+                  <button onClick={createAsset} disabled={busy || !assetForm.name}>Upload/Register</button>
+                  <button onClick={updateSelectedAsset} disabled={busy || !selectedAsset}>Save</button>
+                  <button onClick={createAssetVersion} disabled={busy || !selectedAsset}>Create Version</button>
+                  <button onClick={() => setBestAsset()} disabled={busy || !selectedAsset}>Set Best Version</button>
+                  <button className="dangerButton" onClick={deleteSelectedAsset} disabled={busy || !selectedAsset}>Delete</button>
+                </div>
+              </>
+            )}
           </aside>
 
           <section className="panel assetMainPanel">
             <div className="assetFilters">
               <label>Search<input value={assetSearch} onChange={(event) => setAssetSearch(event.target.value)} placeholder="Search names, tags, metadata" /></label>
-              <label>Tag<select value={assetTagFilter} onChange={(event) => setAssetTagFilter(event.target.value)}><option value="">All tags</option>{assetTagOptions.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label>
-              <label>Attribute<select value={assetAttributeFilter} onChange={(event) => setAssetAttributeFilter(event.target.value)}><option value="">All attributes</option>{assetAttributeOptions.map((attribute) => <option key={attribute} value={attribute}>{attribute}</option>)}</select></label>
+              <label>Category<select value={assetLibraryCategoryFilter} onChange={(event) => setAssetLibraryCategoryFilter(event.target.value)}><option value="">All categories</option>{assetCenterCategoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+              <label>Status<select value={assetStatusFilter} onChange={(event) => setAssetStatusFilter(event.target.value)}><option value="">All status</option>{assetCenterStatusOptions.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
+              <label>Source<select value={assetSourceFilter} onChange={(event) => setAssetSourceFilter(event.target.value)}><option value="">All modules</option>{assetCenterSourceOptions.map((source) => <option key={source} value={source}>{source}</option>)}</select></label>
+              <label>Tag / Variable<select value={assetTagFilter} onChange={(event) => setAssetTagFilter(event.target.value)}><option value="">All tags</option>{assetCenterTagOptions.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label>
+              <label>Attribute<select value={assetAttributeFilter} onChange={(event) => setAssetAttributeFilter(event.target.value)}><option value="">All attributes</option>{assetCenterAttributeOptions.map((attribute) => <option key={attribute} value={attribute}>{attribute}</option>)}</select></label>
+              <label>Updated Date<input type="date" value={assetUpdatedDateFilter} onChange={(event) => setAssetUpdatedDateFilter(event.target.value)} /></label>
             </div>
 
             <div className="assetWorkspace">
               <div className="assetList">
-                {filteredAssets.slice(0, 80).map((asset) => {
-                  const group = groups.find((item) => item.id === asset.groupId);
-                  const thumbUrl = listImageUrl(asset);
+                {assetCenterItems.slice(0, 80).map((item) => {
+                  const sourceAsset = item.sourceModule === "assets" ? assets.find((asset) => asset.id === item.sourceId) : null;
+                  const thumbUrl = item.thumbnailUrl ? mediaUrl(item.thumbnailUrl) : sourceAsset ? listImageUrl(sourceAsset) : "";
                   return (
-                    <button className={`assetCard ${selectedAssetId === asset.id ? "selected" : ""}`} key={asset.id} onClick={() => setSelectedAssetId(asset.id)}>
+                    <button className={`assetCard ${selectedAssetCenterItemId === item.id ? "selected" : ""}`} key={item.id} onClick={() => { setSelectedAssetCenterItemId(item.id); if (sourceAsset) setSelectedAssetId(sourceAsset.id); }}>
                       <div className="assetPreview">
-                        {thumbUrl ? <img src={thumbUrl} alt={asset.name} /> : <span>{asset.thumbnailStatus === "FAILED" ? "Thumbnail failed" : asset.assetCategory ?? asset.assetType}</span>}
+                        {thumbUrl ? <img src={thumbUrl} alt={item.title} /> : <span>{item.itemType}</span>}
                       </div>
-                      <strong>{asset.name}</strong>
-                      <small>{group?.name ?? asset.characterId ?? "Ungrouped"}</small>
-                      <span>{asset.assetSubType ?? asset.mediaType}</span>
-                      <small>v{asset.versionNo ?? 1} {asset.isBestVersion ? "/ Best" : ""}</small>
-                      <span className="poolBadgeList">{(asset.tags ?? []).slice(0, 4).map((tag) => <span className="poolBadge" key={tag}>{tag}</span>)}</span>
+                      <strong>{item.title}</strong>
+                      <small>{item.subtitle ?? item.category ?? item.sourceModule}</small>
+                      <span>{item.status ?? "-"}</span>
+                      <small>{item.sourceModule} / {displayShortId(item.sourceId)}</small>
+                      {item.previewText ? <p>{item.previewText}</p> : null}
+                      <span className="poolBadgeList">{(item.tags ?? []).slice(0, 4).map((tag) => <span className="poolBadge" key={tag}>{tag}</span>)}</span>
                     </button>
                   );
                 })}
-                {!filteredAssets.length ? <p className="emptyDetail">No assets in this tab yet.</p> : null}
+                {!assetCenterItems.length ? <p className="emptyDetail">{assetCenterEmptyState()}</p> : null}
               </div>
 
               <aside className="assetInspector">
@@ -4425,18 +7636,28 @@ export function App() {
                   <Search size={18} />
                   <h2>Preview</h2>
                 </div>
-                {selectedAsset ? (
+                {selectedAssetCenterItem ? (
                   <>
                     <div className="assetHeroPreview">
-                      {originalImageUrl(selectedAsset) ? <img src={originalImageUrl(selectedAsset)} alt={selectedAsset.name} /> : <pre>{compactJson(selectedAsset.metadata)}</pre>}
+                      {selectedAssetCenterItem.sourceModule === "assets" && selectedAsset && originalImageUrl(selectedAsset)
+                        ? <img src={originalImageUrl(selectedAsset)} alt={selectedAssetCenterItem.title} />
+                        : <pre>{selectedAssetCenterItem.previewText || compactJson(selectedAssetCenterItem.metadata)}</pre>}
                     </div>
                     <div className="detailList">
-                      <span>ID <b>{displayShortId(selectedAsset.id)}</b></span>
-                      <span>Category <b>{selectedAsset.assetCategory ?? selectedAsset.assetType}</b></span>
-                      <span>Subtype <b>{selectedAsset.assetSubType ?? "-"}</b></span>
-                      <span>Version <b>{selectedAsset.versionNo ?? 1}</b></span>
-                      <span>Status <b>{selectedAsset.status ?? "-"}</b></span>
+                      <span>ID <b>{displayShortId(selectedAssetCenterItem.sourceId)}</b></span>
+                      <span>Item Type <b>{selectedAssetCenterItem.itemType}</b></span>
+                      <span>Category <b>{selectedAssetCenterItem.category ?? "-"}</b></span>
+                      <span>Status <b>{selectedAssetCenterItem.status ?? "-"}</b></span>
+                      <span>Source <b>{selectedAssetCenterItem.sourceModule}</b></span>
+                      <span>Updated <b>{displayDateTime(selectedAssetCenterItem.updatedAt ?? undefined)}</b></span>
                     </div>
+                    <div className="controlActions">
+                      <button onClick={() => openAssetCenterItem(selectedAssetCenterItem)}>Open Source</button>
+                      {selectedAssetCenterItem.sourceModule === "prompt_templates" ? <button onClick={() => { setPage("management"); setManagementSection("prompt-templates"); openPromptTemplate(selectedAssetCenterItem.sourceId, "preview"); }}>Preview Render</button> : null}
+                      {selectedAssetCenterItem.sourceModule === "prompt_templates" ? <button onClick={() => duplicateAssetCenterPrompt(selectedAssetCenterItem)}>Duplicate</button> : null}
+                    </div>
+                    {selectedAssetCenterItem.sourceModule === "assets" && selectedAsset ? (
+                      <>
                     <div className="assetSection">
                       <strong>Version History</strong>
                       {selectedAssetVersions.map((asset) => (
@@ -4451,583 +7672,282 @@ export function App() {
                       {selectedAssetLineage.map((asset) => <button key={asset.id} onClick={() => setSelectedAssetId(asset.id)}>{asset.name} / {displayShortId(asset.id)}</button>)}
                       {!selectedAssetLineage.length && !selectedAsset.sourceAssetId ? <span>No lineage yet.</span> : null}
                     </div>
+                      </>
+                    ) : null}
                     <div className="assetSection">
                       <strong>Raw JSON</strong>
-                      <pre className="jsonBlock">{compactJson(selectedAsset)}</pre>
+                      <pre className="jsonBlock">{compactJson(selectedAssetCenterItem)}</pre>
                     </div>
                   </>
-                ) : <p className="emptyDetail">Select an asset to inspect.</p>}
+                ) : <p className="emptyDetail">{assetCenterEmptyState()}</p>}
               </aside>
             </div>
+            <small className="emptyDetail">Showing {assetCenterItems.length} of {assetCenterTotal} unified library items.</small>
           </section>
         </div>
       </section>
       ) : page === "studio" ? (
-      <section className="studioGrid">
-        <aside className="panel leftPanel">
-          <div className="panelHeader">
-            <Users size={18} />
-            <h2>Character Groups</h2>
-            <button className="iconButton" onClick={selectRandomGroup} title="Random group selection">
-              <Dices size={16} />
-            </button>
+      <section className="studioWorkspace">
+        <div className="studioSummaryBar panel">
+          <div>
+            <strong>Production Studio</strong>
+            <small>Guided setup for resource-driven content production</small>
           </div>
-          <div className="groupList">
-            {groups.map((group) => (
-              <button
-                key={group.id}
-                className={`groupRow ${selectedGroups.includes(group.id) ? "selected" : ""}`}
-                onClick={() => toggleGroup(group.id)}
-              >
-                <span className="check">{selectedGroups.includes(group.id) ? <Check size={14} /> : null}</span>
-                <span>
-                  <strong>{group.name}</strong>
-                  <small>{group.memberCount ?? 0} members</small>
-                  <em>{group.attributesSummary ?? "Attributes loaded in center panel"}</em>
-                </span>
-              </button>
-            ))}
-          </div>
-        </aside>
+          <span className="statusPill">{selectedStudioGroup?.name ?? "No group selected"}</span>
+          <span className="statusPill">{selectedWorkflow?.name ?? "No workflow selected"}</span>
+          <span className={`readinessBadge ${studioReadinessWarnings.length ? "warning" : "ready"}`}>{studioReadinessWarnings.length ? `${studioReadinessWarnings.length} warnings` : "Ready to launch"}</span>
+        </div>
 
-        <section className="panel centerPanel">
-          <div className="panelHeader">
-            <Sparkles size={18} />
-            <h2>Attributes</h2>
-          </div>
-          <div className="attributeGrid">
-            {studioAttributes.map((attribute) => {
-              const key = ["scene", "emotion", "outfit"].includes(attribute.key) ? attribute.key : attribute.name.toLowerCase();
-              const options = attributePresets[key] ?? ["default", "variant", "custom"];
-              return (
-                <div className="attributeBlock" key={attribute.id}>
-                  <label>{attribute.name}</label>
-                  <div className="choiceRow">
-                    {options.map((option) => (
-                      <button
-                        className={attributeValues[key] === option ? "choice active" : "choice"}
-                        key={option}
-                        onClick={() => setAttributeValues((current) => ({ ...current, [key]: option }))}
-                      >
-                        {option}
-                      </button>
-                    ))}
-                  </div>
+        <div className="studioGuidedLayout">
+          <main className="studioSteps">
+            <section className="studioStep panel">
+              <header><span>1</span><div><strong>Select Character Group</strong><small>Character Group is the production unit. Characters keep ownership of original images.</small></div></header>
+              <div className="studioFilters">
+                <label>Search<input value={studioGroupFilters.search} onChange={(event) => setStudioGroupFilters({ ...studioGroupFilters, search: event.target.value })} /></label>
+                <label>Group Size<input type="number" value={studioGroupFilters.groupSize} onChange={(event) => setStudioGroupFilters({ ...studioGroupFilters, groupSize: event.target.value })} /></label>
+                <label><input type="checkbox" checked={studioGroupFilters.readyOnly} onChange={(event) => setStudioGroupFilters({ ...studioGroupFilters, readyOnly: event.target.checked })} /> Ready only</label>
+                <label><input type="checkbox" checked={studioGroupFilters.missingImages} onChange={(event) => setStudioGroupFilters({ ...studioGroupFilters, missingImages: event.target.checked })} /> Missing images</label>
+                <label><input type="checkbox" checked={studioGroupFilters.recentlyCreated} onChange={(event) => setStudioGroupFilters({ ...studioGroupFilters, recentlyCreated: event.target.checked })} /> Recent</label>
+              </div>
+              <div className="studioGroupGrid">
+                {filteredStudioGroups.map((group) => (
+                  <button className={`studioGroupCard ${selectedPrimaryGroup === group.id ? "selected" : ""}`} key={group.id} onClick={() => { setSelectedGroups([group.id]); openCharacterGroup(group.id).catch(() => undefined); }}>
+                    <div><strong>{group.name}</strong><span className={`readinessBadge ${groupReadinessClass(group.readiness)}`}>{group.readiness?.label ?? group.status}</span></div>
+                    <small>{group.memberCount ?? 0} members / {group.attributesSummary ?? "No attributes"}</small>
+                    <div className="studioMemberThumbs">{(group.membersPreview ?? []).slice(0, 8).map((member) => <span key={member.memberId ?? member.character.id}>{listImageUrl(member.youngOriginalImage ?? member.character.sourceImages?.youngOriginalImage) ? <img src={listImageUrl(member.youngOriginalImage ?? member.character.sourceImages?.youngOriginalImage)} alt={member.character.name} /> : member.character.name.slice(0, 1)}</span>)}</div>
+                    <small>History {group.productionBatchCount ?? 0} / Updated {displayDateTime(group.updatedAt ?? undefined)}</small>
+                  </button>
+                ))}
+              </div>
+              {selectedStudioMembers.length ? (
+                <div className="studioCharactersStrip">
+                  {selectedStudioMembers.map((member) => {
+                    const young = member.youngOriginalImage ?? member.character.sourceImages?.youngOriginalImage;
+                    const old = member.oldOriginalImage ?? member.character.sourceImages?.oldOriginalImage;
+                    return <article key={member.memberId ?? member.character.id}><div>{listImageUrl(young) ? <img src={listImageUrl(young)} alt={`${member.character.name} young`} /> : <span>Young missing</span>}{listImageUrl(old) ? <img src={listImageUrl(old)} alt={`${member.character.name} old`} /> : <span>Old missing</span>}</div><strong>{member.character.name}</strong><small>{member.character.status ?? "-"} / age {member.character.age ?? "-"}</small></article>;
+                  })}
                 </div>
-              );
-            })}
-          </div>
+              ) : null}
+            </section>
 
-          <div className="musicPolicyPanel">
-            <div className="panelHeader compact">
-              <Music size={18} />
-              <h2>Music Policy</h2>
-            </div>
-            <label className="templateSelect">
-              <span>Mode</span>
-              <select value={musicPolicyMode} onChange={(event) => setMusicPolicyMode(event.target.value)}>
-                {musicPolicyModes.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
-              </select>
-            </label>
-            <div className="choiceRow">
-              {musicMatchAttributeOptions.map((attribute) => (
-                <button
-                  className={musicMatchAttributes.includes(attribute) ? "choice active" : "choice"}
-                  key={attribute}
-                  onClick={() => toggleMusicMatchAttribute(attribute)}
-                >
-                  {attribute}
-                </button>
-              ))}
-            </div>
-          </div>
+            <section className="studioStep panel">
+              <header><span>2</span><div><strong>Configure Attributes</strong><small>Dynamic attributes are stored as production attributes snapshot.</small></div></header>
+              <div className="studioAttributeGrid">
+                {studioAttributes.map((attribute) => {
+                  const key = normalizeAttributeKey(attribute.key || attribute.name);
+                  const suggestions = [
+                    ...(attributePresets[key] ?? []),
+                    ...((selectedGroupDetail?.attributeSuggestions ?? []).filter((item) => normalizeAttributeKey(item.key) === key && item.value).map((item) => String(item.value)))
+                  ];
+                  return (
+                    <label key={attribute.id}>{attribute.name}
+                      <input list={`studio-attr-${attribute.id}`} value={attributeValues[key] ?? ""} onChange={(event) => setAttributeValues((current) => ({ ...current, [key]: event.target.value }))} placeholder="custom value" />
+                      <datalist id={`studio-attr-${attribute.id}`}>{[...new Set(suggestions)].map((value) => <option key={value} value={value} />)}</datalist>
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
 
-          <div className="panelHeader promptHeader">
+            <section className="studioStep panel">
+              <header><span>3</span><div><strong>Select Workflow Template</strong><small>Workflow is a resource-driven production template.</small></div></header>
+              <div className="studioWorkflowGrid">
+                {studioWorkflowCards.map((workflow) => (
+                  <button className={`workflowCard ${selectedWorkflow?.id === workflow.id ? "selected" : ""}`} key={workflow.id} onClick={() => setSelectedWorkflowId(workflow.id)}>
+                    <div className="scriptCardHeader"><strong>{workflow.name}</strong><span className="resourceTypeBadge">{workflowModeLabel(workflow)}</span></div>
+                    <small>{workflowCapacitySummary(workflow.capacityConfig)}</small>
+                    <div className="resourceBadgeRow">{workflowJobTypes.filter((jobType) => compactJson(workflow.resourceRules ?? workflow.promptMapping ?? {}).includes(jobType)).map((jobType) => <span className="poolBadge" key={jobType}>{jobType}</span>)}</div>
+                    <small>Music {getString(workflow.musicPolicy?.mode) || "default"} / Post {Object.keys(workflow.postContentPolicy ?? {}).length ? "enabled" : "default"}</small>
+                  </button>
+                ))}
+              </div>
+              <div className="studioPipeline">
+                {["CHARACTER_GROUP", "IMAGE_EDIT", "IMAGE_BATCH", "VIDEO_GENERATE", "VIDEO_BATCH", "MUSIC_TRACK", "VIDEO_COMPOSE", "FINAL_VIDEO", "POST_CONTENT"].map((item, index) => <span key={`${item}-${index}`}>{item}</span>)}
+              </div>
+            </section>
+
+            <section className="studioStep panel">
+              <header><span>4</span><div><strong>Review Prompts & Scripts</strong><small>Override choices apply only to this production launch.</small></div></header>
+              <div className="studioMappingGrid">
+                {studioPromptScriptRows.map((row) => (
+                  <article key={row.jobType}>
+                    <strong>{row.jobType}</strong>
+                    <label>Prompt<select value={row.prompt?.id ?? ""} onChange={(event) => setPromptSelections((current) => ({ ...current, [row.jobType === "IMAGE_EDIT" ? "image" : row.jobType === "VIDEO_GENERATE" ? "video" : row.jobType === "MUSIC_GENERATE" ? "music" : "post"]: event.target.value }))}><option value="">No prompt</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>
+                    <label>Script<select value={row.script?.id ?? ""} disabled><option>{row.script?.name ?? "No script mapping"}</option></select></label>
+                    <small>{row.prompt?.activeVersion ? `Prompt v${row.prompt.activeVersion.versionNo}` : "Prompt missing"} / {row.script?.status ?? "Script missing"}</small>
+                  </article>
+                ))}
+              </div>
+              <div className="previewStack">{(["image", "video", "music", "post"] as PromptKind[]).map((kind) => <article className="promptPreview" key={kind}><span>{kind} prompt</span><p>{previews[kind] || "Select a group and template to preview."}</p></article>)}</div>
+            </section>
+
+            <section className="studioStep panel">
+              <header><span>5</span><div><strong>Configure Music / Post Policies</strong><small>Music is selected by policy, not Character Group ownership.</small></div></header>
+              <div className="studioPolicyGrid">
+                <article><strong>Music Policy</strong><label>Mode<select value={musicPolicyMode} onChange={(event) => setMusicPolicyMode(event.target.value)}>{musicPolicyModes.map((mode) => <option key={mode} value={mode}>{mode}</option>)}</select></label><p>{musicPolicyMode === "RANDOM_LIBRARY" ? "Choose reusable music randomly." : musicPolicyMode === "REQUIRE_MATCHED" ? "Wait for reusable music matching attributes." : "Create a dedicated music track if no match exists."}</p><div className="choiceRow">{musicMatchAttributeOptions.map((attribute) => <button className={musicMatchAttributes.includes(attribute) ? "choice active" : "choice"} key={attribute} onClick={() => toggleMusicMatchAttribute(attribute)}>{attribute}</button>)}</div></article>
+                <article><strong>Post Content Policy</strong><label><input type="checkbox" checked={postPolicyEnabled} onChange={(event) => setPostPolicyEnabled(event.target.checked)} /> Enable POST_CONTENT</label><label>Platform<select value={postPolicyPlatform} onChange={(event) => setPostPolicyPlatform(event.target.value)}>{["facebook", "tiktok", "instagram", "youtube"].map((platform) => <option key={platform}>{platform}</option>)}</select></label><label>Hashtag Policy<input value={postHashtagPolicy} onChange={(event) => setPostHashtagPolicy(event.target.value)} /></label><label>CTA Policy<input value={postCtaPolicy} onChange={(event) => setPostCtaPolicy(event.target.value)} /></label></article>
+              </div>
+            </section>
+
+            <section className="studioStep panel">
+              <header><span>6</span><div><strong>Review Capacity & Readiness</strong><small>Warnings are shown before Launch Production.</small></div></header>
+              <div className="capacityStageRows">{studioCapacityRows.map((row) => <div className={`capacityStageRow ${row.shortage ? "warning" : ""}`} key={row.stageType}><strong>{row.stageType}</strong><span>Required {row.required}</span><span>Standby capable {row.available}</span><b>{row.shortage ? `Shortage ${row.shortage}` : "OK"}</b></div>)}</div>
+              <div className="capacityHints">{studioReadinessWarnings.map((warning) => <span key={warning}>{warning}</span>)}{!studioReadinessWarnings.length ? <span>All launch checks look good.</span> : null}</div>
+            </section>
+
+            <section className="studioStep panel">
+              <header><span>7</span><div><strong>Launch Production</strong><small>Create resources and jobs. Execution remains manual unless existing settings trigger it.</small></div></header>
+              <div className="resourceActions"><button onClick={saveStudioDraft}>Save Draft</button>{studioDrafts.slice(0, 3).map((draft) => <button key={String(draft.id)} onClick={() => loadStudioDraft(draft)}>Load {String(draft.name ?? "Draft")}</button>)}<button className="primaryButton compact" onClick={launchStudioProduction} disabled={busy || !selectedPrimaryGroup || !selectedWorkflow}>{busy ? <Loader2 className="spin" size={16} /> : <Rocket size={16} />} Launch Production</button><button onClick={() => setPage("production-jobs")}>Open Production Control Center</button></div>
+              {launchedJobs.length ? <div className="launchResult"><strong>Created jobs</strong>{launchedJobs.map((job) => <span key={job.id}>{job.targetStageType} - {job.status}</span>)}</div> : null}
+            </section>
+          </main>
+
+          <aside className="studioLivePreview panel">
+            <div className="panelHeader compact"><Boxes size={18} /><h2>Production Plan Summary</h2></div>
+            <div className="detailList">
+              <span>Group <b>{selectedStudioGroup?.name ?? "-"}</b></span>
+              <span>Workflow <b>{selectedWorkflow?.name ?? "-"}</b></span>
+              <span>Characters <b>{selectedStudioMembers.length}</b></span>
+              <span>Music <b>{musicPolicyMode}</b></span>
+              <span>Capacity <b>{studioCapacityRows.some((row) => row.shortage) ? "PARTIAL" : "OK"}</b></span>
+            </div>
+            <div className="assetSection"><strong>Selected Attributes</strong>{Object.entries(attributeValues).map(([key, value]) => <span key={key}>{key}: {String(value)}</span>)}</div>
+            <div className="assetSection"><strong>Expected Jobs</strong>{workflowJobTypes.filter((jobType) => postPolicyEnabled || jobType !== "POST_CONTENT").map((jobType) => <span key={jobType}>{jobType}</span>)}</div>
+            <div className="assetSection"><strong>Expected Outputs</strong>{studioExpectedOutputs.map((output) => <span key={output}>{output}</span>)}</div>
+            <div className="assetSection"><strong>Prompt Previews</strong>{Object.entries(previews).map(([kind, text]) => <small key={kind}>{kind}: {text ? text.slice(0, 120) : "-"}</small>)}</div>
+          </aside>
+        </div>
+      </section>
+      ) : (
+      <section className="productionControlPage">
+        <div className="jobsToolbar panel">
+          <div className="jobsToolbarTitle">
             <ClipboardList size={18} />
-            <h2>Prompt Templates</h2>
+            <div>
+              <strong>Production Control Center</strong>
+              <small>{managementFilteredJobs.length} jobs / last refresh {lastJobsRefreshAt ? displayDateTime(lastJobsRefreshAt) : "-"}</small>
+            </div>
           </div>
-          <div className="templateGrid">
-            {(["image", "video", "music"] as PromptKind[]).map((kind) => (
-              <label className="templateSelect" key={kind}>
-                <span>{kind} prompt template</span>
-                <select
-                  value={promptSelections[kind]}
-                  onChange={(event) => setPromptSelections((current) => ({ ...current, [kind]: event.target.value }))}
-                >
-                  <option value="">No template</option>
-                  {groupedTemplates[kind].map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
-          </div>
+          <label><span>Status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">All statuses</option>{productionQueueStatusOptions.map((option) => <option value={option} key={option}>{option}</option>)}</select></label>
+          <label><span>Target Stage</span><select value={stageFilter} onChange={(event) => setStageFilter(event.target.value)}><option value="">All stages</option>{jobStageOptions.map((option) => <option value={option} key={option}>{option}</option>)}</select></label>
+          <label><span>Pool Type</span><select value={poolFilter} onChange={(event) => setPoolFilter(event.target.value)}><option value="">All pools</option>{poolTypeOptions.map((option) => <option value={option} key={option}>{option}</option>)}</select></label>
+          <label className="toggleControl"><input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} /> Auto 5s</label>
+          <button className="secondaryButton" onClick={() => refreshQueue()} disabled={busy}><RefreshCcw size={15} />Refresh</button>
+        </div>
 
-          <div className="panelHeader promptHeader">
-            <Image size={18} />
-            <h2>Prompt Preview</h2>
-          </div>
-          <div className="previewStack">
-            {(["image", "video", "music"] as PromptKind[]).map((kind) => (
-              <article className="promptPreview" key={kind}>
-                <span>{kind} prompt</span>
-                <p>{previews[kind] || "Select a group and template to preview."}</p>
+        <div className="resourceKpiBar">
+          {[
+            ["Pending Jobs", managementJobKpis.pending],
+            ["Running Jobs", managementJobKpis.running],
+            ["Completed Today", managementJobKpis.completedToday],
+            ["Failed Jobs", managementJobKpis.failed],
+            ["Recoverable Failures", managementJobKpis.recoverable],
+            ["Waiting Capacity", managementJobKpis.waitingInstance],
+            ["Waiting Music", managementJobKpis.waitingMusic],
+            ["Waiting Resources", managementJobKpis.waitingResource],
+            ["Final Outputs Today", managementJobKpis.finalOutputsToday],
+            ["Post Contents Today", managementJobKpis.postContentsToday]
+          ].map(([label, value]) => <div className="resourceKpiCard" key={label}><Boxes size={17} /><span>{label}</span><strong>{value}</strong></div>)}
+        </div>
+
+        <section className="panel productionPipelinePanel">
+          <div className="panelHeader compact"><Rocket size={18} /><h2>Production Pipeline</h2></div>
+          <div className="productionPipelineFlow">
+            {productionPipelineStats.map((stage, index) => (
+              <article key={stage.stage}>
+                <strong>{stage.stage}</strong>
+                <span>Pending: {stage.pending}</span>
+                <span>Running: {stage.running}</span>
+                <span>Completed: {stage.completed}</span>
+                <span>Failed: {stage.failed}</span>
+                {index < productionPipelineStats.length - 1 ? <b>↓</b> : null}
               </article>
             ))}
           </div>
         </section>
 
-        <aside className="panel rightPanel">
-          <div className="panelHeader">
-            <Boxes size={18} />
-            <h2>Workflow Preview</h2>
-          </div>
-          <div className="stageList">
-            {workflowStages.map((stage, index) => {
-              const Icon = stage.icon;
-              return (
-                <div className="stageRow" key={stage.type}>
-                  <Icon size={18} />
-                  <span>
-                    <strong>{stage.type}</strong>
-                    <small>{stage.resource}</small>
-                  </span>
-                  <b>{index + 1}</b>
+        <div className="resourceTabs">
+          <button className={productionControlView === "group" ? "active" : ""} onClick={() => setProductionControlView("group")}>View By Character Group</button>
+          <button className={productionControlView === "job" ? "active" : ""} onClick={() => setProductionControlView("job")}>View By Job</button>
+        </div>
+
+        {productionControlView === "group" ? (
+          <section className="productionGroupBoard">
+            {productionGroupTimelines.map((entry) => (
+              <article className="productionGroupCard" key={entry.groupId} onClick={() => entry.jobs[0] ? loadJobDetail(entry.jobs[0]) : null}>
+                <header>
+                  <strong>{entry.group?.name ?? "Ungrouped"}</strong>
+                  <span className="statusPill">{entry.group?.memberCount ?? 0} members</span>
+                </header>
+                <div className="productionTimeline">
+                  {["CHARACTER_GROUP", "IMAGE_BATCH", "VIDEO_BATCH", "FINAL_VIDEO", "POST_CONTENT"].map((batchType) => {
+                    const batch = entry.batches.find((item) => item.batchType === batchType);
+                    return <span key={batchType} className={batch?.status === "READY" ? "ready" : batch?.status === "FAILED" ? "failed" : ""}>{batchType}<b>{batch?.status ?? "-"}</b></span>;
+                  })}
                 </div>
-              );
-            })}
-          </div>
-
-          <div className="queueBox">
-            <div className="panelHeader compact">
-              <ClipboardList size={18} />
-              <h2>Queue Builder</h2>
-            </div>
-            <p>{selectedGroups.length} group selections will create character-group and image-batch resources.</p>
-            <button className="primaryButton" onClick={createProductionBatches} disabled={busy || !selectedGroups.length}>
-              {busy ? <Loader2 className="spin" size={16} /> : <Boxes size={16} />}
-              Create Production Batch
-            </button>
-          </div>
-
-          <div className="panelHeader batchHeader">
-            <Boxes size={18} />
-            <h2>Production Batches</h2>
-          </div>
-          <div className="batchList">
-            {batches.map((batch) => (
-              <div className="batchRow" key={batch.id}>
-                <strong>{batch.batchType}</strong>
-                <span>{batchReadyLabel(batch)}</span>
-                <small>{batch.usageStatus}</small>
-                {isLaunchable(batch) ? (
-                  <button className="miniButton" onClick={() => launchBatch(String(batch.id))} disabled={busy}>
-                    <Rocket size={13} />
-                    Start Production
-                  </button>
-                ) : null}
-              </div>
+                <div className="productionTimeline">
+                  {["IMAGE_EDIT", "VIDEO_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT"].map((stage) => {
+                    const job = entry.jobs.find((item) => item.targetStageType === stage);
+                    return <span key={stage} className={job?.status === "COMPLETED" ? "ready" : productionJobStatus(job ?? { id: "", sourceBatchId: "", targetStageType: stage, status: "PENDING", createdAt: "" }) === "FAILED" ? "failed" : ""}>{stage}<b>{job ? productionJobStatus(job) : "-"}</b></span>;
+                  })}
+                </div>
+              </article>
+            ))}
+            {!productionGroupTimelines.length ? <p className="emptyDetail">No production groups found.</p> : null}
+          </section>
+        ) : (
+          <div className="managementJobBoard productionQueueBoard">
+            {productionControlColumns.map((column) => (
+              <section className="managementJobColumn" key={column.status}>
+                <header><strong>{column.status}</strong><span>{column.items.length}</span></header>
+                <div className="managementJobCards">{column.items.map((job) => renderManagementJobCard(job))}{!column.items.length ? <p className="emptyDetail">No jobs.</p> : null}</div>
+              </section>
             ))}
           </div>
+        )}
 
-          <div className="panelHeader batchHeader">
-            <ClipboardList size={18} />
-            <h2>Production Jobs</h2>
-            <button className="iconButton" onClick={() => refreshQueue()} title="Refresh production jobs" disabled={busy}>
-              <RefreshCcw size={16} />
-            </button>
-          </div>
-          {launchedJobs.length ? (
-            <div className="launchResult">
-              <strong>Created jobs</strong>
-              {launchedJobs.map((job) => (
-                <span key={job.id}>{job.targetStageType} - {job.status}</span>
-              ))}
-            </div>
-          ) : null}
-          <div className="productionJobsPanel">
-            <div className="jobsTable" role="table" aria-label="Production jobs">
-              <div className="jobsTableHeader" role="row">
-                <span>Job ID</span>
-                <span>Source Batch</span>
-                <span>Target Stage</span>
-                <span>Status</span>
-                <span>Instance</span>
-                <span>Allocation</span>
-                <span>Created At</span>
-                <span>Actions</span>
-              </div>
-              {jobs.map((job) => (
-                <div
-                  className={`jobsTableRow ${selectedJobId === job.id ? "selected" : ""}`}
-                  role="row"
-                  key={job.id}
-                  onClick={() => loadJobDetail(job)}
-                >
-                  <span title={job.id}>{displayShortId(job.id)}</span>
-                  <span title={job.sourceBatchId}>{displayShortId(job.sourceBatchId)}</span>
-                  <strong>{job.targetStageType}</strong>
-                  <span className="statusPill">{job.status}</span>
-                  <span title={displayJobInstance(job)}>{displayShortId(displayJobInstance(job))}</span>
-                  <span title={displayJobAllocationMode(job)}>{displayJobAllocationMode(job)}</span>
-                  <span>{displayDateTime(job.createdAt)}</span>
-                  <div className="jobActions">
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        runJobAction(job, "allocate");
-                      }}
-                      disabled={busy || job.status !== "PENDING"}
-                    >
-                      Allocate
-                    </button>
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        runJobAction(job, "execute-mock");
-                      }}
-                      disabled={busy || job.status !== "ALLOCATED"}
-                    >
-                      Execute Mock
-                    </button>
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        runJobAction(job, "execute-image-edit");
-                      }}
-                      disabled={busy || job.status !== "ALLOCATED" || job.targetStageType !== "IMAGE_EDIT"}
-                    >
-                      Execute IMAGE_EDIT
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {!jobs.length ? (
-                <div className="jobsEmpty">No production jobs yet.</div>
-              ) : null}
-            </div>
-          </div>
-          <div className="jobDetailPanel">
-            <div className="detailHeader">
-              <div>
-                <strong>Job Detail</strong>
-                <small>{selectedJob ? `${selectedJob.targetStageType} / ${displayShortId(selectedJob.id)}` : "Select a job"}</small>
-              </div>
-              {runtimeSession?.status === "FAILED_RECOVERABLE" ? (
-                <button className="recoverButton" onClick={recoverRuntimeSession} disabled={busy}>
-                  Recover
-                </button>
-              ) : null}
-            </div>
-            {jobDetailLoading ? (
-              <div className="detailLoading">
-                <Loader2 className="spin" size={15} />
-                Loading job detail
-              </div>
-            ) : null}
+        <div className="productionControlGrid">
+          <section className="panel">
+            <div className="panelHeader compact"><Boxes size={18} /><h2>Capacity Visibility</h2></div>
+            <div className="capacityStageRows">{productionCapacityRows.map((row) => <div className={`capacityStageRow ${row.shortage ? "warning" : ""}`} key={row.stageType}><strong>{row.stageType}</strong><span>Need {row.required}</span><span>Allocated {row.allocated}</span><span>Available {row.available}</span><b>{row.shortage ? "PARTIAL CAPACITY" : "OK"}</b></div>)}</div>
+          </section>
+          <section className="panel">
+            <div className="panelHeader compact"><RefreshCcw size={18} /><h2>Recovery Center</h2></div>
+            <div className="outputBatchList">{productionRecoveryJobs.slice(0, 8).map((job) => { const runtime = runtimeSessions.find((session) => session.jobId === job.id); return <div key={job.id}><strong>{job.targetStageType}</strong><small>{findJobError(job, runtime, scriptRuns.find((run) => run.runtimeSessionId === runtime?.id) ?? null) || "Recoverable failure"}</small><span>Checkpoint {runtime?.currentStepNo ?? "-"}</span><button disabled={!runtime} onClick={() => runtime && runtimeAction("recover", runtime)}>Recover</button></div>; })}{!productionRecoveryJobs.length ? <p className="emptyDetail">No recoverable failures.</p> : null}</div>
+          </section>
+          <section className="panel">
+            <div className="panelHeader compact"><Sparkles size={18} /><h2>Output Center</h2></div>
+            <div className="outputBatchList">{productionOutputCenter.slice(0, 10).map((batch) => <button key={batch.id} onClick={() => { setPage("management"); setManagementSection("production-resources"); setSelectedResourceId(batch.id); }}><strong>{batch.batchType}</strong><small>{batchDisplayName(batch, groups.find((group) => group.id === batchGroupId(batch)))}</small><span>{batch.status} / {batch.usageStatus}</span></button>)}{!productionOutputCenter.length ? <p className="emptyDetail">No outputs completed today.</p> : null}</div>
+          </section>
+          <section className="panel">
+            <div className="panelHeader compact"><Search size={18} /><h2>Smart Recommendations</h2></div>
+            <div className="capacityHints">{productionRecommendations.map((hint) => <span key={hint}>{hint}</span>)}</div>
+          </section>
+        </div>
+
+        {drawerOpen ? (
+          <aside className="jobDrawer panel productionJobDrawer">
+            <div className="drawerHeader"><div><strong>Production Job Detail</strong><small>{selectedJob ? `${selectedJob.targetStageType} / ${displayShortId(selectedJob.id)}` : "Select a job"}</small></div><button className="iconButton" onClick={() => setDrawerOpen(false)} title="Close job detail">x</button></div>
+            {jobDetailLoading ? <div className="detailLoading"><Loader2 className="spin" size={15} />Loading job detail</div> : null}
             {jobDetailError ? <div className="detailError">{jobDetailError}</div> : null}
             {selectedJob ? (
-              <div className="detailGrid">
-                <section className="detailCard">
-                  <span>Runtime Session</span>
-                  {runtimeSession ? (
-                    <>
-                      <strong>{runtimeSession.status}</strong>
-                      <small>ID {runtimeSession.id}</small>
-                      <small>Host {runtimeSession.hostId ?? "-"}</small>
-                      <small>Instance {runtimeSession.instanceId ?? "-"}</small>
-                      <small>Step {runtimeSession.currentStepNo}</small>
-                      <div className="stepList">
-                        {(runtimeSession.steps ?? []).slice(0, 5).map((step) => (
-                          <small key={step.id}>{step.stepNo}. {step.stepType} / {step.status}</small>
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <p>No runtime session yet.</p>
-                  )}
-                </section>
-
-                <section className="detailCard">
-                  <span>Script Run</span>
-                  {scriptRun ? (
-                    <>
-                      <strong>{scriptRun.status}</strong>
-                      <small>ID {scriptRun.id}</small>
-                      <small>Script {displayShortId(scriptRun.scriptId)}</small>
-                      <small>Step {scriptRun.currentStepNo}</small>
-                      <div className="stepList">
-                        {(scriptRun.steps ?? []).slice(0, 6).map((step) => (
-                          <small key={step.id}>{step.stepNo}. {step.stepType} / {step.status}</small>
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <p>No script run yet.</p>
-                  )}
-                </section>
-
-                <section className="detailCard">
-                  <span>Output Batch</span>
-                  {outputBatch ? (
-                    <>
-                      <strong>{outputBatch.batchType}</strong>
-                      <small>ID {outputBatch.id}</small>
-                      <small>Status {outputBatch.status}</small>
-                      <small>Usage {outputBatch.usageStatus}</small>
-                    </>
-                  ) : (
-                    <p>No output batch yet.</p>
-                  )}
-                </section>
-
-                <section className="detailCard">
-                  <span>Error</span>
-                  <p>{findJobError(selectedJob, runtimeSession, scriptRun) || "No error reported."}</p>
-                </section>
-              </div>
-            ) : (
-              <div className="jobsEmpty">Select a production job to inspect runtime and script progress.</div>
-            )}
-          </div>
-        </aside>
-      </section>
-      ) : (
-      <section className="jobsPage">
-        <div className="jobsToolbar panel">
-          <div className="jobsToolbarTitle">
-            <ClipboardList size={18} />
-            <div>
-              <strong>Production Jobs</strong>
-              <small>{filteredJobs.length} jobs loaded from orchestrator</small>
-            </div>
-          </div>
-          <label>
-            <span>Status</span>
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-              <option value="">All statuses</option>
-              {jobStatusOptions.map((option) => (
-                <option value={option} key={option}>{option}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Target Stage</span>
-            <select value={stageFilter} onChange={(event) => setStageFilter(event.target.value)}>
-              <option value="">All stages</option>
-              {jobStageOptions.map((option) => (
-                <option value={option} key={option}>{option}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Pool Type</span>
-            <select value={poolFilter} onChange={(event) => setPoolFilter(event.target.value)}>
-              <option value="">All pools</option>
-              {poolTypeOptions.map((option) => (
-                <option value={option} key={option}>{option}</option>
-              ))}
-            </select>
-          </label>
-          <button className="secondaryButton" onClick={() => refreshQueue()} disabled={busy}>
-            <RefreshCcw size={15} />
-            Refresh
-          </button>
-        </div>
-
-        <div className="jobsWorkspace">
-          <section className="panel operationsPanel">
-            <div className="operationsHeader">
-              <div className="searchLabel">
-                <Search size={16} />
-                <span>Operational queue</span>
-              </div>
-              <div className="paginationControls">
-                <span>Page {Math.min(jobsPage, totalJobPages)} / {totalJobPages}</span>
-                <select
-                  value={jobsPageSize}
-                  onChange={(event) => setJobsPageSize(Number(event.target.value))}
-                  title="Rows per page"
-                >
-                  {pageSizeOptions.map((option) => (
-                    <option value={option} key={option}>{option} rows</option>
-                  ))}
-                </select>
-                <button onClick={() => setJobsPage((current) => Math.max(1, current - 1))} disabled={jobsPage <= 1}>
-                  Prev
-                </button>
-                <button onClick={() => setJobsPage((current) => Math.min(totalJobPages, current + 1))} disabled={jobsPage >= totalJobPages}>
-                  Next
-                </button>
-              </div>
-            </div>
-
-            <div className="productionJobsPanel full">
-              <div className="jobsTable operationsTable" role="table" aria-label="Production jobs">
-                <div className="jobsTableHeader" role="row">
-                  <span>Job ID</span>
-                  <span>Source Batch</span>
-                  <span>Target Stage</span>
-                  <span>Status</span>
-                  <span>Pool</span>
-                  <span>Instance</span>
-                  <span>Allocation</span>
-                  <span>Created At</span>
-                  <span>Actions</span>
+              <>
+                <div className="resourceDrawerTabs">{[
+                  ["overview", "Production Context"], ["source", "Source Resources"], ["runtime", "Runtime"], ["script", "Script"], ["output", "Output"], ["lineage", "Error"], ["json", "Debug JSON"]
+                ].map(([tab, label]) => <button key={tab} className={jobDrawerTab === tab ? "active" : ""} onClick={() => setJobDrawerTab(tab as typeof jobDrawerTab)}>{label}</button>)}</div>
+                <div className="resourceDrawerBody">
+                  {jobDrawerTab === "overview" ? <><div className="resourceMetaGrid detail"><span>Character Group</span><strong>{selectedJobGroup?.name ?? "-"}</strong><span>Members</span><strong>{selectedJobGroup?.memberCount ?? "-"}</strong><span>Workflow</span><strong>{selectedJobWorkflow?.name ?? "-"}</strong><span>Music Policy</span><strong>{compactJson(selectedJobWorkflow?.musicPolicy ?? {}).slice(0, 80)}</strong><span>Post Policy</span><strong>{compactJson(selectedJobWorkflow?.postContentPolicy ?? {}).slice(0, 80)}</strong></div><pre className="jsonBlock">{compactJson(selectedJobSourceBatch?.attributes ?? selectedJobGroup)}</pre></> : null}
+                  {jobDrawerTab === "source" ? <><div className="outputBatchList">{[selectedJobSourceBatch, ...outputBatches].filter(Boolean).map((batch) => <div key={(batch as ProductionBatch).id}><strong>{(batch as ProductionBatch).batchType}</strong><small>{(batch as ProductionBatch).id}</small><span>{(batch as ProductionBatch).status} / {(batch as ProductionBatch).usageStatus}</span></div>)}</div><div className="resourcePreviewGrid">{selectedJobOutputAssets.slice(0, 8).map((asset) => listImageUrl(asset) ? <img key={asset.id} src={listImageUrl(asset)} alt={asset.name} /> : null)}</div></> : null}
+                  {jobDrawerTab === "runtime" ? <><div className="detailList"><span>Runtime <b>{runtimeSession?.id ?? "-"}</b></span><span>Status <b>{runtimeSession?.status ?? "-"}</b></span><span>Step <b>{runtimeSession?.currentStepNo ?? "-"}</b></span><span>Host <b>{runtimeSession?.hostId ?? "-"}</b></span><span>Instance <b>{runtimeSession?.instanceId ?? "-"}</b></span></div><div className="resourceActions"><button disabled={!runtimeSession || runtimeSession.status !== "FAILED_RECOVERABLE"} onClick={recoverRuntimeSession}>Recover</button><button disabled={!runtimeSession} onClick={() => runtimeSession && runtimeAction("test-screenshot", runtimeSession)}>Test Screenshot</button></div><pre className="jsonBlock">{compactJson(runtimeSession?.checkpoint ?? {})}</pre></> : null}
+                  {jobDrawerTab === "script" ? <><div className="detailList"><span>Script Run <b>{scriptRun?.id ?? "-"}</b></span><span>Status <b>{scriptRun?.status ?? "-"}</b></span><span>Version <b>{displayShortId(scriptRun?.scriptVersionId)}</b></span></div><div className="scriptStepTable">{(scriptRun?.steps ?? []).map((step) => <div key={step.id}><span>{step.stepNo}</span><span>{step.stepType}</span><b>{step.status}</b><small>{step.errorMessage ?? findUrl(step.output) ?? ""}</small></div>)}{!scriptRun?.steps?.length ? <p className="emptyDetail">No script steps recorded.</p> : null}</div></> : null}
+                  {jobDrawerTab === "output" ? <><div className="outputBatchList">{outputBatches.map((batch) => <button key={batch.id} onClick={() => { setPage("management"); setManagementSection("production-resources"); setSelectedResourceId(batch.id); }}><strong>{batch.batchType}</strong><small>{batch.id}</small><span>{batch.status} / {batch.usageStatus}</span></button>)}{!outputBatches.length ? <p className="emptyDetail">No output batches found.</p> : null}</div><div className="resourcePreviewGrid">{selectedJobOutputAssets.map((asset) => listImageUrl(asset) ? <img key={asset.id} src={listImageUrl(asset)} alt={asset.name} /> : null)}</div></> : null}
+                  {jobDrawerTab === "lineage" ? <><div className="postPreview"><strong>Error Category</strong><p>{runtimeSession?.status === "FAILED_RECOVERABLE" ? "Recoverable" : selectedJob.status === "FAILED" ? "Non-Recoverable or unknown" : "No active error"}</p></div><div className="postPreview"><strong>Recommendation</strong><p>{findJobError(selectedJob, runtimeSession, scriptRun) || "Check capacity, resource availability, runtime checkpoint, and output lineage."}</p></div></> : null}
+                  {jobDrawerTab === "json" ? <pre className="jsonBlock">{compactJson({ job: selectedJob, sourceBatch: selectedJobSourceBatch, runtimeSession, scriptRun, outputBatches, allocation: selectedJobAllocation })}</pre> : null}
                 </div>
-                {paginatedJobs.map((job) => (
-                  <div
-                    className={`jobsTableRow ${selectedJobId === job.id ? "selected" : ""}`}
-                    role="row"
-                    key={job.id}
-                    onClick={() => loadJobDetail(job)}
-                  >
-                    <span title={job.id}>{displayShortId(job.id)}</span>
-                    <span title={job.sourceBatchId}>{displayShortId(job.sourceBatchId)}</span>
-                    <strong>{job.targetStageType}</strong>
-                    <span className="statusPill">{job.status}</span>
-                    <span title={displayJobPool(job, pools)}>{displayJobPool(job, pools)}</span>
-                    <span title={displayJobInstance(job)}>{displayShortId(displayJobInstance(job))}</span>
-                    <span title={displayJobAllocationMode(job)}>{displayJobAllocationMode(job)}</span>
-                    <span>{displayDateTime(job.createdAt)}</span>
-                    <div className="jobActions">
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          runJobAction(job, "allocate");
-                        }}
-                        disabled={busy || job.status !== "PENDING"}
-                      >
-                        Allocate
-                      </button>
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          runJobAction(job, "execute-mock");
-                        }}
-                        disabled={busy || job.status !== "ALLOCATED"}
-                      >
-                        Execute Mock
-                      </button>
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          runJobAction(job, "execute-image-edit");
-                        }}
-                        disabled={busy || job.status !== "ALLOCATED" || job.targetStageType !== "IMAGE_EDIT"}
-                      >
-                        Execute IMAGE_EDIT
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {!paginatedJobs.length ? (
-                  <div className="jobsEmpty">No jobs match the current filters.</div>
-                ) : null}
-              </div>
-            </div>
-          </section>
-
-          {drawerOpen ? (
-            <aside className="jobDrawer panel">
-              <div className="drawerHeader">
-                <div>
-                  <strong>Job Detail</strong>
-                  <small>{selectedJob ? `${selectedJob.targetStageType} / ${selectedJob.id}` : "No job selected"}</small>
-                </div>
-                <button className="iconButton" onClick={() => setDrawerOpen(false)} title="Close job detail">x</button>
-              </div>
-              {jobDetailLoading ? (
-                <div className="detailLoading">
-                  <Loader2 className="spin" size={15} />
-                  Loading job detail
-                </div>
-              ) : null}
-              {jobDetailError ? <div className="detailError">{jobDetailError}</div> : null}
-
-              <section className="drawerSection">
-                <div className="drawerSectionHeader">
-                  <strong>Runtime Session</strong>
-                  {runtimeSession?.status === "FAILED_RECOVERABLE" ? (
-                    <button className="recoverButton" onClick={recoverRuntimeSession} disabled={busy}>
-                      Recover
-                    </button>
-                  ) : null}
-                </div>
-                {runtimeSession ? (
-                  <div className="detailList">
-                    <span>Status <b>{runtimeSession.status}</b></span>
-                    <span>Current step <b>{runtimeSession.currentStepNo}</b></span>
-                    <span>Host <b>{runtimeSession.hostId ?? "-"}</b></span>
-                    <span>Instance <b>{runtimeSession.instanceId ?? "-"}</b></span>
-                    <span>Checkpoint</span>
-                    <pre>{JSON.stringify(runtimeSession.checkpoint ?? {}, null, 2)}</pre>
-                  </div>
-                ) : (
-                  <p className="emptyDetail">No runtime session yet.</p>
-                )}
-              </section>
-
-              <section className="drawerSection">
-                <div className="drawerSectionHeader">
-                  <strong>Script Run</strong>
-                  <small>{scriptRun?.status ?? "No run"}</small>
-                </div>
-                {scriptRun ? (
-                  <>
-                    <div className="detailList compactList">
-                      <span>Status <b>{scriptRun.status}</b></span>
-                      <span>Error <b>{findJobError(selectedJob, runtimeSession, scriptRun) || "-"}</b></span>
-                    </div>
-                    <div className="scriptStepTable">
-                      {(scriptRun.steps ?? []).map((step) => (
-                        <div key={step.id}>
-                          <span>{step.stepNo}</span>
-                          <span>{step.stepType}</span>
-                          <b>{step.status}</b>
-                          <small>{step.errorMessage ?? ""}</small>
-                        </div>
-                      ))}
-                      {!(scriptRun.steps ?? []).length ? <p className="emptyDetail">No script steps recorded.</p> : null}
-                    </div>
-                  </>
-                ) : (
-                  <p className="emptyDetail">No script run yet.</p>
-                )}
-              </section>
-
-              <section className="drawerSection">
-                <div className="drawerSectionHeader">
-                  <strong>Output Batches</strong>
-                  <small>{outputBatches.length}</small>
-                </div>
-                <div className="outputBatchList">
-                  {outputBatches.map((batch) => (
-                    <div key={batch.id}>
-                      <strong>{batch.batchType}</strong>
-                      <small>{batch.id}</small>
-                      <span>{batch.status} / {batch.usageStatus}</span>
-                    </div>
-                  ))}
-                  {!outputBatches.length ? <p className="emptyDetail">No output batches found for this job.</p> : null}
-                </div>
-              </section>
-
-              <section className="drawerSection">
-                <div className="drawerSectionHeader">
-                  <strong>Recovery</strong>
-                </div>
-                <p className="emptyDetail">
-                  {runtimeSession?.status === "FAILED_RECOVERABLE"
-                    ? "This runtime can be recovered from its latest checkpoint."
-                    : "Recovery is available when runtime status is FAILED_RECOVERABLE."}
-                </p>
-              </section>
-            </aside>
-          ) : null}
-        </div>
+              </>
+            ) : <p className="emptyDetail">Select a job to inspect production context.</p>}
+          </aside>
+        ) : null}
       </section>
       )}
     </main>

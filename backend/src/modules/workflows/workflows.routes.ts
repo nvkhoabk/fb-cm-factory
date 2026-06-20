@@ -34,6 +34,22 @@ workflowsRouter.post("/", (req, res) => {
   }
 });
 
+workflowsRouter.get("/:id/detail", (req, res) => {
+  try {
+    res.json({ ok: true, data: workflowsService.getDetail(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowsRouter.post("/:id/duplicate", (req, res) => {
+  try {
+    res.status(201).json({ ok: true, data: workflowsService.duplicate(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 workflowsRouter.get("/:id", (req, res) => {
   try {
     res.json({ ok: true, data: workflowsService.get(req.params.id) });

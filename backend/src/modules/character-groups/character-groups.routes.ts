@@ -4,6 +4,7 @@ import {
   assignGroupAttributeSchema,
   createCharacterGroupSchema,
   createGroupMemberSchema,
+  replaceGroupAttributesSchema,
   reorderGroupMembersSchema,
   updateCharacterGroupSchema
 } from "./character-groups.schemas";
@@ -106,6 +107,15 @@ characterGroupsRouter.post("/:id/attributes", (req, res) => {
   try {
     const input = assignGroupAttributeSchema.parse(req.body);
     res.status(201).json({ ok: true, data: characterGroupsService.assignAttribute(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+characterGroupsRouter.put("/:id/attributes", (req, res) => {
+  try {
+    const input = replaceGroupAttributesSchema.parse(req.body);
+    res.json({ ok: true, data: characterGroupsService.replaceAttributes(req.params.id, input) });
   } catch (error) {
     sendError(res, error);
   }
