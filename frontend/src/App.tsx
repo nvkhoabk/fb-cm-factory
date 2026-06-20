@@ -23,6 +23,7 @@ import {
   Video
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRef, type MouseEvent, type PointerEvent } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:3200";
 
@@ -1011,6 +1012,249 @@ function findUrl(value: unknown): string {
   return "";
 }
 
+type LiveInstanceViewProps = {
+  hostId: string;
+  instanceId: string;
+  localId?: string | number | null;
+  adbId?: string | null;
+  defaultIntervalMs?: number;
+  minIntervalMs?: number;
+  enableActions?: boolean;
+  mode?: "instance" | "script-designer";
+  onStatus?: (message: string) => void;
+  onCaptureStep?: (step: Record<string, unknown>) => void;
+};
+
+function coordinateFromEvent(image: HTMLImageElement, event: { clientX: number; clientY: number }) {
+  const rect = image.getBoundingClientRect();
+  const renderedWidth = rect.width || image.clientWidth || 1;
+  const renderedHeight = rect.height || image.clientHeight || 1;
+  const x = Math.round((event.clientX - rect.left) * image.naturalWidth / renderedWidth);
+  const y = Math.round((event.clientY - rect.top) * image.naturalHeight / renderedHeight);
+  return {
+    x: Math.max(0, Math.min(image.naturalWidth, x)),
+    y: Math.max(0, Math.min(image.naturalHeight, y))
+  };
+}
+
+function LiveInstanceView({
+  hostId,
+  instanceId,
+  localId,
+  adbId,
+  defaultIntervalMs = 2000,
+  minIntervalMs = 1000,
+  enableActions = true,
+  mode = "instance",
+  onStatus,
+  onCaptureStep
+}: LiveInstanceViewProps) {
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [screenshotUrl, setScreenshotUrl] = useState("");
+  const [lastRefreshAt, setLastRefreshAt] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [intervalMs, setIntervalMs] = useState(defaultIntervalMs);
+  const [interactionMode, setInteractionMode] = useState<"tap" | "swipe" | "copy">("tap");
+  const [coordinate, setCoordinate] = useState<{ x: number; y: number } | null>(null);
+  const [swipeStart, setSwipeStart] = useState<{ x: number; y: number } | null>(null);
+  const [lastTap, setLastTap] = useState<{ x: number; y: number } | null>(null);
+  const [lastSwipe, setLastSwipe] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const [text, setText] = useState("");
+  const [panelWidth, setPanelWidth] = useState(720);
+
+  const canRun = Boolean(hostId && instanceId && adbId);
+
+  const refresh = useCallback(async () => {
+    if (!canRun) return;
+    setLoading(true);
+    setError("");
+    try {
+      const result = await api(`/hosts/${hostId}/instances/${encodeURIComponent(instanceId)}/live-screenshot`, {
+        method: "POST",
+        body: JSON.stringify({ localId, adbId })
+      });
+      const url = findUrl(result);
+      setScreenshotUrl(url);
+      setLastRefreshAt(new Date().toISOString());
+      onStatus?.("Live screenshot refreshed");
+    } catch (refreshError) {
+      const message = refreshError instanceof Error ? refreshError.message : "Live screenshot failed";
+      setError(message);
+      onStatus?.(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [adbId, canRun, hostId, instanceId, localId, onStatus]);
+
+  useEffect(() => {
+    if (!autoRefresh || !canRun) return;
+    let stopped = false;
+    let inFlight = false;
+    const safeInterval = Math.max(minIntervalMs, Number(intervalMs) || defaultIntervalMs);
+    const tick = async () => {
+      if (stopped || inFlight) return;
+      inFlight = true;
+      try {
+        await refresh();
+      } finally {
+        inFlight = false;
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, safeInterval);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [autoRefresh, canRun, defaultIntervalMs, intervalMs, minIntervalMs, refresh]);
+
+  function imageCoordinate(event: MouseEvent<HTMLImageElement>) {
+    const image = imageRef.current;
+    if (!image || !image.naturalWidth || !image.naturalHeight) return null;
+    return coordinateFromEvent(image, event);
+  }
+
+  async function runTap(point = lastTap) {
+    if (!canRun || !point) return;
+    await api(`/hosts/${hostId}/tap`, {
+      method: "POST",
+      body: JSON.stringify({ instanceId, adbId, x: point.x, y: point.y })
+    });
+    onStatus?.(`Tapped ${point.x}, ${point.y}`);
+  }
+
+  async function runSwipe(swipe = lastSwipe) {
+    if (!canRun || !swipe) return;
+    await api(`/hosts/${hostId}/swipe`, {
+      method: "POST",
+      body: JSON.stringify({ instanceId, adbId, ...swipe, durationMs: 300 })
+    });
+    onStatus?.(`Swiped ${swipe.x1},${swipe.y1} to ${swipe.x2},${swipe.y2}`);
+  }
+
+  async function runSendText() {
+    if (!canRun || !text) return;
+    await api(`/hosts/${hostId}/send-text`, {
+      method: "POST",
+      body: JSON.stringify({ instanceId, adbId, text })
+    });
+    onStatus?.("Text sent");
+  }
+
+  async function runSendKey(key: string) {
+    if (!canRun) return;
+    await api(`/hosts/${hostId}/send-key`, {
+      method: "POST",
+      body: JSON.stringify({ instanceId, adbId, key })
+    });
+    onStatus?.(`Key sent: ${key}`);
+  }
+
+  async function copyCoordinate(point = coordinate) {
+    if (!point) return;
+    await navigator.clipboard.writeText(`${point.x},${point.y}`);
+    onStatus?.(`Copied ${point.x}, ${point.y}`);
+  }
+
+  function handleClick(event: MouseEvent<HTMLImageElement>) {
+    const point = imageCoordinate(event);
+    if (!point) return;
+    setCoordinate(point);
+    if (interactionMode === "tap") {
+      setLastTap(point);
+      if (mode === "script-designer") return;
+      runTap(point);
+    }
+    if (interactionMode === "copy") {
+      copyCoordinate(point);
+    }
+  }
+
+  function handlePointerDown(event: PointerEvent<HTMLImageElement>) {
+    if (interactionMode !== "swipe") return;
+    const point = imageCoordinate(event as unknown as MouseEvent<HTMLImageElement>);
+    if (point) setSwipeStart(point);
+  }
+
+  function handlePointerUp(event: PointerEvent<HTMLImageElement>) {
+    if (interactionMode !== "swipe" || !swipeStart) return;
+    const point = imageCoordinate(event as unknown as MouseEvent<HTMLImageElement>);
+    if (!point) return;
+    const swipe = { x1: swipeStart.x, y1: swipeStart.y, x2: point.x, y2: point.y };
+    setLastSwipe(swipe);
+    setSwipeStart(null);
+    if (mode !== "script-designer") runSwipe(swipe);
+  }
+
+  return (
+    <div className="liveInstanceView">
+      {!canRun ? <span className="poolBadge warningBadge">ADB mapping required for live screenshot.</span> : null}
+      <div className="liveScreenshotToolbar">
+        <button disabled={!canRun || loading} onClick={refresh}><RefreshCcw size={15} /> Refresh</button>
+        <label><input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} /> Auto</label>
+        <label>Interval
+          <select value={intervalMs} onChange={(event) => setIntervalMs(Math.max(minIntervalMs, Number(event.target.value) || defaultIntervalMs))}>
+            <option value={1000}>1000ms</option>
+            <option value={2000}>2000ms</option>
+            <option value={5000}>5000ms</option>
+          </select>
+        </label>
+        <label>Size
+          <input type="range" min={320} max={1200} step={40} value={panelWidth} onChange={(event) => setPanelWidth(Number(event.target.value))} />
+        </label>
+        <strong>{loading ? "Loading..." : lastRefreshAt ? displayDateTime(lastRefreshAt) : "Not refreshed"}</strong>
+        <button onClick={() => panelRef.current?.requestFullscreen?.()}><Eye size={15} /> Fullscreen</button>
+      </div>
+      <div className="liveModeToolbar">
+        {(["tap", "swipe", "copy"] as const).map((item) => (
+          <button key={item} className={interactionMode === item ? "active" : ""} onClick={() => setInteractionMode(item)}>{item === "tap" ? "Tap Mode" : item === "swipe" ? "Swipe Mode" : "Copy Coordinates"}</button>
+        ))}
+        <span>{coordinate ? `x ${coordinate.x} / y ${coordinate.y}` : "Move over screenshot to read coordinates"}</span>
+        {error ? <span className="jobErrorBadge">{error}</span> : null}
+      </div>
+      <div className="liveCapturePreview liveResizablePreview" style={{ width: `${panelWidth}px` }} ref={panelRef}>
+        {screenshotUrl ? (
+          <img
+            ref={imageRef}
+            src={mediaUrl(screenshotUrl)}
+            alt={`${instanceId} live screenshot`}
+            onClick={handleClick}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
+            onMouseMove={(event) => {
+              const point = imageCoordinate(event);
+              if (point) setCoordinate(point);
+            }}
+          />
+        ) : (
+          <div className="resourcePreviewPlaceholder"><Image size={26} /> Live screenshot pending</div>
+        )}
+      </div>
+      {enableActions ? (
+        <div className="liveActionPanel">
+          <label>Text<input value={text} onChange={(event) => setText(event.target.value)} placeholder="Send text through ADB Keyboard" /></label>
+          <div className="resourceActions">
+            <button disabled={!canRun || !text} onClick={runSendText}>Send Text</button>
+            {["BACK", "HOME", "ENTER", "TAB"].map((key) => <button disabled={!canRun} key={key} onClick={() => runSendKey(key)}>{key}</button>)}
+            {mode === "script-designer" ? (
+              <>
+                <button disabled={!lastTap} onClick={() => lastTap && onCaptureStep?.({ type: "tap", config: lastTap })}>Add Tap Step</button>
+                <button disabled={!lastSwipe} onClick={() => lastSwipe && onCaptureStep?.({ type: "swipe", config: { ...lastSwipe, durationMs: 300 } })}>Add Swipe Step</button>
+                <button disabled={!text} onClick={() => onCaptureStep?.({ type: "send-text", config: { text } })}>Add Send Text Step</button>
+                <button onClick={() => onCaptureStep?.({ type: "screenshot", config: {} })}>Add Screenshot Step</button>
+                <button onClick={() => onCaptureStep?.({ type: "download-latest", config: {} })}>Add Download Latest Step</button>
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function parseJsonText(value: string, fallback: Record<string, unknown> = {}) {
   try {
     return JSON.parse(value || "{}") as Record<string, unknown>;
@@ -1503,7 +1747,7 @@ export function App() {
   const [instanceMaintenanceFilter, setInstanceMaintenanceFilter] = useState(false);
   const [instanceLastSeenFilter, setInstanceLastSeenFilter] = useState("");
   const [instanceDrawerId, setInstanceDrawerId] = useState("");
-  const [instanceDrawerTab, setInstanceDrawerTab] = useState<"overview" | "capabilities" | "runtime" | "health" | "history" | "json">("overview");
+  const [instanceDrawerTab, setInstanceDrawerTab] = useState<"overview" | "capabilities" | "runtime" | "live" | "health" | "history" | "json">("overview");
   const [instanceCopySourceId, setInstanceCopySourceId] = useState("");
   const [instanceBulkCapability, setInstanceBulkCapability] = useState("IMAGE_EDIT");
   const [adbMappingInstanceId, setAdbMappingInstanceId] = useState("");
@@ -1573,7 +1817,8 @@ export function App() {
   const [scriptHasActiveFilter, setScriptHasActiveFilter] = useState(false);
   const [scriptLastTestFilter, setScriptLastTestFilter] = useState("");
   const [scriptRecentFilter, setScriptRecentFilter] = useState(false);
-  const [scriptDrawerTab, setScriptDrawerTab] = useState<"overview" | "versions" | "steps" | "variables" | "test" | "runs" | "json">("overview");
+  const [scriptDrawerTab, setScriptDrawerTab] = useState<"overview" | "versions" | "steps" | "variables" | "live" | "test" | "runs" | "json">("overview");
+  const [pendingScriptCaptureSteps, setPendingScriptCaptureSteps] = useState<Array<Record<string, unknown>>>([]);
   const [selectedScriptStepIndex, setSelectedScriptStepIndex] = useState(0);
   const [scriptTestContext, setScriptTestContext] = useState(JSON.stringify({
     prompt: { image: "Sample image prompt", video: "", music: "", post: "" },
@@ -2190,53 +2435,10 @@ export function App() {
     poolType,
     items: filteredInstances.filter((instance) => (instance.currentPoolType ?? "AVAILABLE") === poolType)
   })), [filteredInstances]);
-  const visibleInstanceCards = useMemo(() => {
-    let candidates: InstanceRecord[] = [];
-    if (page === "control-center") {
-      candidates = instanceColumns.flatMap((column) => column.items.slice(0, 16));
-    } else if (page === "management" && managementSection === "hosts" && hostDrawerTab === "instances") {
-      candidates = selectedHostDrawerInstances;
-    } else if (page === "management" && managementSection === "instances" && instanceViewMode === "board") {
-      candidates = operationalInstanceColumns.flatMap((column) => column.items);
-    } else if (page === "management" && managementSection === "instance-pools" && capacityPoolsTab === "operational") {
-      candidates = capacityInstanceColumns.flatMap((column) => column.items);
-    }
-
-    const unique = new Map<string, InstanceRecord>();
-    for (const instance of candidates) {
-      if (!instance.adbId || hasUnknownAdbMapping(instance)) continue;
-      unique.set(instance.id, instance);
-    }
-    return [...unique.values()].slice(0, 24);
-  }, [capacityInstanceColumns, capacityPoolsTab, hostDrawerTab, instanceColumns, instanceViewMode, managementSection, operationalInstanceColumns, page, selectedHostDrawerInstances]);
   const selectedCapacityInstance = useMemo(
     () => instances.find((instance) => instance.id === capacityDrawerInstanceId) ?? null,
     [capacityDrawerInstanceId, instances]
   );
-  useEffect(() => {
-    if (!visibleInstanceCards.length) return;
-    let cancelled = false;
-
-    const refreshDueScreenshots = () => {
-      const nowMs = Date.now();
-      for (const instance of visibleInstanceCards) {
-        const cached = instanceScreenshotPreviews[instance.id];
-        const isFresh = cached?.capturedAt && nowMs - cached.capturedAt < 10_000;
-        if (cached?.loading || isFresh) continue;
-        requestInstanceScreenshotPreview(instance);
-      }
-    };
-
-    refreshDueScreenshots();
-    const timer = window.setInterval(() => {
-      if (!cancelled) refreshDueScreenshots();
-    }, 2_000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [instanceScreenshotPreviews, visibleInstanceCards]);
   const selectedCapacityAllocation = useMemo(
     () => selectedCapacityInstance ? allocations.find((allocation) => allocation.instanceId === selectedCapacityInstance.id && !["RELEASED", "FAILED"].includes(allocation.status)) ?? null : null,
     [allocations, selectedCapacityInstance]
@@ -4264,6 +4466,23 @@ export function App() {
     setScriptDraftDefinition({ steps: next });
   }
 
+  function queueScriptCaptureStep(step: Record<string, unknown>) {
+    const normalized = normalizeScriptStep(step, pendingScriptCaptureSteps.length);
+    setPendingScriptCaptureSteps((current) => [...current, normalized]);
+    setStatus(`Pending ${scriptStepType(normalized)} step captured`);
+  }
+
+  function applyPendingScriptCaptureSteps() {
+    if (!pendingScriptCaptureSteps.length) return;
+    const confirmed = window.confirm(`Add ${pendingScriptCaptureSteps.length} captured step(s) to the current script draft?`);
+    if (!confirmed) return;
+    const next = [...scriptDraft.steps, ...pendingScriptCaptureSteps].map((step, index) => normalizeScriptStep(step, index));
+    setScriptDraftDefinition({ steps: next });
+    setSelectedScriptStepIndex(next.length - 1);
+    setPendingScriptCaptureSteps([]);
+    setScriptDrawerTab("steps");
+  }
+
   function removeScriptStep(index: number) {
     const next = scriptDraft.steps.filter((_, itemIndex) => itemIndex !== index).map((step, itemIndex) => normalizeScriptStep(step, itemIndex));
     setSelectedScriptStepIndex(Math.max(0, Math.min(index, next.length - 1)));
@@ -6122,6 +6341,7 @@ export function App() {
                       ["overview", "Overview"],
                       ["capabilities", "Capabilities"],
                       ["runtime", "Runtime/Allocation"],
+                      ["live", "Live Interaction"],
                       ["health", "Health/Test"],
                       ["history", "History"],
                       ["json", "Debug JSON"]
@@ -6185,6 +6405,24 @@ export function App() {
                         <span>Current step</span><strong>{selectedInstanceDrawerRuntime?.currentStepNo ?? "-"}</strong>
                       </div>
                       <div className="relationshipList">{selectedInstanceDrawerJobs.slice(0, 8).map((job) => <span key={job.id}>{job.targetStageType} / {job.status} / {displayShortId(job.id)}</span>)}</div>
+                    </div>
+                  ) : null}
+
+                  {instanceDrawerTab === "live" ? (
+                    <div className="resourceDrawerBody">
+                      {(() => {
+                        const host = hostForInstance(selectedInstanceDrawer);
+                        return host ? (
+                          <LiveInstanceView
+                            hostId={host.id}
+                            instanceId={selectedInstanceDrawer.id}
+                            localId={selectedInstanceDrawer.localId}
+                            adbId={selectedInstanceDrawer.adbId}
+                            mode="instance"
+                            onStatus={setStatus}
+                          />
+                        ) : <span className="poolBadge warningBadge">Host is required for live interaction.</span>;
+                      })()}
                     </div>
                   ) : null}
 
@@ -6618,6 +6856,7 @@ export function App() {
                             ["versions", "Versions"],
                             ["steps", "Step Editor"],
                             ["variables", "Variables"],
+                            ["live", "Live Capture"],
                             ["test", "Test Run"],
                             ["runs", "Runs"],
                             ["json", "Debug JSON"]
@@ -6738,6 +6977,44 @@ export function App() {
                               {scriptRuntimeVariables.map((variable) => <button key={variable} onClick={() => insertScriptVariable(variable)}>{variable}</button>)}
                             </div>
                             <small>Click inserts into the selected step config text field.</small>
+                          </div>
+                        ) : null}
+
+                        {scriptDrawerTab === "live" ? (
+                          <div className="scriptDrawerBody">
+                            <div className="resourceCreateGrid">
+                              <label>Instance<select value={hostInstanceId} onChange={(event) => {
+                                const instance = instances.find((item) => item.id === event.target.value);
+                                setHostInstanceId(event.target.value);
+                                setHostAdbId(instance?.adbId ?? "");
+                                const host = instance ? hostForInstance(instance) : null;
+                                if (host) setSelectedHostId(host.hostId);
+                              }}><option value="">Select instance</option>{instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.id} / {instance.adbId ?? "ADB unknown"}</option>)}</select></label>
+                              <label>ADB ID<input value={hostAdbId} onChange={(event) => setHostAdbId(event.target.value)} /></label>
+                            </div>
+                            {(() => {
+                              const instance = instances.find((item) => item.id === hostInstanceId) ?? null;
+                              const host = instance ? hostForInstance(instance) : hosts.find((item) => item.hostId === selectedHostId || item.id === selectedHostId) ?? null;
+                              return host && instance ? (
+                                <LiveInstanceView
+                                  hostId={host.id}
+                                  instanceId={instance.id}
+                                  localId={instance.localId}
+                                  adbId={hostAdbId || instance.adbId}
+                                  mode="script-designer"
+                                  onStatus={setStatus}
+                                  onCaptureStep={queueScriptCaptureStep}
+                                />
+                              ) : <span className="poolBadge warningBadge">Select an instance with adbId to use Live Capture.</span>;
+                            })()}
+                            <div className="scriptValidationPanel">
+                              <strong>Pending Captured Steps</strong>
+                              {pendingScriptCaptureSteps.length ? pendingScriptCaptureSteps.map((step, index) => <span key={`${index}-${scriptStepType(step)}`}>#{index + 1} {scriptStepType(step)} / {scriptStepSummary(step)}</span>) : <span>No pending captured steps.</span>}
+                            </div>
+                            <div className="resourceActions">
+                              <button disabled={!pendingScriptCaptureSteps.length} onClick={applyPendingScriptCaptureSteps}>Apply Pending Steps</button>
+                              <button disabled={!pendingScriptCaptureSteps.length} onClick={() => setPendingScriptCaptureSteps([])}>Clear Pending</button>
+                            </div>
                           </div>
                         ) : null}
 

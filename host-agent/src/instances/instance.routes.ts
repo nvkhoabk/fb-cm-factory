@@ -7,10 +7,18 @@ export const instanceRouter = Router();
 
 function sendError(res: import("express").Response, error: unknown) {
   const message = error instanceof Error ? error.message : "INSTANCE_COMMAND_ERROR";
-  const code = error instanceof Error && error.name === "NO_MATCHING_FILE_FOUND"
-    ? "NO_MATCHING_FILE_FOUND"
+  const errorName = error instanceof Error ? error.name : "";
+  const knownCodes = new Set([
+    "NO_MATCHING_FILE_FOUND",
+    "ADB_KEYBOARD_NOT_AVAILABLE",
+    "SEND_TEXT_FAILED",
+    "TEXT_REQUIRED"
+  ]);
+  const code = knownCodes.has(errorName)
+    ? errorName
     : message.includes("adbId") ? "ADB_ID_REQUIRED" : "INSTANCE_COMMAND_ERROR";
-  res.status(code === "ADB_ID_REQUIRED" || code === "NO_MATCHING_FILE_FOUND" ? 400 : 500).json({ ok: false, error: { code, message } });
+  res.status(code === "ADB_ID_REQUIRED" || code === "TEXT_REQUIRED" || code === "NO_MATCHING_FILE_FOUND" ? 400 : 500)
+    .json({ ok: false, error: { code, message } });
 }
 
 function numberBody(value: unknown, key: string) {
@@ -31,7 +39,18 @@ instanceRouter.post("/:localId/screenshot", requireAgentApiKey, async (req, res)
   try {
     res.json({
       ok: true,
-      data: await instanceCommands.screenshot(req.params.localId, String(req.body?.adbId ?? ""))
+      data: await instanceCommands.screenshot(String(req.body?.instanceId ?? req.params.localId), String(req.body?.adbId ?? ""))
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+instanceRouter.post("/:localId/live-screenshot", requireAgentApiKey, async (req, res) => {
+  try {
+    res.json({
+      ok: true,
+      data: await instanceCommands.liveScreenshot(String(req.body?.instanceId ?? req.params.localId), String(req.body?.adbId ?? ""))
     });
   } catch (error) {
     sendError(res, error);
@@ -77,7 +96,7 @@ instanceRouter.post("/:localId/send-text", requireAgentApiKey, async (req, res) 
       ok: true,
       data: await instanceCommands.sendText({
         adbId: String(req.body?.adbId ?? ""),
-        text: String(req.body?.text ?? "")
+        text: req.body?.text
       })
     });
   } catch (error) {

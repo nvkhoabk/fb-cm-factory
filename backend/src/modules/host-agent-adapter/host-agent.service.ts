@@ -7,6 +7,7 @@ import { hostAgentClient } from "./host-agent.client";
 import type {
   CreateHostInput,
   DownloadLatestCommandInput,
+  LiveScreenshotCommandInput,
   SendKeyCommandInput,
   SendTextCommandInput,
   SwipeCommandInput,
@@ -245,6 +246,14 @@ export const hostAgentService = {
     return {
       host: publicHost(host),
       result: await hostAgentClient.takeScreenshot(target, input.instanceId, input.adbId)
+    };
+  },
+
+  async takeLiveScreenshot(hostId: string, input: LiveScreenshotCommandInput) {
+    const { host, target } = this.targetForHost(hostId);
+    return {
+      host: publicHost(host),
+      result: await hostAgentClient.takeLiveScreenshot(target, input)
     };
   },
 

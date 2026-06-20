@@ -93,6 +93,16 @@ export const hostAgentClient = {
     });
   },
 
+  takeLiveScreenshot(target: HostAgentTarget, input: { instanceId: string; localId?: string | number; adbId: string }) {
+    const localId = input.localId === undefined || input.localId === null || input.localId === ""
+      ? input.instanceId
+      : String(input.localId);
+    return requestAgent(target, `/instances/${encodeURIComponent(localId)}/live-screenshot`, {
+      method: "POST",
+      body: body({ instanceId: input.instanceId, adbId: input.adbId })
+    });
+  },
+
   tap(target: HostAgentTarget, instanceId: string, adbId: string, x: number, y: number) {
     return requestAgent(target, `/instances/${encodeURIComponent(instanceId)}/tap`, {
       method: "POST",

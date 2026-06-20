@@ -30,6 +30,9 @@ function latestFileCommand(sourceDir: string, extensions: string[]) {
     `dir=${shellQuote(sourceDir)}`,
     `for f in "$dir"/*; do`,
     `[ -f "$f" ] || continue`,
+    `base="\${f##*/}"`,
+    `lower=$(printf '%s' "$base" | tr 'A-Z' 'a-z')`,
+    `case "$lower" in *fb-cm-factory-screenshot*|*live-screenshot*|*debug-screenshot*|live-*) continue ;; esac`,
     `ext="\${f##*.}"`,
     `case "$ext" in ${extensionCases})`,
     `ts=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo 0)`,
@@ -39,11 +42,20 @@ function latestFileCommand(sourceDir: string, extensions: string[]) {
   ].join("; ");
 }
 
+function taskOutputFolder(targetFolder?: string) {
+  if (!targetFolder) return "task-outputs";
+  const normalized = targetFolder.replace(/^[/\\]+/, "").replace(/\.\./g, "");
+  if (!normalized || normalized === "task-outputs" || normalized.startsWith("task-outputs/") || normalized.startsWith("task-outputs\\")) {
+    return normalized || "task-outputs";
+  }
+  return path.join("task-outputs", normalized);
+}
+
 export const downloadLatestService = {
   async downloadLatest(input: DownloadLatestInput) {
     const sourceDir = input.sourceDir ?? "/sdcard/Download";
     const extensions = input.extensions?.length ? input.extensions : ["png", "jpg", "jpeg", "webp", "mp4"];
-    const targetFolder = input.targetFolder ?? "task-outputs";
+    const targetFolder = taskOutputFolder(input.targetFolder);
     const folder = storageService.ensureTargetFolder(targetFolder);
 
     if (config.mockMode) {

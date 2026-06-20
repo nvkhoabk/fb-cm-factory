@@ -3893,6 +3893,105 @@ h2 {
   gap: 6px;
 }
 
+.liveScreenshotToolbar {
+  align-items: center;
+  background: #f4faf6;
+  border: 1px solid #d6e7dc;
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 8px 10px;
+}
+
+.liveInstanceView {
+  display: grid;
+  gap: 10px;
+}
+
+.liveModeToolbar,
+.liveActionPanel {
+  align-items: center;
+  background: #f8fcf9;
+  border: 1px solid #dbece1;
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.liveModeToolbar button.active {
+  background: #1f7a3a;
+  color: #ffffff;
+}
+
+.liveModeToolbar span {
+  color: #386247;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.liveActionPanel label {
+  flex: 1 1 260px;
+}
+
+.liveScreenshotToolbar label {
+  align-items: center;
+  display: flex;
+  flex: 1 1 260px;
+  gap: 10px;
+}
+
+.liveScreenshotToolbar input[type="range"] {
+  flex: 1;
+  min-width: 180px;
+}
+
+.liveScreenshotToolbar strong {
+  color: #1d5e33;
+  font-size: 12px;
+}
+
+.liveResizablePreview {
+  background: #0d1711;
+  border: 1px solid #255d37;
+  border-radius: 10px;
+  max-width: 100%;
+  min-height: 260px;
+  min-width: 280px;
+  overflow: auto;
+  padding: 8px;
+  resize: both;
+}
+
+.liveResizablePreview > img {
+  background: #07100a;
+  border: 0;
+  border-radius: 7px;
+  cursor: crosshair;
+  display: block;
+  height: auto;
+  max-height: none;
+  object-fit: contain;
+  width: 100%;
+}
+
+.liveResizablePreview .instancePreviewSlot {
+  min-height: 220px;
+}
+
+.liveResizablePreview .instancePreviewSlot.hasImage {
+  grid-template-rows: minmax(200px, 1fr) auto;
+  min-height: 100%;
+}
+
+.liveResizablePreview .instancePreviewSlot img {
+  height: 100%;
+  max-height: none;
+}
+
 .liveCapturePreview img {
   background: #f2f7f3;
   border: 1px solid #dce8de;
@@ -3901,6 +4000,12 @@ h2 {
   max-height: 360px;
   object-fit: contain;
   width: 100%;
+}
+
+.liveCapturePreview.liveResizablePreview > img {
+  background: #07100a;
+  border: 0;
+  max-height: none;
 }
 
 .scriptRunCard {

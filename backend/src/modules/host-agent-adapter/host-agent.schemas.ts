@@ -13,6 +13,10 @@ export const instanceCommandSchema = z.object({
   adbId: z.string().min(1, "adbId is required")
 });
 
+export const liveScreenshotCommandSchema = instanceCommandSchema.extend({
+  localId: z.union([z.string(), z.number()]).optional()
+});
+
 export const tapCommandSchema = instanceCommandSchema.extend({
   x: z.number(),
   y: z.number()
@@ -42,6 +46,7 @@ export const downloadLatestCommandSchema = instanceCommandSchema.extend({
 
 export type CreateHostInput = z.infer<typeof createHostSchema>;
 export type InstanceCommandInput = z.infer<typeof instanceCommandSchema>;
+export type LiveScreenshotCommandInput = z.infer<typeof liveScreenshotCommandSchema>;
 export type TapCommandInput = z.infer<typeof tapCommandSchema>;
 export type SwipeCommandInput = z.infer<typeof swipeCommandSchema>;
 export type SendTextCommandInput = z.infer<typeof sendTextCommandSchema>;

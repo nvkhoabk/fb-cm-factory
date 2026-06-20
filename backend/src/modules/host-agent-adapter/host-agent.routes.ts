@@ -5,6 +5,7 @@ import {
   createHostSchema,
   downloadLatestCommandSchema,
   instanceCommandSchema,
+  liveScreenshotCommandSchema,
   sendKeyCommandSchema,
   sendTextCommandSchema,
   swipeCommandSchema,
@@ -114,6 +115,18 @@ hostAgentRouter.post("/:id/screenshot", async (req, res) => {
   try {
     const input = parseCommand(instanceCommandSchema, req.body);
     res.json({ ok: true, data: await hostAgentService.takeScreenshot(req.params.id, input) });
+  } catch (error) {
+    sendHostAgentError(res, error);
+  }
+});
+
+hostAgentRouter.post("/:id/instances/:instanceId/live-screenshot", async (req, res) => {
+  try {
+    const input = parseCommand(liveScreenshotCommandSchema, {
+      ...(req.body ?? {}),
+      instanceId: req.params.instanceId
+    });
+    res.json({ ok: true, data: await hostAgentService.takeLiveScreenshot(req.params.id, input) });
   } catch (error) {
     sendHostAgentError(res, error);
   }
