@@ -106,6 +106,13 @@ function safeRemoteFileName(value: string) {
     || "upload-file";
 }
 
+function fileNameWithFallbackExtension(fileName: string, sourceAbsolutePath: string) {
+  const safeName = safeRemoteFileName(fileName || path.basename(sourceAbsolutePath));
+  if (path.extname(safeName)) return safeName;
+  const extension = path.extname(sourceAbsolutePath);
+  return extension ? `${safeName}${extension}` : safeName;
+}
+
 function timestampForFileName(date = new Date()) {
   const pad = (value: number) => String(value).padStart(2, "0");
   return [
@@ -302,7 +309,7 @@ export const instanceCommands = {
     const adbId = requireAdbId(input.adbId);
     if (!input.assetId) throw commandError("ASSET_ID_REQUIRED", "assetId is required");
     const remoteDir = uploadRemoteDir();
-    const originalName = safeRemoteFileName(input.fileName || path.basename(input.sourceAbsolutePath));
+    const originalName = fileNameWithFallbackExtension(input.fileName || path.basename(input.sourceAbsolutePath), input.sourceAbsolutePath);
     const remoteFileName = `${safePathSegment(input.assetId)}_${timestampForFileName()}_${originalName}`;
     const remotePath = `${remoteDir}/${remoteFileName}`;
     const canUseSourcePath = input.sourceAbsolutePath && fs.existsSync(input.sourceAbsolutePath) && fs.statSync(input.sourceAbsolutePath).isFile();

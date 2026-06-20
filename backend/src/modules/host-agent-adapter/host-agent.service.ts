@@ -80,10 +80,16 @@ function resolveAssetSourceFile(assetId: string) {
     throw new AppError("ASSET_FILE_NOT_FOUND", "Asset file does not exist on disk", 404);
   }
 
+  const sourceExtension = path.extname(sourceAbsolutePath);
+  const assetName = typeof asset.name === "string" && asset.name.trim() ? asset.name.trim() : "";
+  const assetNameWithExtension = assetName
+    ? path.extname(assetName) ? assetName : `${assetName}${sourceExtension}`
+    : path.basename(sourceAbsolutePath);
+
   return {
     asset,
     sourceAbsolutePath,
-    fileName: asset.name || path.basename(sourceAbsolutePath)
+    fileName: assetNameWithExtension || path.basename(sourceAbsolutePath)
   };
 }
 
