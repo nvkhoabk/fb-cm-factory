@@ -7262,7 +7262,7 @@ export function App() {
                                     </label>
                                   ))}
                                   {!template ? <p className="emptyDetail">Unknown step type. Use JSON editor fallback for custom config.</p> : null}
-                                  {type === "upload-file" ? <p className="emptyDetail">Upload staging uses /sdcard/fb-cm-factory/uploads/&lt;runtimeSessionId&gt;/ and never uses /sdcard/Download.</p> : null}
+                                  {type === "upload-file" ? <p className="emptyDetail">Upload staging uses /sdcard/fb-cm-factory/uploads/ with unique filenames and never uses /sdcard/Download.</p> : null}
                                 </div>
                               </>
                             );

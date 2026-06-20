@@ -49,8 +49,6 @@ export const pushUploadFileCommandSchema = instanceCommandSchema.extend({
   jobId: z.string().min(1).optional(),
   assetId: z.string().min(1),
   localId: z.union([z.string(), z.number()]).optional()
-}).refine((input) => Boolean(input.runtimeSessionId || input.jobId), {
-  message: "runtimeSessionId or jobId is required"
 });
 
 export const openFileCommandSchema = instanceCommandSchema.extend({
@@ -59,7 +57,7 @@ export const openFileCommandSchema = instanceCommandSchema.extend({
 });
 
 export const cleanupUploadSessionCommandSchema = instanceCommandSchema.extend({
-  runtimeSessionId: z.string().min(1)
+  runtimeSessionId: z.string().min(1).optional()
 });
 
 export const cleanupOldTempCommandSchema = instanceCommandSchema.extend({

@@ -106,34 +106,41 @@ function safeRemoteFileName(value: string) {
     || "upload-file";
 }
 
-function requireRuntimeKey(input: { runtimeSessionId?: string; jobId?: string }) {
-  const key = input.runtimeSessionId || input.jobId;
-  if (!key) throw commandError("RUNTIME_CONTEXT_REQUIRED", "runtimeSessionId or jobId is required");
-  return safePathSegment(key);
+function timestampForFileName(date = new Date()) {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    "_",
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds())
+  ].join("");
 }
 
-function uploadRemoteDir(runtimeKey: string) {
-  return `/sdcard/fb-cm-factory/uploads/${runtimeKey}`;
+function uploadRemoteDir() {
+  return "/sdcard/fb-cm-factory/uploads";
 }
 
-function localUploadSourcePath(runtimeKey: string, fileName: string, sourceBase64: string) {
-  const folder = storageService.ensureTargetFolder(path.join("upload-sources", runtimeKey));
+function localUploadSourcePath(fileName: string, sourceBase64: string) {
+  const folder = storageService.ensureTargetFolder("upload-sources");
   const absolutePath = path.join(folder.absolutePath, fileName);
   fs.writeFileSync(absolutePath, Buffer.from(sourceBase64, "base64"));
   return absolutePath;
 }
 
-function oldFoldersCleanupCommand(baseDir: string, olderThanHours: number) {
+function oldEntriesCleanupCommand(baseDir: string, olderThanHours: number) {
   const minutes = Math.max(1, Math.floor(olderThanHours * 60));
   return [
     `dir=${shellQuote(baseDir)}`,
     `[ -d "$dir" ] || exit 0`,
-    `find "$dir" -mindepth 1 -maxdepth 1 -type d -mmin +${minutes} -exec rm -rf {} \\;`
+    `find "$dir" -mindepth 1 -mmin +${minutes} -exec rm -rf {} \\;`
   ].join("; ");
 }
 
 function tempUsageCommand() {
-  return `for item in uploads:/sdcard/fb-cm-factory/uploads live:/sdcard/fb-cm-factory/live screenshots:/sdcard/fb-cm-factory/screenshots; do name="\${item%%:*}"; dir="\${item#*:}"; if [ -d "$dir" ]; then bytes=$(du -s "$dir" 2>/dev/null | awk '{print $1 * 1024}'); else bytes=0; fi; printf '%s=%s\\n' "$name" "\${bytes:-0}"; done`;
+  return `for item in uploads:/sdcard/fb-cm-factory/uploads temp:/sdcard/fb-cm-factory/temp live:/sdcard/fb-cm-factory/live screenshots:/sdcard/fb-cm-factory/screenshots; do name="\${item%%:*}"; dir="\${item#*:}"; if [ -d "$dir" ]; then bytes=$(du -s "$dir" 2>/dev/null | awk '{print $1 * 1024}'); else bytes=0; fi; printf '%s=%s\\n' "$name" "\${bytes:-0}"; done`;
 }
 
 function mockPngBuffer() {
@@ -293,17 +300,16 @@ export const instanceCommands = {
 
   async pushUploadFile(input: PushUploadFileInput) {
     const adbId = requireAdbId(input.adbId);
-    const runtimeKey = requireRuntimeKey(input);
     if (!input.assetId) throw commandError("ASSET_ID_REQUIRED", "assetId is required");
-    const remoteDir = uploadRemoteDir(runtimeKey);
+    const remoteDir = uploadRemoteDir();
     const originalName = safeRemoteFileName(input.fileName || path.basename(input.sourceAbsolutePath));
-    const remoteFileName = `${safePathSegment(input.assetId)}-${Date.now()}-${originalName}`;
+    const remoteFileName = `${safePathSegment(input.assetId)}_${timestampForFileName()}_${originalName}`;
     const remotePath = `${remoteDir}/${remoteFileName}`;
     const canUseSourcePath = input.sourceAbsolutePath && fs.existsSync(input.sourceAbsolutePath) && fs.statSync(input.sourceAbsolutePath).isFile();
     const readableSourcePath = canUseSourcePath
       ? input.sourceAbsolutePath
       : typeof input.sourceBase64 === "string" && input.sourceBase64
-        ? localUploadSourcePath(runtimeKey, remoteFileName, input.sourceBase64)
+        ? localUploadSourcePath(remoteFileName, input.sourceBase64)
         : "";
     const shouldDeleteLocalTemp = Boolean(readableSourcePath && !canUseSourcePath);
     if (!readableSourcePath) {
@@ -313,8 +319,6 @@ export const instanceCommands = {
     debugInteraction("push-upload-file", {
       adbId,
       assetId: input.assetId,
-      runtimeSessionId: input.runtimeSessionId,
-      jobId: input.jobId,
       remotePath
     });
 
@@ -341,20 +345,17 @@ export const instanceCommands = {
     }
 
     return {
-      runtimeSessionId: input.runtimeSessionId ?? null,
-      jobId: input.jobId ?? null,
       assetId: input.assetId,
       adbId,
       remotePath,
-      remoteDir,
       remoteFileName
     };
   },
 
   async openFile(input: OpenFileInput) {
     const adbId = requireAdbId(input.adbId);
-    if (!input.remotePath || !input.remotePath.startsWith("/sdcard/fb-cm-factory/uploads/")) {
-      throw commandError("INVALID_REMOTE_PATH", "remotePath must point to fb-cm-factory upload staging");
+    if (!input.remotePath || !input.remotePath.startsWith(`${uploadRemoteDir()}/`)) {
+      throw commandError("INVALID_REMOTE_PATH", "remotePath must point to fb-cm-factory uploads workspace");
     }
     debugInteraction("open-file", { adbId, remotePath: input.remotePath, mimeType: input.mimeType ?? "*/*" });
     if (!config.mockMode) {
@@ -377,14 +378,12 @@ export const instanceCommands = {
 
   async cleanupUploadSession(input: CleanupUploadSessionInput) {
     const adbId = requireAdbId(input.adbId);
-    if (!input.runtimeSessionId) throw commandError("RUNTIME_CONTEXT_REQUIRED", "runtimeSessionId is required");
-    const runtimeKey = safePathSegment(input.runtimeSessionId);
-    const remoteDir = uploadRemoteDir(runtimeKey);
-    debugInteraction("cleanup-upload-session", { adbId, remoteDir });
+    const olderThanHours = 24;
+    debugInteraction("cleanup-upload-session", { adbId, remoteDir: uploadRemoteDir(), compatibilityMode: true, olderThanHours });
     if (!config.mockMode) {
-      await adbClient.runAdb(["-s", adbId, "shell", "rm", "-rf", remoteDir]);
+      await adbClient.runAdb(["-s", adbId, "shell", "sh", "-c", oldEntriesCleanupCommand(uploadRemoteDir(), olderThanHours)]);
     }
-    return { adbId, runtimeSessionId: input.runtimeSessionId, remoteDir, deleted: true };
+    return { adbId, remoteDir: uploadRemoteDir(), olderThanHours, cleaned: true, compatibilityMode: true };
   },
 
   async cleanupUploadStaging(input: CleanupOldTempInput) {
@@ -392,7 +391,7 @@ export const instanceCommands = {
     const olderThanHours = input.olderThanHours ?? 24;
     debugInteraction("cleanup-upload-staging", { adbId, olderThanHours });
     if (!config.mockMode) {
-      await adbClient.runAdb(["-s", adbId, "shell", "sh", "-c", oldFoldersCleanupCommand("/sdcard/fb-cm-factory/uploads", olderThanHours)]);
+      await adbClient.runAdb(["-s", adbId, "shell", "sh", "-c", oldEntriesCleanupCommand(uploadRemoteDir(), olderThanHours)]);
     }
     return { adbId, olderThanHours, cleaned: true };
   },
@@ -401,14 +400,15 @@ export const instanceCommands = {
     const adbId = requireAdbId(input.adbId);
     const olderThanHours = input.olderThanHours ?? 24;
     const dirs = [
-      input.includeUploads === false ? null : "/sdcard/fb-cm-factory/uploads",
+      input.includeUploads === false ? null : uploadRemoteDir(),
+      "/sdcard/fb-cm-factory/temp",
       input.includeLiveScreenshots === false ? null : "/sdcard/fb-cm-factory/live",
       input.includeDebugScreenshots === false ? null : "/sdcard/fb-cm-factory/screenshots"
     ].filter(Boolean) as string[];
     debugInteraction("cleanup-factory-temp", { adbId, olderThanHours, dirs });
     if (!config.mockMode) {
       for (const dir of dirs) {
-        await adbClient.runAdb(["-s", adbId, "shell", "sh", "-c", oldFoldersCleanupCommand(dir, olderThanHours)]);
+        await adbClient.runAdb(["-s", adbId, "shell", "sh", "-c", oldEntriesCleanupCommand(dir, olderThanHours)]);
       }
     }
     return { adbId, olderThanHours, dirs, cleaned: true };
@@ -417,7 +417,7 @@ export const instanceCommands = {
   async factoryTempUsage(input: { adbId: string }) {
     const adbId = requireAdbId(input.adbId);
     if (config.mockMode) {
-      return { adbId, uploadBytes: 0, liveBytes: 0, screenshotBytes: 0, totalBytes: 0 };
+      return { adbId, uploadsBytes: 0, tempBytes: 0, liveBytes: 0, screenshotsBytes: 0, totalBytes: 0 };
     }
     const result = await adbClient.runAdb(["-s", adbId, "shell", "sh", "-c", tempUsageCommand()]);
     const values = Object.fromEntries(
@@ -429,15 +429,17 @@ export const instanceCommands = {
           return [key, Number(value) || 0];
         })
     );
-    const uploadBytes = Number(values.uploads ?? 0);
+    const uploadsBytes = Number(values.uploads ?? 0);
+    const tempBytes = Number(values.temp ?? 0);
     const liveBytes = Number(values.live ?? 0);
-    const screenshotBytes = Number(values.screenshots ?? 0);
+    const screenshotsBytes = Number(values.screenshots ?? 0);
     return {
       adbId,
-      uploadBytes,
+      uploadsBytes,
+      tempBytes,
       liveBytes,
-      screenshotBytes,
-      totalBytes: uploadBytes + liveBytes + screenshotBytes
+      screenshotsBytes,
+      totalBytes: uploadsBytes + tempBytes + liveBytes + screenshotsBytes
     };
   }
 };

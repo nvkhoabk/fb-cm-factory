@@ -42,6 +42,16 @@ function latestFileCommand(sourceDir: string, extensions: string[]) {
   ].join("; ");
 }
 
+function isBlockedFactorySourceDir(sourceDir: string) {
+  const normalized = sourceDir.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  return [
+    "/sdcard/fb-cm-factory/uploads",
+    "/sdcard/fb-cm-factory/temp",
+    "/sdcard/fb-cm-factory/live",
+    "/sdcard/fb-cm-factory/screenshots"
+  ].some((blocked) => normalized === blocked || normalized.startsWith(`${blocked}/`));
+}
+
 function taskOutputFolder(targetFolder?: string) {
   if (!targetFolder) return "task-outputs";
   const normalized = targetFolder.replace(/^[/\\]+/, "").replace(/\.\./g, "");
@@ -57,6 +67,12 @@ export const downloadLatestService = {
     const extensions = input.extensions?.length ? input.extensions : ["png", "jpg", "jpeg", "webp", "mp4"];
     const targetFolder = taskOutputFolder(input.targetFolder);
     const folder = storageService.ensureTargetFolder(targetFolder);
+
+    if (isBlockedFactorySourceDir(sourceDir)) {
+      const error = new Error("NO_MATCHING_FILE_FOUND");
+      error.name = "NO_MATCHING_FILE_FOUND";
+      throw error;
+    }
 
     if (config.mockMode) {
       const absolutePath = path.join(folder.absolutePath, `mock-latest-${Date.now()}.png`);

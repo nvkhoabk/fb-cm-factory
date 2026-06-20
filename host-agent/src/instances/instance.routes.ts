@@ -179,7 +179,7 @@ instanceRouter.post("/:localId/cleanup-upload-session", requireAgentApiKey, asyn
       ok: true,
       data: await instanceCommands.cleanupUploadSession({
         adbId: String(req.body?.adbId ?? ""),
-        runtimeSessionId: String(req.body?.runtimeSessionId ?? "")
+        runtimeSessionId: typeof req.body?.runtimeSessionId === "string" ? req.body.runtimeSessionId : ""
       })
     });
   } catch (error) {

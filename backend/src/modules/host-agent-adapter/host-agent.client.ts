@@ -206,7 +206,7 @@ export const hostAgentClient = {
     instanceId: string;
     localId?: string | number;
     adbId: string;
-    runtimeSessionId: string;
+    runtimeSessionId?: string;
   }) {
     const localId = input.localId === undefined || input.localId === null || input.localId === ""
       ? input.instanceId
