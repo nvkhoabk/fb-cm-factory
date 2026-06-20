@@ -174,6 +174,7 @@ export const hostAgentClient = {
     jobId?: string;
     assetId: string;
     sourceAbsolutePath: string;
+    sourceBase64?: string;
     fileName?: string;
   }) {
     const localId = input.localId === undefined || input.localId === null || input.localId === ""

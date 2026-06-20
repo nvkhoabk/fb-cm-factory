@@ -37,6 +37,7 @@ export type PushUploadFileInput = {
   jobId?: string;
   assetId: string;
   sourceAbsolutePath: string;
+  sourceBase64?: string;
   fileName?: string;
 };
 
@@ -113,6 +114,13 @@ function requireRuntimeKey(input: { runtimeSessionId?: string; jobId?: string })
 
 function uploadRemoteDir(runtimeKey: string) {
   return `/sdcard/fb-cm-factory/uploads/${runtimeKey}`;
+}
+
+function localUploadSourcePath(runtimeKey: string, fileName: string, sourceBase64: string) {
+  const folder = storageService.ensureTargetFolder(path.join("upload-sources", runtimeKey));
+  const absolutePath = path.join(folder.absolutePath, fileName);
+  fs.writeFileSync(absolutePath, Buffer.from(sourceBase64, "base64"));
+  return absolutePath;
 }
 
 function oldFoldersCleanupCommand(baseDir: string, olderThanHours: number) {
@@ -287,14 +295,20 @@ export const instanceCommands = {
     const adbId = requireAdbId(input.adbId);
     const runtimeKey = requireRuntimeKey(input);
     if (!input.assetId) throw commandError("ASSET_ID_REQUIRED", "assetId is required");
-    if (!input.sourceAbsolutePath || !fs.existsSync(input.sourceAbsolutePath) || !fs.statSync(input.sourceAbsolutePath).isFile()) {
-      throw commandError("UPLOAD_FILE_NOT_FOUND", "sourceAbsolutePath must point to an existing file");
-    }
-
     const remoteDir = uploadRemoteDir(runtimeKey);
     const originalName = safeRemoteFileName(input.fileName || path.basename(input.sourceAbsolutePath));
     const remoteFileName = `${safePathSegment(input.assetId)}-${Date.now()}-${originalName}`;
     const remotePath = `${remoteDir}/${remoteFileName}`;
+    const canUseSourcePath = input.sourceAbsolutePath && fs.existsSync(input.sourceAbsolutePath) && fs.statSync(input.sourceAbsolutePath).isFile();
+    const readableSourcePath = canUseSourcePath
+      ? input.sourceAbsolutePath
+      : typeof input.sourceBase64 === "string" && input.sourceBase64
+        ? localUploadSourcePath(runtimeKey, remoteFileName, input.sourceBase64)
+        : "";
+    const shouldDeleteLocalTemp = Boolean(readableSourcePath && !canUseSourcePath);
+    if (!readableSourcePath) {
+      throw commandError("UPLOAD_FILE_NOT_FOUND", "sourceAbsolutePath is not accessible by Host Agent and no sourceBase64 transfer was provided");
+    }
 
     debugInteraction("push-upload-file", {
       adbId,
@@ -304,20 +318,26 @@ export const instanceCommands = {
       remotePath
     });
 
-    if (!config.mockMode) {
-      await adbClient.runAdb(["-s", adbId, "shell", "mkdir", "-p", remoteDir]);
-      await adbClient.runAdb(["-s", adbId, "push", input.sourceAbsolutePath, remotePath]);
-      await adbClient.runAdb([
-        "-s",
-        adbId,
-        "shell",
-        "am",
-        "broadcast",
-        "-a",
-        "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
-        "-d",
-        `file://${remotePath}`
-      ]);
+    try {
+      if (!config.mockMode) {
+        await adbClient.runAdb(["-s", adbId, "shell", "mkdir", "-p", remoteDir]);
+        await adbClient.runAdb(["-s", adbId, "push", readableSourcePath, remotePath]);
+        await adbClient.runAdb([
+          "-s",
+          adbId,
+          "shell",
+          "am",
+          "broadcast",
+          "-a",
+          "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+          "-d",
+          `file://${remotePath}`
+        ]);
+      }
+    } finally {
+      if (shouldDeleteLocalTemp) {
+        fs.rmSync(readableSourcePath, { force: true });
+      }
     }
 
     return {

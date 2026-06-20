@@ -366,6 +366,7 @@ export const hostAgentService = {
         jobId: input.jobId,
         assetId: input.assetId,
         sourceAbsolutePath: source.sourceAbsolutePath,
+        sourceBase64: fs.readFileSync(source.sourceAbsolutePath).toString("base64"),
         fileName: source.fileName
       })
     };

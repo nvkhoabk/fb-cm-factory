@@ -149,6 +149,7 @@ instanceRouter.post("/:localId/push-upload-file", requireAgentApiKey, async (req
         jobId: typeof req.body?.jobId === "string" ? req.body.jobId : undefined,
         assetId: String(req.body?.assetId ?? ""),
         sourceAbsolutePath: String(req.body?.sourceAbsolutePath ?? ""),
+        sourceBase64: typeof req.body?.sourceBase64 === "string" ? req.body.sourceBase64 : undefined,
         fileName: typeof req.body?.fileName === "string" ? req.body.fileName : undefined
       })
     });
