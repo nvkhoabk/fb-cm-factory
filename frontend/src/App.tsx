@@ -946,6 +946,11 @@ function mediaUrl(value?: string | null) {
   return value;
 }
 
+function cacheBustedUrl(value: string) {
+  if (!value || /^(data:|blob:)/i.test(value)) return value;
+  return `${value}${value.includes("?") ? "&" : "?"}t=${Date.now()}`;
+}
+
 function listImageUrl(asset?: AssetRecord | null) {
   return mediaUrl(asset?.thumbnailPublicUrl);
 }
@@ -1077,7 +1082,7 @@ function LiveInstanceView({
         body: JSON.stringify({ localId, adbId })
       });
       const url = findUrl(result);
-      setScreenshotUrl(url);
+      setScreenshotUrl(cacheBustedUrl(url));
       setLastRefreshAt(new Date().toISOString());
       onStatus?.("Live screenshot refreshed");
     } catch (refreshError) {
@@ -1137,6 +1142,10 @@ function LiveInstanceView({
 
   async function runSendText() {
     if (!canRun || !text) return;
+    if (mode === "script-designer") {
+      onCaptureStep?.({ type: "send-text", config: { text } });
+      return;
+    }
     await api(`/hosts/${hostId}/send-text`, {
       method: "POST",
       body: JSON.stringify({ instanceId, adbId, text })
@@ -1146,6 +1155,10 @@ function LiveInstanceView({
 
   async function runSendKey(key: string) {
     if (!canRun) return;
+    if (mode === "script-designer") {
+      onCaptureStep?.({ type: "send-key", config: { keyCode: key } });
+      return;
+    }
     await api(`/hosts/${hostId}/send-key`, {
       method: "POST",
       body: JSON.stringify({ instanceId, adbId, key })
@@ -1165,7 +1178,10 @@ function LiveInstanceView({
     setCoordinate(point);
     if (interactionMode === "tap") {
       setLastTap(point);
-      if (mode === "script-designer") return;
+      if (mode === "script-designer") {
+        onCaptureStep?.({ type: "tap", config: point });
+        return;
+      }
       runTap(point);
     }
     if (interactionMode === "copy") {
@@ -1186,7 +1202,11 @@ function LiveInstanceView({
     const swipe = { x1: swipeStart.x, y1: swipeStart.y, x2: point.x, y2: point.y };
     setLastSwipe(swipe);
     setSwipeStart(null);
-    if (mode !== "script-designer") runSwipe(swipe);
+    if (mode === "script-designer") {
+      onCaptureStep?.({ type: "swipe", config: { ...swipe, durationMs: 300 } });
+    } else {
+      runSwipe(swipe);
+    }
   }
 
   return (
@@ -1241,9 +1261,6 @@ function LiveInstanceView({
             {["BACK", "HOME", "ENTER", "TAB"].map((key) => <button disabled={!canRun} key={key} onClick={() => runSendKey(key)}>{key}</button>)}
             {mode === "script-designer" ? (
               <>
-                <button disabled={!lastTap} onClick={() => lastTap && onCaptureStep?.({ type: "tap", config: lastTap })}>Add Tap Step</button>
-                <button disabled={!lastSwipe} onClick={() => lastSwipe && onCaptureStep?.({ type: "swipe", config: { ...lastSwipe, durationMs: 300 } })}>Add Swipe Step</button>
-                <button disabled={!text} onClick={() => onCaptureStep?.({ type: "send-text", config: { text } })}>Add Send Text Step</button>
                 <button onClick={() => onCaptureStep?.({ type: "screenshot", config: {} })}>Add Screenshot Step</button>
                 <button onClick={() => onCaptureStep?.({ type: "download-latest", config: {} })}>Add Download Latest Step</button>
               </>
@@ -1451,6 +1468,19 @@ function scriptStepSummary(step: Record<string, unknown>) {
     .slice(0, 3)
     .map(([key, value]) => `${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`);
   return entries.join(" / ") || "No config";
+}
+
+function scriptStepFlowLabel(step: Record<string, unknown>) {
+  const type = scriptStepType(step);
+  const config = scriptStepConfig(step);
+  if (type === "if") return `IF ${getString(config.condition) || "condition"}`;
+  if (type === "retry") return `RETRY ${config.attempts ?? config.maxAttempts ?? ""}`.trim();
+  if (type === "wait" || type === "wait-screen") return "WAIT";
+  if (type === "check-screen") return "CHECK";
+  if (["tap", "swipe", "send-text", "send-key"].includes(type)) return "ACTION";
+  if (["upload-file", "download-latest", "screenshot"].includes(type)) return "IO";
+  if (type === "run-sub-script") return "SUB-SCRIPT";
+  return "STEP";
 }
 
 function parseScriptDefinitionJson(value: string) {
@@ -1818,7 +1848,7 @@ export function App() {
   const [scriptLastTestFilter, setScriptLastTestFilter] = useState("");
   const [scriptRecentFilter, setScriptRecentFilter] = useState(false);
   const [scriptDrawerTab, setScriptDrawerTab] = useState<"overview" | "versions" | "steps" | "variables" | "live" | "test" | "runs" | "json">("overview");
-  const [pendingScriptCaptureSteps, setPendingScriptCaptureSteps] = useState<Array<Record<string, unknown>>>([]);
+  const [showScriptLiveCapture, setShowScriptLiveCapture] = useState(false);
   const [selectedScriptStepIndex, setSelectedScriptStepIndex] = useState(0);
   const [scriptTestContext, setScriptTestContext] = useState(JSON.stringify({
     prompt: { image: "Sample image prompt", video: "", music: "", post: "" },
@@ -4466,21 +4496,11 @@ export function App() {
     setScriptDraftDefinition({ steps: next });
   }
 
-  function queueScriptCaptureStep(step: Record<string, unknown>) {
-    const normalized = normalizeScriptStep(step, pendingScriptCaptureSteps.length);
-    setPendingScriptCaptureSteps((current) => [...current, normalized]);
-    setStatus(`Pending ${scriptStepType(normalized)} step captured`);
-  }
-
-  function applyPendingScriptCaptureSteps() {
-    if (!pendingScriptCaptureSteps.length) return;
-    const confirmed = window.confirm(`Add ${pendingScriptCaptureSteps.length} captured step(s) to the current script draft?`);
-    if (!confirmed) return;
-    const next = [...scriptDraft.steps, ...pendingScriptCaptureSteps].map((step, index) => normalizeScriptStep(step, index));
+  function appendScriptCaptureStep(step: Record<string, unknown>) {
+    const next = [...scriptDraft.steps, normalizeScriptStep(step, scriptDraft.steps.length)].map((item, index) => normalizeScriptStep(item, index));
     setScriptDraftDefinition({ steps: next });
     setSelectedScriptStepIndex(next.length - 1);
-    setPendingScriptCaptureSteps([]);
-    setScriptDrawerTab("steps");
+    setStatus(`Added ${scriptStepType(step)} step`);
   }
 
   function removeScriptStep(index: number) {
@@ -4983,7 +5003,7 @@ export function App() {
       setInstanceScreenshotPreviews((current) => ({
         ...current,
         [instance.id]: {
-          url: url || current[instance.id]?.url,
+          url: url ? cacheBustedUrl(url) : current[instance.id]?.url,
           capturedAt: Date.now(),
           loading: false,
           error: url ? undefined : "NO_SCREENSHOT_URL"
@@ -5019,7 +5039,7 @@ export function App() {
         if (url) {
           setInstanceScreenshotPreviews((current) => ({
             ...current,
-            [instance.id]: { url, capturedAt: Date.now(), loading: false }
+            [instance.id]: { url: cacheBustedUrl(url), capturedAt: Date.now(), loading: false }
           }));
         }
         return result;
@@ -6743,7 +6763,7 @@ export function App() {
           {managementSection === "scripts" ? (
             <div className="scriptManager">
               <aside className="scriptCategorySidebar">
-                <button className="primaryButton" onClick={() => adminAction("Creating script", () => api<ScriptRecord>("/scripts", { method: "POST", body: JSON.stringify({ name: scriptForm.name || `New ${scriptForm.category} Script`, category: scriptForm.category, description: scriptForm.description, status: "draft" }) }).then((script) => { setSelectedScriptId(script.id); openScript(script, "steps"); return script; }))}>New Script</button>
+                <button className="primaryButton" onClick={() => adminAction("Creating script", () => api<ScriptRecord>("/scripts", { method: "POST", body: JSON.stringify({ name: scriptForm.name || `New ${scriptForm.category} Script`, category: scriptForm.category, description: scriptForm.description, status: "draft" }) }).then((script) => { setSelectedScriptId(script.id); openScript(script, "overview"); return script; }))}>New Script</button>
                 <button className={!scriptCategoryFilter ? "active" : ""} onClick={() => setScriptCategoryFilter("")}>
                   <span>All Categories</span>
                   <b>{scripts.length}</b>
@@ -6826,7 +6846,7 @@ export function App() {
                                 });
                                 setSelectedScriptId(script.id);
                                 setSelectedScriptVersionId(version.id);
-                                setScriptDrawerTab("steps");
+                                setScriptDrawerTab("overview");
                                 await refreshScriptVersions(script.id);
                                 return version;
                               });
@@ -6854,9 +6874,7 @@ export function App() {
                           {[
                             ["overview", "Overview"],
                             ["versions", "Versions"],
-                            ["steps", "Step Editor"],
                             ["variables", "Variables"],
-                            ["live", "Live Capture"],
                             ["test", "Test Run"],
                             ["runs", "Runs"],
                             ["json", "Debug JSON"]
@@ -7003,18 +7021,11 @@ export function App() {
                                   adbId={hostAdbId || instance.adbId}
                                   mode="script-designer"
                                   onStatus={setStatus}
-                                  onCaptureStep={queueScriptCaptureStep}
+                                  onCaptureStep={appendScriptCaptureStep}
                                 />
                               ) : <span className="poolBadge warningBadge">Select an instance with adbId to use Live Capture.</span>;
                             })()}
-                            <div className="scriptValidationPanel">
-                              <strong>Pending Captured Steps</strong>
-                              {pendingScriptCaptureSteps.length ? pendingScriptCaptureSteps.map((step, index) => <span key={`${index}-${scriptStepType(step)}`}>#{index + 1} {scriptStepType(step)} / {scriptStepSummary(step)}</span>) : <span>No pending captured steps.</span>}
-                            </div>
-                            <div className="resourceActions">
-                              <button disabled={!pendingScriptCaptureSteps.length} onClick={applyPendingScriptCaptureSteps}>Apply Pending Steps</button>
-                              <button disabled={!pendingScriptCaptureSteps.length} onClick={() => setPendingScriptCaptureSteps([])}>Clear Pending</button>
-                            </div>
+                            <small>Captured actions are added directly to the current script draft.</small>
                           </div>
                         ) : null}
 
@@ -7044,7 +7055,7 @@ export function App() {
                                   const next = [...scriptDraft.steps, normalizeScriptStep({ type: "tap", config: { x, y } }, scriptDraft.steps.length)];
                                   setScriptDraftDefinition({ steps: next });
                                   setSelectedScriptStepIndex(next.length - 1);
-                                  setScriptDrawerTab("steps");
+                                  setScriptDrawerTab("overview");
                                 }} />
                                 <small>Click screenshot to add a tap step.</small>
                               </div>
@@ -7082,6 +7093,141 @@ export function App() {
                       </>
                     ) : <p className="emptyDetail">Select a script to view details.</p>}
                   </aside>
+                  {selectedScript ? (
+                    <section className="scriptStepWorkspacePanel">
+                      <div className="scriptStepWorkspaceHeader">
+                        <div>
+                          <strong>Script Step Editor</strong>
+                          <small>{selectedScript.name} / {scriptDraft.steps.length} steps</small>
+                        </div>
+                        <div className="resourceActions">
+                          <select onChange={(event) => { if (event.target.value) addScriptStep(event.target.value); event.currentTarget.value = ""; }} defaultValue="">
+                            <option value="">Add step...</option>
+                            {Object.keys(scriptStepTemplates).map((type) => <option key={type} value={type}>{type}</option>)}
+                          </select>
+                          <button onClick={() => setShowScriptLiveCapture((current) => !current)}><Image size={15} /> {showScriptLiveCapture ? "Close Live Capture" : "Open Live Capture"}</button>
+                          <button onClick={createScriptVersion}><PackagePlus size={15} /> Save as New Version</button>
+                          <button disabled={!selectedScriptVersionId} onClick={updateScriptVersion}><Check size={15} /> Save Draft</button>
+                          <button disabled={!selectedScriptVersionId} onClick={activateScriptVersion}><Rocket size={15} /> Activate</button>
+                        </div>
+                      </div>
+
+                      {showScriptLiveCapture ? (
+                        <div className="scriptLiveCapturePanel">
+                          <div className="resourceCreateGrid">
+                            <label>Instance<select value={hostInstanceId} onChange={(event) => {
+                              const instance = instances.find((item) => item.id === event.target.value);
+                              setHostInstanceId(event.target.value);
+                              setHostAdbId(instance?.adbId ?? "");
+                              const host = instance ? hostForInstance(instance) : null;
+                              if (host) setSelectedHostId(host.hostId);
+                            }}><option value="">Select instance</option>{instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.id} / {instance.adbId ?? "ADB unknown"}</option>)}</select></label>
+                            <label>ADB ID<input value={hostAdbId} onChange={(event) => setHostAdbId(event.target.value)} /></label>
+                          </div>
+                          {(() => {
+                            const instance = instances.find((item) => item.id === hostInstanceId) ?? null;
+                            const host = instance ? hostForInstance(instance) : hosts.find((item) => item.hostId === selectedHostId || item.id === selectedHostId) ?? null;
+                            return host && instance ? (
+                              <LiveInstanceView
+                                hostId={host.id}
+                                instanceId={instance.id}
+                                localId={instance.localId}
+                                adbId={hostAdbId || instance.adbId}
+                                mode="script-designer"
+                                onStatus={setStatus}
+                                onCaptureStep={appendScriptCaptureStep}
+                              />
+                            ) : <span className="poolBadge warningBadge">Select an instance with adbId to use Live Capture.</span>;
+                          })()}
+                        </div>
+                      ) : null}
+
+                      <div className="scriptValidationPanel">
+                        <strong>Validation</strong>
+                        {scriptValidationMessages.length ? scriptValidationMessages.map((message) => <span className={message.level} key={`${message.index}-${message.message}`}>Step {message.index + 1}: {message.message}</span>) : <span className="ok">All steps look valid.</span>}
+                      </div>
+
+                      <div className="scriptStepEditorLayout">
+                        <aside className="scriptStepNavigator">
+                          <header>
+                            <strong>Step Sequence</strong>
+                            <small>{scriptDraft.steps.length} total</small>
+                          </header>
+                          <div className="scriptStepNavList">
+                            {scriptDraft.steps.map((step, index) => {
+                              const type = scriptStepType(step);
+                              const flowLabel = scriptStepFlowLabel(step);
+                              return (
+                                <button className={selectedScriptStepIndex === index ? "selected" : ""} key={`${index}-${type}`} onClick={() => setSelectedScriptStepIndex(index)}>
+                                  <span>#{index + 1}</span>
+                                  <div>
+                                    <strong>{type}</strong>
+                                    <small>{scriptStepSummary(step)}</small>
+                                  </div>
+                                  <em className={`stepFlowBadge ${flowLabel === "ACTION" ? "action" : flowLabel.startsWith("IF") ? "condition" : ""}`}>{flowLabel}</em>
+                                </button>
+                              );
+                            })}
+                            {!scriptDraft.steps.length ? <p className="emptyDetail">No steps yet. Add a step or open Live Capture to record actions.</p> : null}
+                          </div>
+                        </aside>
+                        <section className="scriptStepInspector">
+                          {(() => {
+                            const safeIndex = Math.min(Math.max(selectedScriptStepIndex, 0), Math.max(scriptDraft.steps.length - 1, 0));
+                            const step = scriptDraft.steps[safeIndex];
+                            if (!step) return <p className="emptyDetail">Select or add a step to edit details.</p>;
+                            const type = scriptStepType(step);
+                            const template = scriptStepTemplates[type];
+                            const config = scriptStepConfig(step);
+                            return (
+                              <>
+                                <div className="scriptStepInspectorHeader">
+                                  <div>
+                                    <strong>Step #{safeIndex + 1}</strong>
+                                    <small>{scriptStepFlowLabel(step)} / {scriptStepSummary(step)}</small>
+                                  </div>
+                                  <div className="resourceActions">
+                                    <button onClick={() => moveScriptStep(safeIndex, -1)} title="Move up">Up</button>
+                                    <button onClick={() => moveScriptStep(safeIndex, 1)} title="Move down">Down</button>
+                                    <button onClick={() => duplicateScriptStep(safeIndex)} title="Duplicate"><Copy size={14} /></button>
+                                    <button onClick={() => removeScriptStep(safeIndex)} title="Delete"><Trash2 size={14} /></button>
+                                  </div>
+                                </div>
+                                <div className="scriptStepTypeRow">
+                                  <label>Step type
+                                    <select value={type} onChange={(event) => updateScriptStep(safeIndex, { ...step, type: event.target.value, config: {} })}>
+                                      {Object.keys(scriptStepTemplates).map((option) => <option key={option} value={option}>{option}</option>)}
+                                    </select>
+                                  </label>
+                                  <span className="stepFlowBadge condition">{scriptStepFlowLabel(step)}</span>
+                                </div>
+                                <div className="scriptStepFields inspector">
+                                  {(template?.fields ?? []).map((field) => (
+                                    <label key={field.key}>{field.label}
+                                      {field.type === "json" ? (
+                                        <textarea value={compactJson(config[field.key] ?? [])} onChange={(event) => updateScriptStepConfig(safeIndex, field.key, parseJsonText(event.target.value, [] as unknown as Record<string, unknown>))} />
+                                      ) : (
+                                        <input
+                                          type={field.type === "number" ? "number" : "text"}
+                                          value={String(config[field.key] ?? "")}
+                                          onChange={(event) => updateScriptStepConfig(safeIndex, field.key, field.type === "number" ? Number(event.target.value) : event.target.value)}
+                                        />
+                                      )}
+                                    </label>
+                                  ))}
+                                  {!template ? <p className="emptyDetail">Unknown step type. Use JSON editor fallback for custom config.</p> : null}
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </section>
+                      </div>
+                      <details className="resourceCreatePanel">
+                        <summary>JSON Editor Fallback</summary>
+                        <textarea className="scriptJsonEditor" value={scriptForm.steps} onChange={(event) => setScriptForm({ ...scriptForm, steps: event.target.value })} />
+                      </details>
+                    </section>
+                  ) : null}
                 </div>
               </section>
             </div>

@@ -72,6 +72,22 @@ function mockPngBuffer() {
   );
 }
 
+function validMockPngBuffer() {
+  return Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+    0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02,
+    0x08, 0x06, 0x00, 0x00, 0x00, 0x72, 0xb6, 0x0e, 0x7b, 0x00, 0x00, 0x00,
+    0x16, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xfc, 0xcf, 0xc0, 0xf0,
+    0x9f, 0x01, 0x09, 0x30, 0x31, 0xa0, 0x01, 0xc5, 0x3b, 0x00, 0x15, 0xe3,
+    0x03, 0xfd, 0xd6, 0x46, 0xf6, 0x66, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+    0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
+  ]);
+}
+
+function debugInteraction(action: string, details: Record<string, unknown>) {
+  console.info(`[host-agent][interaction] ${action} ${JSON.stringify(details)}`);
+}
+
 export const instanceCommands = {
   async liveScreenshot(instanceId: string, adbId: string) {
     requireAdbId(adbId);
@@ -82,7 +98,7 @@ export const instanceCommands = {
     const absolutePath = path.join(folder.absolutePath, "latest.png");
 
     if (config.mockMode) {
-      fs.writeFileSync(absolutePath, mockPngBuffer());
+      fs.writeFileSync(absolutePath, validMockPngBuffer());
     } else {
       await adbClient.runAdb(["-s", adbId, "shell", "mkdir", "-p", remoteDir]);
       await adbClient.runAdb(["-s", adbId, "shell", "screencap", "-p", remotePath]);
@@ -106,11 +122,20 @@ export const instanceCommands = {
 
   async tap(input: PointInput) {
     requireAdbId(input.adbId);
+    debugInteraction("tap", { adbId: input.adbId, x: input.x, y: input.y });
     return adbClient.runAdb(["-s", input.adbId, "shell", "input", "tap", String(input.x), String(input.y)]);
   },
 
   async swipe(input: SwipeInput) {
     requireAdbId(input.adbId);
+    debugInteraction("swipe", {
+      adbId: input.adbId,
+      x1: input.x1,
+      y1: input.y1,
+      x2: input.x2,
+      y2: input.y2,
+      durationMs: input.durationMs ?? 300
+    });
     return adbClient.runAdb([
       "-s",
       input.adbId,
@@ -129,6 +154,12 @@ export const instanceCommands = {
     const adbId = requireAdbId(input.adbId);
     const text = requireText(input.text);
     const base64Text = encodeTextToBase64(text);
+    debugInteraction("send-text", {
+      adbId,
+      method: "ADB_INPUT_B64",
+      textLength: text.length,
+      useAdbKeyboard: config.useAdbKeyboard
+    });
 
     if (config.useAdbKeyboard) {
       try {
@@ -168,6 +199,7 @@ export const instanceCommands = {
 
   async sendKey(input: KeyInput) {
     requireAdbId(input.adbId);
+    debugInteraction("send-key", { adbId: input.adbId, keyCode: input.keyCode });
     return adbClient.runAdb(["-s", input.adbId, "shell", "input", "keyevent", String(input.keyCode)]);
   },
 

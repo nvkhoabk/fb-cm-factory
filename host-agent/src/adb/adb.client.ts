@@ -13,8 +13,6 @@ export type CommandResult = {
 };
 
 export async function runAdb(args: string[]): Promise<CommandResult> {
-  console.info(`[host-agent] ${[config.adbPath, ...args].join(" ")}`);
-
   if (config.mockMode) {
     return {
       command: config.adbPath,

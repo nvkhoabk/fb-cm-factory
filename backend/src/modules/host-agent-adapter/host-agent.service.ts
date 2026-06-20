@@ -34,6 +34,21 @@ function publicHost(host: ReturnType<typeof mapHost>) {
   };
 }
 
+function normalizeHostStorageUrl(host: ReturnType<typeof mapHost>, value: unknown) {
+  if (!value || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  const hostFilePath = typeof record.hostFilePath === "string" ? record.hostFilePath : "";
+  if (!hostFilePath) return value;
+  const storagePath = `/storage/${hostFilePath.replace(/\\/g, "/").split("/").map(encodeURIComponent).join("/")}`;
+  const url = `${String(host.baseUrl).replace(/\/+$/, "")}${storagePath}`;
+  return {
+    ...record,
+    publicUrl: url,
+    screenshotUrl: typeof record.screenshotUrl === "string" ? url : record.screenshotUrl,
+    url: typeof record.url === "string" ? url : record.url
+  };
+}
+
 function canonicalInstanceId(hostId: string, localId: string) {
   return `${hostId}-ld-${localId}`;
 }
@@ -243,17 +258,19 @@ export const hostAgentService = {
 
   async takeScreenshot(hostId: string, input: { instanceId: string; adbId: string }) {
     const { host, target } = this.targetForHost(hostId);
+    const result = await hostAgentClient.takeScreenshot(target, input.instanceId, input.adbId);
     return {
       host: publicHost(host),
-      result: await hostAgentClient.takeScreenshot(target, input.instanceId, input.adbId)
+      result: normalizeHostStorageUrl(host, result)
     };
   },
 
   async takeLiveScreenshot(hostId: string, input: LiveScreenshotCommandInput) {
     const { host, target } = this.targetForHost(hostId);
+    const result = await hostAgentClient.takeLiveScreenshot(target, input);
     return {
       host: publicHost(host),
-      result: await hostAgentClient.takeLiveScreenshot(target, input)
+      result: normalizeHostStorageUrl(host, result)
     };
   },
 
