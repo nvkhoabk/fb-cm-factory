@@ -44,6 +44,15 @@ scriptsRouter.patch("/:id", (req, res) => {
   }
 });
 
+scriptsRouter.delete("/:id", (req, res) => {
+  try {
+    scriptRuntimeService.deleteScript(req.params.id);
+    res.json({ ok: true, data: { deleted: true } });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 scriptsRouter.get("/:id/versions", (req, res) => {
   try {
     res.json({ ok: true, data: scriptRuntimeService.listScriptVersions(req.params.id) });

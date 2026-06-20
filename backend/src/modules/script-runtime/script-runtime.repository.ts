@@ -128,6 +128,19 @@ export const scriptRuntimeRepository = {
     return row ? mapScript(row as Record<string, unknown>) : null;
   },
 
+  deleteScript(id: string) {
+    const transaction = db.transaction(() => {
+      const runIds = db.prepare("SELECT id FROM script_runs WHERE script_id = ?").all(id) as Array<{ id: string }>;
+      for (const run of runIds) {
+        db.prepare("DELETE FROM script_run_steps WHERE script_run_id = ?").run(run.id);
+      }
+      db.prepare("DELETE FROM script_runs WHERE script_id = ?").run(id);
+      db.prepare("DELETE FROM script_versions WHERE script_id = ?").run(id);
+      return db.prepare("DELETE FROM scripts WHERE id = ?").run(id).changes > 0;
+    });
+    return transaction();
+  },
+
   nextVersionNo(scriptId: string) {
     const row = db.prepare("SELECT COALESCE(MAX(version_no), 0) + 1 AS next FROM script_versions WHERE script_id = ?")
       .get(scriptId) as { next: number };

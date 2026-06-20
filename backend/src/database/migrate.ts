@@ -646,6 +646,10 @@ export function migrate() {
   addColumnIfMissing("instances", "current_workflow_run_id", "TEXT");
   addColumnIfMissing("instances", "maintenance_reason", "TEXT");
   addColumnIfMissing("instances", "last_error_at", "TEXT");
+  addColumnIfMissing("instances", "adb_mapping_confidence", "TEXT DEFAULT 'unknown'");
+  addColumnIfMissing("instances", "adb_mapping_source", "TEXT DEFAULT 'none'");
+  addColumnIfMissing("instances", "adb_mapping_updated_at", "TEXT");
+  addColumnIfMissing("instances", "manual_adb_id", "TEXT");
   addColumnIfMissing("assets", "asset_category", "TEXT");
   addColumnIfMissing("assets", "asset_sub_type", "TEXT");
   addColumnIfMissing("assets", "tags_json", "TEXT DEFAULT '[]'");

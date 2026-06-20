@@ -179,6 +179,11 @@ type HostRecord = {
   name: string;
   baseUrl: string;
   status: string;
+  apiKey?: string | null;
+  metadata?: Record<string, unknown>;
+  lastHealthCheckAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 };
 
 type AdbDevice = {
@@ -305,10 +310,21 @@ type InstanceRecord = {
   currentWorkflowRunId?: string | null;
   maintenanceReason?: string | null;
   lastErrorAt?: string | null;
+  adbMappingConfidence?: string | null;
+  adbMappingSource?: string | null;
+  adbMappingUpdatedAt?: string | null;
+  manualAdbId?: string | null;
   metadata?: Record<string, unknown>;
   lastSeenAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
+};
+
+type InstanceScreenshotPreview = {
+  url?: string;
+  capturedAt?: number;
+  loading?: boolean;
+  error?: string;
 };
 
 type InstanceCapabilities = {
@@ -358,6 +374,8 @@ type OrchestratorRule = {
 type ProductionBatch = {
   id: string;
   batchType: string;
+  resourceKind?: "productionBatch" | "characterGroup";
+  characterGroupId?: string | null;
   sourceGroupId?: string | null;
   workflowId?: string | null;
   workflowRunId?: string | null;
@@ -837,8 +855,13 @@ function jobPayloadString(job: OrchestratorJob, key: string) {
 }
 
 function adbMappingConfidence(instance?: InstanceRecord | null) {
-  const confidence = instance?.metadata?.adbMappingConfidence;
+  const confidence = instance?.adbMappingConfidence ?? instance?.metadata?.adbMappingConfidence;
   return typeof confidence === "string" ? confidence : "";
+}
+
+function adbMappingSource(instance?: InstanceRecord | null) {
+  const source = instance?.adbMappingSource ?? instance?.metadata?.mappingSource;
+  return typeof source === "string" ? source : "";
 }
 
 function hasUnknownAdbMapping(instance?: InstanceRecord | null) {
@@ -960,6 +983,7 @@ function getOutputBatchIds(job?: OrchestratorJob | null) {
 
 function batchMatchesJob(batch: ProductionBatch, job?: OrchestratorJob | null) {
   if (!job) return false;
+  if (batch.resourceKind === "characterGroup") return false;
   const metadata = getRecord(batch.metadata);
   const outputBatchIds = getOutputBatchIds(job);
   const workflowRunId = getJobWorkflowRunId(job);
@@ -1060,7 +1084,11 @@ function musicTrackMetadata(batch: ProductionBatch) {
 
 function batchGroupId(batch?: ProductionBatch | null) {
   const metadata = getRecord(batch?.metadata);
-  return batch?.sourceGroupId || getString(metadata.groupId) || getString(getRecord(metadata.characterGroupBatch).groupId);
+  return batch?.characterGroupId
+    || batch?.sourceGroupId
+    || getString(metadata.groupId)
+    || getString(metadata.characterGroupId)
+    || getString(getRecord(metadata.characterGroupBatch).groupId);
 }
 
 function batchDisplayName(batch: ProductionBatch, group?: CharacterGroup | null) {
@@ -1071,6 +1099,37 @@ function batchDisplayName(batch: ProductionBatch, group?: CharacterGroup | null)
     || getString(metadata.name)
     || group?.name
     || `${batch.batchType} ${displayShortId(batch.id)}`;
+}
+
+function characterGroupProductionResource(group: CharacterGroup): ProductionBatch {
+  const timestamp = group.createdAt || group.updatedAt || "";
+  return {
+    id: `character-group:${group.id}`,
+    resourceKind: "characterGroup",
+    characterGroupId: group.id,
+    batchType: "CHARACTER_GROUP",
+    sourceGroupId: group.id,
+    status: group.status || "ACTIVE",
+    usageStatus: "AVAILABLE",
+    attributes: {},
+    metadata: {
+      groupId: group.id,
+      characterGroupId: group.id,
+      name: group.name,
+      description: group.description,
+      sourceModule: "character_groups"
+    },
+    createdAt: timestamp,
+    updatedAt: group.updatedAt
+  };
+}
+
+function productionResourceType(batch: ProductionBatch) {
+  return batch.resourceKind === "characterGroup" ? "CHARACTER_GROUP" : batch.batchType;
+}
+
+function productionResourceIsCharacterGroup(batch: ProductionBatch) {
+  return batch.resourceKind === "characterGroup";
 }
 
 function resourceTabLabel(tab: ProductionResourceTab) {
@@ -1428,12 +1487,27 @@ export function App() {
   const [hostSendText, setHostSendText] = useState("hello");
   const [hostResult, setHostResult] = useState<unknown>(null);
   const [adbDevices, setAdbDevices] = useState<AdbDevice[]>([]);
+  const [instanceScreenshotPreviews, setInstanceScreenshotPreviews] = useState<Record<string, InstanceScreenshotPreview>>({});
   const [managementSection, setManagementSection] = useState<ManagementSection>("characters");
   const [scripts, setScripts] = useState<ScriptRecord[]>([]);
   const [orchestratorRules, setOrchestratorRules] = useState<OrchestratorRule[]>([]);
+  const [selectedRuleId, setSelectedRuleId] = useState("");
   const [selectedPoolId, setSelectedPoolId] = useState("");
   const [selectedInstanceId, setSelectedInstanceId] = useState("");
   const [selectedHostDrawerId, setSelectedHostDrawerId] = useState("");
+  const [hostDrawerTab, setHostDrawerTab] = useState<"overview" | "instances" | "adb" | "tests" | "storage" | "json">("overview");
+  const [instanceViewMode, setInstanceViewMode] = useState<"board" | "table">("board");
+  const [instanceStatusFilter, setInstanceStatusFilter] = useState("");
+  const [instanceAdbFilter, setInstanceAdbFilter] = useState("");
+  const [instanceAdbConfidenceFilter, setInstanceAdbConfidenceFilter] = useState("");
+  const [instanceMaintenanceFilter, setInstanceMaintenanceFilter] = useState(false);
+  const [instanceLastSeenFilter, setInstanceLastSeenFilter] = useState("");
+  const [instanceDrawerId, setInstanceDrawerId] = useState("");
+  const [instanceDrawerTab, setInstanceDrawerTab] = useState<"overview" | "capabilities" | "runtime" | "health" | "history" | "json">("overview");
+  const [instanceCopySourceId, setInstanceCopySourceId] = useState("");
+  const [instanceBulkCapability, setInstanceBulkCapability] = useState("IMAGE_EDIT");
+  const [adbMappingInstanceId, setAdbMappingInstanceId] = useState("");
+  const [selectedManualAdbId, setSelectedManualAdbId] = useState("");
   const [poolModalInstanceId, setPoolModalInstanceId] = useState("");
   const [selectedPoolMemberships, setSelectedPoolMemberships] = useState<string[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState("");
@@ -1845,6 +1919,34 @@ export function App() {
     () => instances.find((instance) => instance.id === selectedInstanceId) ?? null,
     [instances, selectedInstanceId]
   );
+  const selectedInstanceDrawer = useMemo(
+    () => instances.find((instance) => instance.id === instanceDrawerId) ?? null,
+    [instanceDrawerId, instances]
+  );
+  const selectedInstanceDrawerAllocation = useMemo(
+    () => selectedInstanceDrawer
+      ? allocations.find((allocation) => allocation.instanceId === selectedInstanceDrawer.id && !["RELEASED", "FAILED"].includes(allocation.status)) ?? null
+      : null,
+    [allocations, selectedInstanceDrawer]
+  );
+  const selectedInstanceDrawerJobs = useMemo(() => {
+    if (!selectedInstanceDrawer) return [];
+    return jobs.filter((job) => {
+      const payload = getRecord(job.payload);
+      return getString(payload.instanceId) === selectedInstanceDrawer.id
+        || getString(payload.hostId) === selectedInstanceDrawer.hostId
+        || allocations.some((allocation) => allocation.orchestratorJobId === job.id && allocation.instanceId === selectedInstanceDrawer.id);
+    });
+  }, [allocations, jobs, selectedInstanceDrawer]);
+  const selectedInstanceDrawerRuntime = useMemo(() => {
+    if (!selectedInstanceDrawer) return null;
+    const jobIds = new Set(selectedInstanceDrawerJobs.map((job) => job.id));
+    return runtimeSessions.find((session) => session.instanceId === selectedInstanceDrawer.id || (session.jobId && jobIds.has(session.jobId))) ?? null;
+  }, [runtimeSessions, selectedInstanceDrawer, selectedInstanceDrawerJobs]);
+  const selectedInstanceDrawerAllocations = useMemo(
+    () => selectedInstanceDrawer ? allocations.filter((allocation) => allocation.instanceId === selectedInstanceDrawer.id).slice(0, 12) : [],
+    [allocations, selectedInstanceDrawer]
+  );
   const selectedScriptRun = useMemo(
     () => scriptRun ?? scriptRuns.find((run) => run.runtimeSessionId === selectedRuntime?.id) ?? null,
     [scriptRun, scriptRuns, selectedRuntime]
@@ -1852,6 +1954,10 @@ export function App() {
   const selectedScript = useMemo(
     () => scripts.find((script) => script.id === selectedScriptId) ?? null,
     [scripts, selectedScriptId]
+  );
+  const selectedRule = useMemo(
+    () => orchestratorRules.find((rule) => rule.id === selectedRuleId) ?? null,
+    [orchestratorRules, selectedRuleId]
   );
   const selectedScriptVersion = useMemo(
     () => scriptVersions.find((version) => version.id === selectedScriptVersionId)
@@ -1951,6 +2057,87 @@ export function App() {
         && compactJson(instance).toLowerCase().includes(lowerSearch);
     });
   }, [adminSearch, instanceCapabilityFilter, instancePoolStateFilter, instanceRuntimeFilter, instances, selectedHostId]);
+  const selectedHostDrawer = useMemo(
+    () => hosts.find((host) => host.id === selectedHostDrawerId) ?? null,
+    [hosts, selectedHostDrawerId]
+  );
+  const selectedHostDrawerInstances = useMemo(
+    () => selectedHostDrawer ? instances.filter((instance) => instance.hostId === selectedHostDrawer.hostId || instance.hostId === selectedHostDrawer.id) : [],
+    [instances, selectedHostDrawer]
+  );
+  const hostManagementRows = useMemo(() => {
+    const search = adminSearch.toLowerCase();
+    return hosts
+      .filter((host) => !adminSearch || compactJson(host).toLowerCase().includes(search))
+      .map((host) => {
+        const hostInstances = instances.filter((instance) => instance.hostId === host.hostId || instance.hostId === host.id);
+        return {
+          host,
+          instances: hostInstances,
+          total: hostInstances.length,
+          standby: hostInstances.filter((instance) => instance.currentPoolType === "STANDBY").length,
+          workflow: hostInstances.filter((instance) => instance.currentPoolType === "WORKFLOW").length,
+          maintenance: hostInstances.filter((instance) => instance.currentPoolType === "MAINTENANCE").length,
+          adbCount: hostInstances.filter((instance) => Boolean(instance.adbId)).length,
+          direct: hostInstances.filter((instance) => adbMappingConfidence(instance) === "direct").length,
+          preserved: hostInstances.filter((instance) => adbMappingConfidence(instance) === "preserved").length,
+          unknown: hostInstances.filter((instance) => hasUnknownAdbMapping(instance)).length
+        };
+      });
+  }, [adminSearch, hosts, instances]);
+  const hostKpis = useMemo(() => ({
+    total: hosts.length,
+    online: hosts.filter((host) => ["online", "active", "healthy"].includes(String(host.status ?? "").toLowerCase())).length,
+    offline: hosts.filter((host) => ["offline", "inactive", "disabled"].includes(String(host.status ?? "").toLowerCase())).length,
+    errors: hosts.filter((host) => compactJson(host).toLowerCase().includes("error")).length,
+    instances: instances.length,
+    standby: instances.filter((instance) => instance.currentPoolType === "STANDBY").length,
+    workflow: instances.filter((instance) => instance.currentPoolType === "WORKFLOW").length,
+    maintenance: instances.filter((instance) => instance.currentPoolType === "MAINTENANCE").length
+  }), [hosts, instances]);
+  const filteredOperationalInstances = useMemo(() => {
+    const lowerSearch = adminSearch.toLowerCase();
+    return instances.filter((instance) => {
+      const capabilityLabels = instanceCapabilityLabels(instance);
+      const lastSeenTime = instance.lastSeenAt ? new Date(instance.lastSeenAt).getTime() : 0;
+      const minLastSeen = instanceLastSeenFilter ? new Date(instanceLastSeenFilter).getTime() : 0;
+      return (!selectedHostId || instance.hostId === selectedHostId)
+        && (!instancePoolStateFilter || (instance.currentPoolType ?? "AVAILABLE") === instancePoolStateFilter)
+        && (!instanceCapabilityFilter || capabilityLabels.includes(instanceCapabilityFilter))
+        && (!instanceRuntimeFilter || instance.runtimeStatus === instanceRuntimeFilter)
+        && (!instanceStatusFilter || instance.status === instanceStatusFilter)
+        && (!instanceAdbFilter || (instanceAdbFilter === "has" ? Boolean(instance.adbId) : hasUnknownAdbMapping(instance)))
+        && (!instanceAdbConfidenceFilter || adbMappingConfidence(instance) === instanceAdbConfidenceFilter)
+        && (!instanceMaintenanceFilter || Boolean(instance.maintenanceReason))
+        && (!instanceLastSeenFilter || (Number.isFinite(lastSeenTime) && lastSeenTime >= minLastSeen))
+        && compactJson(instance).toLowerCase().includes(lowerSearch);
+    });
+  }, [adminSearch, instanceAdbConfidenceFilter, instanceAdbFilter, instanceCapabilityFilter, instanceLastSeenFilter, instanceMaintenanceFilter, instancePoolStateFilter, instanceRuntimeFilter, instanceStatusFilter, instances, selectedHostId]);
+  const instanceStatusOptions = useMemo(() => [...new Set(instances.map((instance) => instance.status).filter(Boolean))].sort(), [instances]);
+  const instanceAdbConfidenceOptions = useMemo(() => [...new Set(instances.map((instance) => adbMappingConfidence(instance)).filter(Boolean))].sort(), [instances]);
+  const instanceManagementKpis = useMemo(() => ({
+    total: instances.length,
+    available: instances.filter((instance) => (instance.currentPoolType ?? "AVAILABLE") === "AVAILABLE").length,
+    standby: instances.filter((instance) => instance.currentPoolType === "STANDBY").length,
+    workflow: instances.filter((instance) => instance.currentPoolType === "WORKFLOW").length,
+    maintenance: instances.filter((instance) => instance.currentPoolType === "MAINTENANCE").length,
+    disabled: instances.filter((instance) => instance.currentPoolType === "DISABLED").length,
+    retired: instances.filter((instance) => instance.currentPoolType === "RETIRED").length,
+    missingAdb: instances.filter((instance) => hasUnknownAdbMapping(instance)).length,
+    imageEdit: instances.filter((instance) => instanceCanRun(instance, "IMAGE_EDIT")).length,
+    videoGenerate: instances.filter((instance) => instanceCanRun(instance, "VIDEO_GENERATE")).length,
+    musicGenerate: instances.filter((instance) => instanceCanRun(instance, "MUSIC_GENERATE")).length,
+    videoCompose: instances.filter((instance) => instanceCanRun(instance, "VIDEO_COMPOSE")).length,
+    postContent: instances.filter((instance) => instanceCanRun(instance, "POST_CONTENT")).length
+  }), [instances]);
+  const operationalInstanceColumns = useMemo(() => instancePoolStateOptions.map((poolType) => ({
+    poolType,
+    items: filteredOperationalInstances.filter((instance) => (instance.currentPoolType ?? "AVAILABLE") === poolType)
+  })), [filteredOperationalInstances]);
+  const adbMappingInstance = useMemo(
+    () => instances.find((instance) => instance.id === adbMappingInstanceId) ?? null,
+    [adbMappingInstanceId, instances]
+  );
   const kpis = useMemo(() => ({
     availableInstances: instances.filter((instance) => (instance.currentPoolType ?? "AVAILABLE") === "AVAILABLE").length,
     standbyInstances: instances.filter((instance) => instance.currentPoolType === "STANDBY").length,
@@ -2003,10 +2190,53 @@ export function App() {
     poolType,
     items: filteredInstances.filter((instance) => (instance.currentPoolType ?? "AVAILABLE") === poolType)
   })), [filteredInstances]);
+  const visibleInstanceCards = useMemo(() => {
+    let candidates: InstanceRecord[] = [];
+    if (page === "control-center") {
+      candidates = instanceColumns.flatMap((column) => column.items.slice(0, 16));
+    } else if (page === "management" && managementSection === "hosts" && hostDrawerTab === "instances") {
+      candidates = selectedHostDrawerInstances;
+    } else if (page === "management" && managementSection === "instances" && instanceViewMode === "board") {
+      candidates = operationalInstanceColumns.flatMap((column) => column.items);
+    } else if (page === "management" && managementSection === "instance-pools" && capacityPoolsTab === "operational") {
+      candidates = capacityInstanceColumns.flatMap((column) => column.items);
+    }
+
+    const unique = new Map<string, InstanceRecord>();
+    for (const instance of candidates) {
+      if (!instance.adbId || hasUnknownAdbMapping(instance)) continue;
+      unique.set(instance.id, instance);
+    }
+    return [...unique.values()].slice(0, 24);
+  }, [capacityInstanceColumns, capacityPoolsTab, hostDrawerTab, instanceColumns, instanceViewMode, managementSection, operationalInstanceColumns, page, selectedHostDrawerInstances]);
   const selectedCapacityInstance = useMemo(
     () => instances.find((instance) => instance.id === capacityDrawerInstanceId) ?? null,
     [capacityDrawerInstanceId, instances]
   );
+  useEffect(() => {
+    if (!visibleInstanceCards.length) return;
+    let cancelled = false;
+
+    const refreshDueScreenshots = () => {
+      const nowMs = Date.now();
+      for (const instance of visibleInstanceCards) {
+        const cached = instanceScreenshotPreviews[instance.id];
+        const isFresh = cached?.capturedAt && nowMs - cached.capturedAt < 10_000;
+        if (cached?.loading || isFresh) continue;
+        requestInstanceScreenshotPreview(instance);
+      }
+    };
+
+    refreshDueScreenshots();
+    const timer = window.setInterval(() => {
+      if (!cancelled) refreshDueScreenshots();
+    }, 2_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [instanceScreenshotPreviews, visibleInstanceCards]);
   const selectedCapacityAllocation = useMemo(
     () => selectedCapacityInstance ? allocations.find((allocation) => allocation.instanceId === selectedCapacityInstance.id && !["RELEASED", "FAILED"].includes(allocation.status)) ?? null : null,
     [allocations, selectedCapacityInstance]
@@ -2181,22 +2411,45 @@ export function App() {
       : [],
     [assets, selectedAsset]
   );
+  const characterGroupProductionResources = useMemo(
+    () => groups.map((group) => characterGroupProductionResource(group)),
+    [groups]
+  );
+  const productionResourceSource = useMemo(() => {
+    const orphanCharacterGroupBatches = batches.filter((batch) => batch.batchType === "CHARACTER_GROUP" && !batchGroupId(batch));
+    if (productionResourceTab === "CHARACTER_GROUP") {
+      return [...characterGroupProductionResources, ...orphanCharacterGroupBatches];
+    }
+    if (productionResourceTab === "ALL") {
+      return [
+        ...characterGroupProductionResources,
+        ...batches.filter((batch) => batch.batchType !== "CHARACTER_GROUP" || !batchGroupId(batch))
+      ];
+    }
+    return batches;
+  }, [batches, characterGroupProductionResources, productionResourceTab]);
   const selectedProductionResource = useMemo(
-    () => batches.find((batch) => batch.id === selectedResourceId) ?? null,
-    [batches, selectedResourceId]
+    () => batches.find((batch) => batch.id === selectedResourceId)
+      ?? characterGroupProductionResources.find((batch) => batch.id === selectedResourceId)
+      ?? null,
+    [batches, characterGroupProductionResources, selectedResourceId]
   );
   const productionResourceJobs = useMemo(() => {
     if (!selectedProductionResource) return [];
+    const selectedGroupId = batchGroupId(selectedProductionResource);
     return jobs.filter((job) => {
+      const sourceBatch = batches.find((batch) => batch.id === job.sourceBatchId) ?? null;
       const payload = getRecord(job.payload);
       const output = getRecord(job.output);
       const text = compactJson({ payload, output });
       return job.sourceBatchId === selectedProductionResource.id
         || getString(output.outputBatchId) === selectedProductionResource.id
         || getString(payload.outputBatchId) === selectedProductionResource.id
+        || Boolean(selectedGroupId && sourceBatch && batchGroupId(sourceBatch) === selectedGroupId)
+        || Boolean(selectedGroupId && text.includes(selectedGroupId))
         || text.includes(selectedProductionResource.id);
     });
-  }, [jobs, selectedProductionResource]);
+  }, [batches, jobs, selectedProductionResource]);
   const productionResourceRuntimeSessions = useMemo(() => {
     const jobIds = new Set(productionResourceJobs.map((job) => job.id));
     return runtimeSessions.filter((session) => session.jobId && jobIds.has(session.jobId));
@@ -2210,20 +2463,32 @@ export function App() {
         || (groupId && batchGroupId(batch) === groupId)
         || text.includes(selectedProductionResource.id);
     });
-    return related.sort((a, b) => lineageOrder(a.batchType) - lineageOrder(b.batchType) || a.createdAt.localeCompare(b.createdAt));
+    const withSelected = productionResourceIsCharacterGroup(selectedProductionResource)
+      ? [selectedProductionResource, ...related]
+      : related;
+    return withSelected
+      .filter((batch, index, list) => list.findIndex((item) => item.id === batch.id) === index)
+      .sort((a, b) => lineageOrder(a.batchType) - lineageOrder(b.batchType) || a.createdAt.localeCompare(b.createdAt));
   }, [batches, selectedProductionResource]);
-  const productionResourceStatusOptions = useMemo(() => [...new Set(batches.map((batch) => batch.status))].sort(), [batches]);
-  const productionResourceUsageOptions = useMemo(() => [...new Set(batches.map((batch) => batch.usageStatus))].sort(), [batches]);
+  const productionResourceStatusOptions = useMemo(
+    () => [...new Set([...batches.map((batch) => batch.status), ...characterGroupProductionResources.map((batch) => batch.status)])].sort(),
+    [batches, characterGroupProductionResources]
+  );
+  const productionResourceUsageOptions = useMemo(
+    () => [...new Set([...batches.map((batch) => batch.usageStatus), ...characterGroupProductionResources.map((batch) => batch.usageStatus)])].sort(),
+    [batches, characterGroupProductionResources]
+  );
   const productionResourceCards = useMemo(() => {
     const activeTabType = resourceTypeForTab(productionResourceTab);
     const search = productionResourceFilters.search.toLowerCase();
-    return batches.filter((batch) => {
+    return productionResourceSource.filter((batch) => {
+      const resourceType = productionResourceType(batch);
       const groupId = batchGroupId(batch);
       const group = groups.find((item) => item.id === groupId);
       const lineageCount = groupId ? batches.filter((item) => batchGroupId(item) === groupId).length : 0;
-      const haystack = `${batchDisplayName(batch, group)} ${batch.batchType} ${batch.status} ${batch.usageStatus} ${group?.name ?? ""} ${compactJson(batch.metadata)}`.toLowerCase();
-      return (!activeTabType || batch.batchType === activeTabType)
-        && (!productionResourceFilters.type || batch.batchType === productionResourceFilters.type)
+      const haystack = `${batchDisplayName(batch, group)} ${resourceType} ${batch.status} ${batch.usageStatus} ${group?.name ?? ""} ${compactJson(batch.metadata)}`.toLowerCase();
+      return (!activeTabType || resourceType === activeTabType)
+        && (!productionResourceFilters.type || resourceType === productionResourceFilters.type)
         && (!productionResourceFilters.status || batch.status === productionResourceFilters.status)
         && (!productionResourceFilters.usageStatus || batch.usageStatus === productionResourceFilters.usageStatus)
         && (!productionResourceFilters.workflowId || batch.workflowId === productionResourceFilters.workflowId)
@@ -2235,7 +2500,7 @@ export function App() {
         && (productionResourceFilters.includeArchived || batch.status !== "ARCHIVED")
         && (!search || haystack.includes(search));
     });
-  }, [batches, groups, productionResourceFilters, productionResourceTab]);
+  }, [batches, groups, productionResourceFilters, productionResourceSource, productionResourceTab]);
   const productionResourceGroups = useMemo(() => {
     const map = new Map<string, { group: CharacterGroup | null; resources: ProductionBatch[] }>();
     for (const batch of productionResourceCards) {
@@ -2252,7 +2517,7 @@ export function App() {
     }));
   }, [groups, productionResourceCards]);
   const productionResourceKpis = useMemo(() => ({
-    characterGroups: batches.filter((batch) => batch.batchType === "CHARACTER_GROUP").length,
+    characterGroups: groups.length,
     imageBatches: batches.filter((batch) => batch.batchType === "IMAGE_BATCH").length,
     videoBatches: batches.filter((batch) => batch.batchType === "VIDEO_BATCH").length,
     musicTracks: batches.filter((batch) => batch.batchType === "MUSIC_TRACK").length,
@@ -2260,8 +2525,8 @@ export function App() {
     postContents: batches.filter((batch) => batch.batchType === "POST_CONTENT").length,
     readyResources: batches.filter((batch) => batch.status === "READY").length,
     failedResources: batches.filter((batch) => batch.status === "FAILED").length,
-    recentlyCreated: batches.filter((batch) => isRecentDate(batch.createdAt)).length
-  }), [batches]);
+    recentlyCreated: batches.filter((batch) => isRecentDate(batch.createdAt)).length + groups.filter((group) => isRecentDate(group.createdAt)).length
+  }), [batches, groups]);
   const characterTagOptions = useMemo(
     () => [...new Set(characters.flatMap((character) => character.tags ?? []))].sort(),
     [characters]
@@ -3754,6 +4019,18 @@ export function App() {
     }
   }
 
+  async function deleteSelectedJob(job = selectedJob) {
+    if (!job) return;
+    if (!window.confirm(`Delete job ${displayShortId(job.id)}? This cannot be undone.`)) return;
+    return adminAction("Deleting job", async () => {
+      const result = await api(`/orchestrator/jobs/${job.id}`, { method: "DELETE" });
+      setSelectedJobId("");
+      setDrawerOpen(false);
+      await refreshQueue();
+      return result;
+    });
+  }
+
   async function recoverRuntimeSession() {
     if (!runtimeSession) return;
 
@@ -3811,8 +4088,9 @@ export function App() {
       if (action === "health") {
         result = await api(`/hosts/${selectedHost.id}/health`);
       } else if (action === "devices") {
-        const data = await hostApi<{ devices: AdbDevice[] }>(selectedHost.baseUrl, "/adb/devices");
-        setAdbDevices(data.devices ?? []);
+        const data = await api<{ devices?: { devices?: AdbDevice[] } | AdbDevice[] }>(`/hosts/${selectedHost.id}/adb-devices`);
+        const devices = Array.isArray(data.devices) ? data.devices : data.devices?.devices ?? [];
+        setAdbDevices(devices);
         result = data;
       } else if (action === "screenshot") {
         result = await api(`/hosts/${selectedHost.id}/screenshot`, {
@@ -3861,6 +4139,17 @@ export function App() {
     }
   }
 
+  async function deleteSelectedRule(rule = selectedRule) {
+    if (!rule) return;
+    if (!window.confirm(`Delete orchestrator rule "${rule.name}"? This cannot be undone.`)) return;
+    return adminAction("Deleting orchestrator rule", async () => {
+      const result = await api(`/orchestrator/rules/${rule.id}`, { method: "DELETE" });
+      setSelectedRuleId("");
+      await refreshQueue();
+      return result;
+    });
+  }
+
   async function refreshScriptVersions(scriptId = selectedScriptId) {
     if (!scriptId) return [];
     const versions = await api<ScriptVersionRecord[]>(`/scripts/${scriptId}/versions`);
@@ -3894,6 +4183,17 @@ export function App() {
         })
       }));
     }
+  }
+
+  async function deleteSelectedRuntime(session = selectedRuntime) {
+    if (!session) return;
+    if (!window.confirm(`Delete runtime session ${displayShortId(session.id)}? This cannot be undone.`)) return;
+    return adminAction("Deleting runtime session", async () => {
+      const result = await api(`/runtime-sessions/${session.id}`, { method: "DELETE" });
+      setSelectedRuntimeId("");
+      await refreshQueue();
+      return result;
+    });
   }
 
   async function runRuntimeHostAction(session: RuntimeSession, action: "send-text" | "download-latest") {
@@ -4118,6 +4418,18 @@ export function App() {
     }));
   }
 
+  async function deleteSelectedScript() {
+    if (!selectedScript) return;
+    if (!window.confirm(`Delete script "${selectedScript.name}"? This cannot be undone.`)) return;
+    return adminAction("Deleting script", async () => {
+      const result = await api(`/scripts/${selectedScript.id}`, { method: "DELETE" });
+      setSelectedScriptId("");
+      setSelectedScriptVersionId("");
+      await refreshQueue();
+      return result;
+    });
+  }
+
   async function archiveScriptVersion(versionId: string) {
     return adminAction("Archiving script version", async () => {
       const version = await api<ScriptVersionRecord>(`/script-versions/${versionId}`, {
@@ -4222,6 +4534,19 @@ export function App() {
       setSelectedWorkflowId(duplicated.id);
       await refreshQueue();
       return duplicated;
+    });
+  }
+
+  async function deleteWorkflow(workflow = selectedWorkflow) {
+    if (!workflow) return;
+    if (!window.confirm(`Delete workflow "${workflow.name}"? This cannot be undone.`)) return;
+    return adminAction("Deleting workflow", async () => {
+      const result = await api(`/workflows/${workflow.id}`, { method: "DELETE" });
+      setSelectedWorkflowId("");
+      setSelectedWorkflowRunId("");
+      setWorkflowDetail(null);
+      await refreshQueue();
+      return result;
     });
   }
 
@@ -4341,6 +4666,123 @@ export function App() {
     return adminAction("Syncing host instances", () => api(`/hosts/${host.id}/sync-instances`, { method: "POST" }));
   }
 
+  function openHostOperations(host: HostRecord, tab: typeof hostDrawerTab = "overview") {
+    setSelectedHostDrawerId(host.id);
+    setHostDrawerTab(tab);
+    setSelectedHostId(host.hostId);
+  }
+
+  function openInstanceOperations(instance: InstanceRecord, tab: typeof instanceDrawerTab = "overview") {
+    setSelectedInstanceId(instance.id);
+    setInstanceDrawerId(instance.id);
+    setInstanceDrawerTab(tab);
+    setHostInstanceId(instance.id);
+    setHostAdbId(instance.adbId ?? "");
+    setCapacityCapabilityDraft(normalizeInstanceCapabilities(instance.capabilities));
+    const host = hostForInstance(instance);
+    if (host) setSelectedHostId(host.hostId);
+  }
+
+  async function runHostDrawerAction(host: HostRecord, action: "health" | "devices" | "screenshot" | "send-text" | "download-latest", instance?: InstanceRecord | null) {
+    const adbId = instance?.adbId ?? hostAdbId;
+    const instanceId = instance?.id ?? hostInstanceId;
+    if (!["health", "devices"].includes(action) && !adbId) {
+      setHostResult({ error: "ADB_ID_REQUIRED", message: "ADB mapping unknown. Runtime commands require adbId." });
+      setStatus("ADB mapping unknown");
+      return;
+    }
+    return adminAction(`${action} host test`, async () => {
+      if (action === "health") return api(`/hosts/${host.id}/health`);
+      if (action === "devices") {
+        const data = await api<{ devices?: { devices?: AdbDevice[] } | AdbDevice[] }>(`/hosts/${host.id}/adb-devices`);
+        const devices = Array.isArray(data.devices) ? data.devices : data.devices?.devices ?? [];
+        setAdbDevices(devices);
+        setHostResult(data);
+        return data;
+      }
+      const path = action === "screenshot" ? "screenshot" : action === "send-text" ? "send-text" : "download-latest";
+      const result = await api(`/hosts/${host.id}/${path}`, {
+        method: "POST",
+        body: JSON.stringify(action === "send-text" ? { instanceId, adbId, text: hostSendText } : { instanceId, adbId })
+      });
+      setHostResult(result);
+      return result;
+    });
+  }
+
+  async function openAdbMapping(instance: InstanceRecord) {
+    const host = hostForInstance(instance);
+    setAdbMappingInstanceId(instance.id);
+    setSelectedManualAdbId(instance.adbId ?? "");
+    if (host) {
+      setSelectedHostDrawerId(host.id);
+      setHostDrawerTab("instances");
+      await runHostDrawerAction(host, "devices");
+    }
+  }
+
+  async function assignManualAdbMapping() {
+    if (!adbMappingInstance || !selectedManualAdbId) return;
+    return adminAction("Saving manual ADB mapping", () => api(`/instances/${adbMappingInstance.id}/manual-adb-mapping`, {
+      method: "POST",
+      body: JSON.stringify({ adbId: selectedManualAdbId })
+    }).then((result) => {
+      setAdbMappingInstanceId("");
+      setSelectedManualAdbId("");
+      return result;
+    }));
+  }
+
+  async function clearManualAdbMapping(instance = adbMappingInstance) {
+    if (!instance) return;
+    return adminAction("Clearing ADB mapping", () => api(`/instances/${instance.id}/clear-adb-mapping`, { method: "POST" }).then((result) => {
+      setAdbMappingInstanceId("");
+      setSelectedManualAdbId("");
+      return result;
+    }));
+  }
+
+  async function requestInstanceScreenshotPreview(instance: InstanceRecord) {
+    const host = hostForInstance(instance);
+    if (!host || !instance.adbId || hasUnknownAdbMapping(instance)) return;
+
+    setInstanceScreenshotPreviews((current) => ({
+      ...current,
+      [instance.id]: {
+        ...current[instance.id],
+        loading: true,
+        error: undefined
+      }
+    }));
+
+    try {
+      const result = await api(`/hosts/${host.id}/screenshot`, {
+        method: "POST",
+        body: JSON.stringify({ instanceId: instance.id, adbId: instance.adbId })
+      });
+      const url = findUrl(result);
+      setInstanceScreenshotPreviews((current) => ({
+        ...current,
+        [instance.id]: {
+          url: url || current[instance.id]?.url,
+          capturedAt: Date.now(),
+          loading: false,
+          error: url ? undefined : "NO_SCREENSHOT_URL"
+        }
+      }));
+    } catch (error) {
+      setInstanceScreenshotPreviews((current) => ({
+        ...current,
+        [instance.id]: {
+          ...current[instance.id],
+          capturedAt: Date.now(),
+          loading: false,
+          error: error instanceof Error ? error.message : "Screenshot failed"
+        }
+      }));
+    }
+  }
+
   async function instanceHostAction(instance: InstanceRecord, action: "screenshot" | "start" | "stop" | "restart") {
     const host = hostForInstance(instance);
     if (!host) throw new Error("Host not found for instance");
@@ -4349,10 +4791,20 @@ export function App() {
         setStatus("ADB mapping unknown");
         return;
       }
-      return adminAction("Testing instance screenshot", () => api(`/hosts/${host.id}/screenshot`, {
+      return adminAction("Testing instance screenshot", async () => {
+        const result = await api(`/hosts/${host.id}/screenshot`, {
         method: "POST",
         body: JSON.stringify({ instanceId: instance.id, adbId: instance.adbId })
-      }));
+        });
+        const url = findUrl(result);
+        if (url) {
+          setInstanceScreenshotPreviews((current) => ({
+            ...current,
+            [instance.id]: { url, capturedAt: Date.now(), loading: false }
+          }));
+        }
+        return result;
+      });
     }
     return adminAction(`${action} instance`, () => api(`/hosts/${host.id}/instances/${instance.localId}/${action}`, { method: "POST" }));
   }
@@ -4485,6 +4937,27 @@ export function App() {
     return labels.map((label) => <span className="poolBadge capabilityBadge" key={label}>{label}</span>);
   }
 
+  function renderInstanceScreenshotPreview(instance: InstanceRecord) {
+    const preview = instanceScreenshotPreviews[instance.id];
+    const url = mediaUrl(preview?.url || getString(instance.metadata?.latestScreenshotUrl) || getString(instance.metadata?.screenshotUrl));
+    return (
+      <div className={`instancePreviewSlot ${url ? "hasImage" : ""}`}>
+        {url ? <img src={url} alt={`${instance.id} screenshot preview`} /> : <Image size={22} />}
+        <small>
+          {preview?.loading
+            ? "Loading screenshot..."
+            : preview?.error
+              ? "Screenshot unavailable"
+              : url
+                ? `Screenshot ${preview?.capturedAt ? displayDateTime(new Date(preview.capturedAt).toISOString()) : "preview"}`
+                : hasUnknownAdbMapping(instance)
+                  ? "ADB mapping unknown"
+                  : "No screenshot preview"}
+        </small>
+      </div>
+    );
+  }
+
   function renderInstanceMovementActions(instance: InstanceRecord) {
     return (
       <>
@@ -4538,6 +5011,58 @@ export function App() {
       method: "PATCH",
       body: JSON.stringify(capabilities)
     }));
+  }
+
+  async function saveInstanceDrawerCapabilities() {
+    if (!selectedInstanceDrawer) return;
+    return adminAction("Saving capabilities", () => api(`/instances/${selectedInstanceDrawer.id}/capabilities`, {
+      method: "PATCH",
+      body: JSON.stringify(normalizeInstanceCapabilities(capacityCapabilityDraft))
+    }));
+  }
+
+  async function copyInstanceDrawerCapabilities() {
+    const source = instances.find((instance) => instance.id === instanceCopySourceId);
+    if (!source || !selectedInstanceDrawer) return;
+    const capabilities = normalizeInstanceCapabilities(source.capabilities);
+    setCapacityCapabilityDraft(capabilities);
+    return adminAction("Copying capabilities", () => api(`/instances/${selectedInstanceDrawer.id}/capabilities`, {
+      method: "PATCH",
+      body: JSON.stringify(capabilities)
+    }));
+  }
+
+  async function bulkMoveOperationalInstances(action: "move-available" | "move-standby" | "move-maintenance" | "disable" | "retire") {
+    if (!selectedCapacityInstanceIds.length) return;
+    if (!window.confirm(`Apply ${action} to ${selectedCapacityInstanceIds.length} selected instances?`)) return;
+    const selected = instances.filter((instance) => selectedCapacityInstanceIds.includes(instance.id));
+    return adminAction("Moving selected instances", async () => {
+      await Promise.all(selected.map((instance) => {
+        const body = action === "move-maintenance" ? { reason: "Bulk moved from Instances" } : undefined;
+        return api(`/instances/${instance.id}/${action}`, {
+          method: "POST",
+          body: body ? JSON.stringify(body) : undefined
+        });
+      }));
+    });
+  }
+
+  async function bulkApplyOperationalCapability(mode: "add" | "remove") {
+    if (!selectedCapacityInstanceIds.length) return;
+    if (!window.confirm(`${mode === "add" ? "Set" : "Remove"} ${instanceBulkCapability} for ${selectedCapacityInstanceIds.length} selected instances?`)) return;
+    const selected = instances.filter((instance) => selectedCapacityInstanceIds.includes(instance.id));
+    return adminAction("Updating selected capabilities", async () => {
+      await Promise.all(selected.map((instance) => {
+        const capabilities = normalizeInstanceCapabilities(instance.capabilities);
+        const canRun = new Set(capabilities.canRun ?? []);
+        if (mode === "add") canRun.add(instanceBulkCapability);
+        else canRun.delete(instanceBulkCapability);
+        return api(`/instances/${instance.id}/capabilities`, {
+          method: "PATCH",
+          body: JSON.stringify({ ...capabilities, canRun: [...canRun] })
+        });
+      }));
+    });
   }
 
   async function bulkApplyCapacityCapability(mode: "add" | "remove") {
@@ -4601,6 +5126,10 @@ export function App() {
   }
 
   async function updateProductionResourceStatus(batch: ProductionBatch, statusValue: string) {
+    if (productionResourceIsCharacterGroup(batch)) {
+      setStatus("Character Groups are managed from Management > Character Groups");
+      return;
+    }
     await adminAction(statusValue === "ARCHIVED" ? "Archiving resource" : "Restoring resource", () =>
       api(`/production-batches/${batch.id}`, {
         method: "PATCH",
@@ -4608,6 +5137,21 @@ export function App() {
       })
     );
     setSelectedResourceId(batch.id);
+  }
+
+  async function deleteProductionResource(batch = selectedProductionResource) {
+    if (!batch) return;
+    if (!window.confirm(`Delete production resource ${batchDisplayName(batch, getProductionResourceGroup(batch))}? This cannot be undone.`)) return;
+    return adminAction("Deleting production resource", async () => {
+      const groupId = batchGroupId(batch);
+      const endpoint = productionResourceIsCharacterGroup(batch) && groupId
+        ? `/character-groups/${groupId}`
+        : `/production-batches/${batch.id}`;
+      const result = await api(endpoint, { method: "DELETE" });
+      setSelectedResourceId("");
+      await refreshQueue();
+      return result;
+    });
   }
 
   async function copyProductionPostContent(batch: ProductionBatch) {
@@ -4675,13 +5219,21 @@ export function App() {
     const post = postContentMetadata(batch);
     const music = musicTrackMetadata(batch);
     const lineageCount = getProductionResourceLineageCount(batch);
-    const relatedJobs = jobs.filter((job) => job.sourceBatchId === batch.id || batchMatchesJob(batch, job));
+    const groupId = batchGroupId(batch);
+    const relatedJobs = jobs.filter((job) => {
+      const sourceBatch = batches.find((item) => item.id === job.sourceBatchId) ?? null;
+      const jobText = compactJson({ payload: job.payload, output: job.output });
+      return job.sourceBatchId === batch.id
+        || batchMatchesJob(batch, job)
+        || Boolean(groupId && sourceBatch && batchGroupId(sourceBatch) === groupId)
+        || Boolean(groupId && jobText.includes(groupId));
+    });
     return (
       <article className={`resourceLibraryCard ${selectedResourceId === batch.id ? "selected" : ""}`} key={batch.id} onClick={() => openProductionResource(batch)}>
         <div className="resourcePreviewFrame">{renderResourcePreview(batch)}</div>
         <div className="resourceCardHeader">
           <strong>{batchDisplayName(batch, group)}</strong>
-          <span className="resourceTypeBadge">{batch.batchType}</span>
+          <span className="resourceTypeBadge">{productionResourceType(batch)}</span>
         </div>
         <div className="resourceBadgeRow">
           <span className={`statusPill ${batch.status === "READY" ? "ready" : batch.status === "FAILED" ? "danger" : ""}`}>{batch.status}</span>
@@ -4702,11 +5254,13 @@ export function App() {
           {batch.batchType === "POST_CONTENT" ? (
             <button onClick={(event) => { event.stopPropagation(); copyProductionPostContent(batch); }} title="Copy Content"><Copy size={15} /> Copy</button>
           ) : null}
-          {batch.status === "ARCHIVED" ? (
-            <button onClick={(event) => { event.stopPropagation(); updateProductionResourceStatus(batch, "READY"); }} title="Restore"><RefreshCcw size={15} /> Restore</button>
-          ) : (
-            <button onClick={(event) => { event.stopPropagation(); updateProductionResourceStatus(batch, "ARCHIVED"); }} title="Archive"><Archive size={15} /> Archive</button>
-          )}
+          {!productionResourceIsCharacterGroup(batch) ? (
+            batch.status === "ARCHIVED" ? (
+              <button onClick={(event) => { event.stopPropagation(); updateProductionResourceStatus(batch, "READY"); }} title="Restore"><RefreshCcw size={15} /> Restore</button>
+            ) : (
+              <button onClick={(event) => { event.stopPropagation(); updateProductionResourceStatus(batch, "ARCHIVED"); }} title="Archive"><Archive size={15} /> Archive</button>
+            )
+          ) : null}
         </div>
       </article>
     );
@@ -4976,101 +5530,234 @@ export function App() {
           </div>
 
           {managementSection === "hosts" ? (
-            <div className="adminGrid">
-              <div className="adminForm">
-                <label>Host ID<input value={hostForm.hostId} onChange={(event) => setHostForm({ ...hostForm, hostId: event.target.value })} /></label>
-                <label>Name<input value={hostForm.name} onChange={(event) => setHostForm({ ...hostForm, name: event.target.value })} /></label>
-                <label>Base URL<input value={hostForm.baseUrl} onChange={(event) => setHostForm({ ...hostForm, baseUrl: event.target.value })} /></label>
-                <label>API Key<input value={hostForm.apiKey} onChange={(event) => setHostForm({ ...hostForm, apiKey: event.target.value })} /></label>
-                <label>Status<input value={hostForm.status} onChange={(event) => setHostForm({ ...hostForm, status: event.target.value })} /></label>
-                <button onClick={() => adminAction("Creating host", () => api("/hosts", { method: "POST", body: JSON.stringify(hostForm) }))}>Add Host</button>
-              </div>
-              <div className="adminTable">
-                {hosts.filter((host) => compactJson(host).toLowerCase().includes(adminSearch.toLowerCase())).slice(0, 20).map((host) => (
-                  <div className="hostAdminCard" key={host.id}>
-                    <div className="hostAdminInfo">
-                      <b>{host.name}</b>
-                      <span>{host.hostId}</span>
-                      <span>{host.baseUrl}</span>
-                      <span>{host.status}</span>
-                      <span>{instances.filter((instance) => instance.hostId === host.hostId).length} instances</span>
-                    </div>
-                    <div className="hostAdminActions">
-                      <button onClick={() => adminAction("Testing host health", () => api(`/hosts/${host.id}/health`))}>Health</button>
-                      <button onClick={() => syncHostInstances(host)}>Sync Instances</button>
-                      <button onClick={() => adminAction("Testing ADB devices", () => hostApi(host.baseUrl, "/adb/devices"))}>ADB Devices</button>
-                      <button disabled={!hostAdbId} onClick={() => adminAction("Testing screenshot", () => api(`/hosts/${host.id}/screenshot`, { method: "POST", body: JSON.stringify({ instanceId: hostInstanceId, adbId: hostAdbId }) }))}>Screenshot</button>
-                      <button onClick={() => setSelectedHostDrawerId(host.id)}>View Instances</button>
-                      <button
-                        className="dangerButton"
-                        onClick={() => {
-                          if (window.confirm(`Delete host ${host.name}?`)) {
-                            adminAction("Deleting host", () => api(`/hosts/${host.id}`, { method: "DELETE" }));
-                          }
-                        }}
-                      >
-                        Delete
-                      </button>
-                    </div>
+            <div className="hostOpsPage">
+              <div className="resourceKpiBar">
+                {[
+                  { label: "Total Hosts", value: hostKpis.total, Icon: Boxes },
+                  { label: "Online Hosts", value: hostKpis.online, Icon: Check },
+                  { label: "Offline Hosts", value: hostKpis.offline, Icon: Archive },
+                  { label: "Hosts With Errors", value: hostKpis.errors, Icon: ClipboardList },
+                  { label: "Total Instances", value: hostKpis.instances, Icon: Users },
+                  { label: "Standby Instances", value: hostKpis.standby, Icon: Play },
+                  { label: "Workflow Instances", value: hostKpis.workflow, Icon: Rocket },
+                  { label: "Maintenance Instances", value: hostKpis.maintenance, Icon: Edit3 }
+                ].map(({ label, value, Icon }) => (
+                  <div className="resourceKpiCard" key={label}>
+                    <Icon size={17} />
+                    <span>{label}</span>
+                    <strong>{value}</strong>
                   </div>
                 ))}
               </div>
-              {selectedHostDrawerId ? (() => {
-                const host = hosts.find((item) => item.id === selectedHostDrawerId);
-                const hostInstances = host ? instances.filter((instance) => instance.hostId === host.hostId) : [];
-                return (
-                  <div className="instanceDrawerOverlay">
-                    <aside className="instanceDrawer">
-                      <div className="drawerHeader">
-                        <div>
-                          <strong>{host?.name ?? "Host Instances"}</strong>
-                          <small>{host?.hostId ?? ""} / {hostInstances.length} instances</small>
-                        </div>
-                        <button className="iconButton" onClick={() => setSelectedHostDrawerId("")} title="Close instance drawer">x</button>
+
+              <details className="resourceCreatePanel">
+                <summary>Add Host Agent</summary>
+                <div className="resourceCreateGrid">
+                  <label>Host ID<input value={hostForm.hostId} onChange={(event) => setHostForm({ ...hostForm, hostId: event.target.value })} /></label>
+                  <label>Name<input value={hostForm.name} onChange={(event) => setHostForm({ ...hostForm, name: event.target.value })} /></label>
+                  <label>Base URL<input value={hostForm.baseUrl} onChange={(event) => setHostForm({ ...hostForm, baseUrl: event.target.value })} /></label>
+                  <label>API Key<input value={hostForm.apiKey} onChange={(event) => setHostForm({ ...hostForm, apiKey: event.target.value })} /></label>
+                  <label>Status<input value={hostForm.status} onChange={(event) => setHostForm({ ...hostForm, status: event.target.value })} /></label>
+                  <button className="primaryButton" onClick={() => adminAction("Creating host", () => api("/hosts", { method: "POST", body: JSON.stringify(hostForm) }))}>Add Host</button>
+                </div>
+              </details>
+
+              <div className="hostOpsGrid">
+                {hostManagementRows.map((row) => (
+                  <article className={`hostOpsCard ${selectedHostDrawerId === row.host.id ? "selected" : ""}`} key={row.host.id} onClick={() => openHostOperations(row.host)}>
+                    <header>
+                      <div>
+                        <strong>{row.host.name}</strong>
+                        <small>{row.host.hostId}</small>
                       </div>
-                      <div className="instanceDrawerTable">
-                        <div className="instanceDrawerHeader">
-                          <span>Instance ID</span>
-                          <span>Local ID</span>
-                          <span>Name</span>
-                          <span>ADB ID</span>
-                          <span>Status</span>
-                          <span>Runtime Status</span>
-                          <span>Pool State</span>
-                          <span>Capabilities</span>
-                          <span>Maintenance</span>
-                          <span>Pools</span>
-                          <span>Actions</span>
-                        </div>
-                        {hostInstances.map((instance) => (
-                          <div className="instanceDrawerRow" key={instance.id}>
-                            <span title={instance.id}>{instance.id}</span>
-                            <span>{instance.localId}</span>
-                            <span>{instance.name ?? "-"}</span>
-                            <span>{instance.adbId ?? "-"}</span>
-                            <span>{instance.status}</span>
-                            <span>{instance.runtimeStatus}</span>
-                            <span>{instance.currentPoolType ?? "AVAILABLE"}</span>
-                            <span className="poolBadgeList">{renderCapabilityBadges(instance)}</span>
-                            {hasUnknownAdbMapping(instance) ? <span className="poolBadge warningBadge">ADB mapping unknown</span> : null}
-                            <span>{instance.maintenanceReason ?? "-"}</span>
-                            <span className="poolBadgeList">{renderPoolBadges(instance.id)}</span>
-                            <div>
-                              <button disabled={!instance.adbId} onClick={() => instanceHostAction(instance, "screenshot")}>Screenshot</button>
-                              <button onClick={() => instanceHostAction(instance, "start")}>Start</button>
-                              <button onClick={() => instanceHostAction(instance, "stop")}>Stop</button>
-                              <button onClick={() => instanceHostAction(instance, "restart")}>Restart</button>
-                              <button onClick={() => openPoolManager(instance.id)}>Manage Pools</button>
-                              {renderInstanceMovementActions(instance)}
-                            </div>
-                          </div>
-                        ))}
-                        {!hostInstances.length ? <div className="jobsEmpty">No synced instances yet.</div> : null}
-                      </div>
-                    </aside>
+                      <span className="statusPill">{row.host.status}</span>
+                    </header>
+                    <div className="resourceMetaGrid">
+                      <span>Base URL</span><strong title={row.host.baseUrl}>{row.host.baseUrl}</strong>
+                      <span>Agent health</span><strong>{row.host.metadata?.health ? String(row.host.metadata.health) : row.host.status}</strong>
+                      <span>Last check</span><strong>{displayDateTime(row.host.lastHealthCheckAt ?? row.host.updatedAt ?? undefined)}</strong>
+                      <span>Instances</span><strong>{row.total}</strong>
+                      <span>Standby</span><strong>{row.standby}</strong>
+                      <span>Workflow</span><strong>{row.workflow}</strong>
+                      <span>Maintenance</span><strong>{row.maintenance}</strong>
+                      <span>ADB devices</span><strong>{row.adbCount}</strong>
+                      <span>Storage</span><strong>{getString(row.host.metadata?.storageStatus) || "-"}</strong>
+                    </div>
+                    <div className="resourceBadgeRow">
+                      <span className="poolBadge capabilityBadge">direct {row.direct}</span>
+                      <span className="poolBadge">preserved {row.preserved}</span>
+                      {row.unknown ? <span className="poolBadge warningBadge">unknown {row.unknown}</span> : null}
+                    </div>
+                    <div className="resourceActions">
+                      <button title="Health Check" onClick={(event) => { event.stopPropagation(); runHostDrawerAction(row.host, "health"); }}><Check size={15} /></button>
+                      <button title="Sync Instances" onClick={(event) => { event.stopPropagation(); syncHostInstances(row.host); }}><RefreshCcw size={15} /></button>
+                      <button title="ADB Devices" onClick={(event) => { event.stopPropagation(); openHostOperations(row.host, "adb"); runHostDrawerAction(row.host, "devices"); }}><Boxes size={15} /></button>
+                      <button title="Open Instances" onClick={(event) => { event.stopPropagation(); openHostOperations(row.host, "instances"); }}><Eye size={15} /></button>
+                      <button title="Edit Host" onClick={(event) => { event.stopPropagation(); setHostForm({ hostId: row.host.hostId, name: row.host.name, baseUrl: row.host.baseUrl, apiKey: row.host.apiKey ?? "", status: row.host.status }); openHostOperations(row.host, "overview"); }}><Edit3 size={15} /></button>
+                      <button title="Disable Host" onClick={(event) => { event.stopPropagation(); adminAction("Disabling host", () => api(`/hosts/${row.host.id}`, { method: "PATCH", body: JSON.stringify({ status: "disabled" }) })); }}><Archive size={15} /></button>
+                    </div>
+                  </article>
+                ))}
+                {!hostManagementRows.length ? <div className="jobsEmpty">No Host Agent registered yet.</div> : null}
+              </div>
+
+              {selectedHostDrawer ? (
+                <aside className="hostOpsDrawer">
+                  <div className="drawerHeader">
+                    <div>
+                      <strong>{selectedHostDrawer.name}</strong>
+                      <small>{selectedHostDrawer.hostId} / {selectedHostDrawerInstances.length} instances</small>
+                    </div>
+                    <button className="iconButton" onClick={() => setSelectedHostDrawerId("")} title="Close host drawer">x</button>
                   </div>
-                );
-              })() : null}
+                  <div className="resourceDrawerTabs">
+                    {([
+                      ["overview", "Overview"],
+                      ["instances", "Instances"],
+                      ["adb", "ADB Devices"],
+                      ["tests", "Host Agent Tests"],
+                      ["storage", "Storage"],
+                      ["json", "Debug JSON"]
+                    ] as Array<[typeof hostDrawerTab, string]>).map(([tab, label]) => (
+                      <button key={tab} className={hostDrawerTab === tab ? "active" : ""} onClick={() => setHostDrawerTab(tab)}>{label}</button>
+                    ))}
+                  </div>
+
+                  {hostDrawerTab === "overview" ? (
+                    <div className="resourceDrawerBody">
+                      <div className="resourceMetaGrid detail">
+                        <span>Name</span><strong>{selectedHostDrawer.name}</strong>
+                        <span>Host ID</span><strong>{selectedHostDrawer.hostId}</strong>
+                        <span>Base URL</span><strong>{selectedHostDrawer.baseUrl}</strong>
+                        <span>Status</span><strong>{selectedHostDrawer.status}</strong>
+                        <span>Last health</span><strong>{displayDateTime(selectedHostDrawer.lastHealthCheckAt ?? selectedHostDrawer.updatedAt ?? undefined)}</strong>
+                        <span>Instances</span><strong>{selectedHostDrawerInstances.length}</strong>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {hostDrawerTab === "instances" ? (
+                    <div className="hostChildInstanceList">
+                      {selectedHostDrawerInstances.map((instance) => (
+                        <article className="hostChildInstanceCard" key={instance.id} onClick={() => openInstanceOperations(instance)}>
+                          <header><strong>{instance.id}</strong><span className="statusPill">{instance.currentPoolType ?? "AVAILABLE"}</span></header>
+                          {renderInstanceScreenshotPreview(instance)}
+                          <div className="resourceMetaGrid">
+                            <span>Local</span><strong>{instance.localId}</strong>
+                            <span>Name</span><strong>{instance.name ?? "-"}</strong>
+                            <span>ADB</span><strong>{instance.adbId ?? "Unknown"}</strong>
+                            <span>Status</span><strong>{instance.status}</strong>
+                            <span>Runtime</span><strong>{instance.runtimeStatus || "-"}</strong>
+                            <span>LD status</span><strong>{getString(getRecord(instance.metadata?.raw).ldStatus) || "-"}</strong>
+                            <span>Mapping</span><strong>{adbMappingConfidence(instance) || "unknown"}</strong>
+                            <span>Source</span><strong>{adbMappingSource(instance) || "none"}</strong>
+                            <span>Last Seen</span><strong>{displayDateTime(instance.lastSeenAt ?? undefined)}</strong>
+                          </div>
+                          <div className="resourceBadgeRow">{renderCapabilityBadges(instance)}</div>
+                          {hasUnknownAdbMapping(instance) ? <span className="poolBadge warningBadge">ADB mapping unknown. Runtime commands require adbId.</span> : null}
+                          {instance.maintenanceReason ? <small className="jobErrorBadge">{instance.maintenanceReason}</small> : null}
+                          <div className="resourceActions">
+                            <button title="Test Screenshot" disabled={!instance.adbId} onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "screenshot"); }}><Image size={15} /></button>
+                            <button title="Send Test Text" disabled={!instance.adbId} onClick={(event) => { event.stopPropagation(); runHostDrawerAction(selectedHostDrawer, "send-text", instance); }}><Edit3 size={15} /></button>
+                            <button title="Move Standby" onClick={(event) => { event.stopPropagation(); moveInstance(instance, "move-standby"); }}><Play size={15} /></button>
+                            <button title="Move Maintenance" onClick={(event) => { event.stopPropagation(); moveInstance(instance, "move-maintenance"); }}><Archive size={15} /></button>
+                            <button title="Disable" onClick={(event) => { event.stopPropagation(); moveInstance(instance, "disable"); }}><Trash2 size={15} /></button>
+                            <button title="Set Capabilities" onClick={(event) => { event.stopPropagation(); openInstanceOperations(instance, "capabilities"); }}><ClipboardList size={15} /></button>
+                            <button title="Map ADB" onClick={(event) => { event.stopPropagation(); openAdbMapping(instance); }}><Boxes size={15} /></button>
+                            <button title="Open Instance Detail" onClick={(event) => { event.stopPropagation(); openInstanceOperations(instance); }}><Eye size={15} /></button>
+                          </div>
+                        </article>
+                      ))}
+                      {!selectedHostDrawerInstances.length ? <p className="emptyDetail">No synced instances yet.</p> : null}
+                    </div>
+                  ) : null}
+
+                  {hostDrawerTab === "adb" ? (
+                    <div className="resourceDrawerBody">
+                      <div className="resourceActions"><button onClick={() => runHostDrawerAction(selectedHostDrawer, "devices")}><RefreshCcw size={15} /> Refresh ADB Devices</button></div>
+                      <div className="deviceList">
+                        {adbDevices.map((device) => {
+                          const mapped = selectedHostDrawerInstances.find((instance) => instance.adbId === device.adbId);
+                          return <button key={device.adbId} onClick={() => setHostAdbId(device.adbId)}>{device.adbId} / {device.state} / {mapped ? mapped.id : "unmapped"}</button>;
+                        })}
+                      </div>
+                      {!adbDevices.length ? <p className="emptyDetail">Run ADB Devices to load device state from this Host Agent.</p> : null}
+                    </div>
+                  ) : null}
+
+                  {hostDrawerTab === "tests" ? (
+                    <div className="resourceDrawerBody">
+                      <div className="resourceCreateGrid">
+                        <label>Instance<select value={hostInstanceId} onChange={(event) => {
+                          const instance = selectedHostDrawerInstances.find((item) => item.id === event.target.value);
+                          setHostInstanceId(event.target.value);
+                          setHostAdbId(instance?.adbId ?? "");
+                        }}><option value="">Select instance</option>{selectedHostDrawerInstances.map((instance) => <option key={instance.id} value={instance.id}>{instance.id} / {instance.adbId ?? "ADB unknown"}</option>)}</select></label>
+                        <label>ADB ID<input value={hostAdbId} onChange={(event) => setHostAdbId(event.target.value)} /></label>
+                        <label>Text<input value={hostSendText} onChange={(event) => setHostSendText(event.target.value)} /></label>
+                      </div>
+                      {!hostAdbId ? <span className="poolBadge warningBadge">ADB mapping unknown. Runtime commands require adbId.</span> : null}
+                      <div className="resourceActions">
+                        <button onClick={() => runHostDrawerAction(selectedHostDrawer, "health")}>Health</button>
+                        <button onClick={() => runHostDrawerAction(selectedHostDrawer, "devices")}>ADB Devices</button>
+                        <button disabled={!hostAdbId} onClick={() => runHostDrawerAction(selectedHostDrawer, "screenshot")}>Screenshot</button>
+                        <button disabled={!hostAdbId} onClick={() => runHostDrawerAction(selectedHostDrawer, "send-text")}>Send Test Text</button>
+                        <button disabled={!hostAdbId} onClick={() => runHostDrawerAction(selectedHostDrawer, "download-latest")}>Download Latest</button>
+                      </div>
+                      <pre className="jsonBlock">{compactJson(hostResult)}</pre>
+                    </div>
+                  ) : null}
+
+                  {hostDrawerTab === "storage" ? (
+                    <div className="resourceDrawerBody">
+                      <div className="resourceMetaGrid detail">
+                        <span>Storage status</span><strong>{getString(selectedHostDrawer.metadata?.storageStatus) || "-"}</strong>
+                        <span>Storage root</span><strong>{getString(selectedHostDrawer.metadata?.storageRoot) || "-"}</strong>
+                        <span>Downloads</span><strong>{getString(selectedHostDrawer.metadata?.downloadPath) || "-"}</strong>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {hostDrawerTab === "json" ? <pre className="jsonBlock">{compactJson({ host: selectedHostDrawer, instances: selectedHostDrawerInstances, adbDevices, hostResult })}</pre> : null}
+                </aside>
+              ) : null}
+
+              {adbMappingInstance && managementSection === "hosts" ? (
+                <aside className="adbMappingPanel">
+                  <div className="drawerHeader">
+                    <div>
+                      <strong>Map ADB</strong>
+                      <small>{adbMappingInstance.id} / local {adbMappingInstance.localId}</small>
+                    </div>
+                    <button className="iconButton" onClick={() => setAdbMappingInstanceId("")}>x</button>
+                  </div>
+                  <div className="resourceMetaGrid detail">
+                    <span>Name</span><strong>{adbMappingInstance.name ?? "-"}</strong>
+                    <span>LD status</span><strong>{getString(getRecord(adbMappingInstance.metadata?.raw).ldStatus) || "-"}</strong>
+                    <span>Current ADB</span><strong>{adbMappingInstance.adbId ?? "Unknown"}</strong>
+                    <span>Confidence</span><strong>{adbMappingConfidence(adbMappingInstance) || "unknown"}</strong>
+                    <span>Source</span><strong>{adbMappingSource(adbMappingInstance) || "none"}</strong>
+                  </div>
+                  <div className="adbDevicePicker">
+                    {adbDevices.map((device) => {
+                      const mapped = instances.find((instance) => instance.hostId === adbMappingInstance.hostId && instance.adbId === device.adbId);
+                      return (
+                        <button key={device.adbId} className={selectedManualAdbId === device.adbId ? "selected" : ""} onClick={() => setSelectedManualAdbId(device.adbId)}>
+                          <strong>{device.adbId}</strong>
+                          <span>{device.state}</span>
+                          <small>{mapped ? `mapped: ${mapped.id}` : "unmapped"}</small>
+                        </button>
+                      );
+                    })}
+                    {!adbDevices.length ? <p className="emptyDetail">Click Validate/Refresh to load ADB devices from this host.</p> : null}
+                  </div>
+                  <div className="resourceActions">
+                    <button onClick={() => { const host = hostForInstance(adbMappingInstance); if (host) runHostDrawerAction(host, "devices"); }}>Validate/Refresh</button>
+                    <button disabled={!selectedManualAdbId} onClick={assignManualAdbMapping}>Assign selected adbId</button>
+                    <button onClick={() => clearManualAdbMapping(adbMappingInstance)}>Clear mapping</button>
+                  </div>
+                </aside>
+              ) : null}
             </div>
           ) : null}
 
@@ -5187,6 +5874,9 @@ export function App() {
                             <span>Production Summary</span><strong>{workflowRuns.filter((run) => run.workflowId === selectedWorkflow.id).length} runs / {batches.filter((batch) => batch.workflowId === selectedWorkflow.id).length} batches</strong>
                           </div>
                           {(workflowDetail?.warnings ?? []).map((warning) => <span className="jobErrorBadge" key={warning}>{warning}</span>)}
+                          <div className="resourceActions">
+                            <button className="dangerButton" onClick={() => deleteWorkflow(selectedWorkflow)}><Trash2 size={15} /> Delete Workflow</button>
+                          </div>
                         </div>
                       ) : null}
 
@@ -5289,36 +5979,280 @@ export function App() {
           ) : null}
 
           {managementSection === "instances" ? (
-            <div className="adminGrid">
-              <div className="adminForm">
-                <label>Host Filter<select value={selectedHostId} onChange={(event) => setSelectedHostId(event.target.value)}><option value="">All hosts</option>{hosts.map((host) => <option key={host.id} value={host.hostId}>{host.name}</option>)}</select></label>
-                <label>Pool State<select value={instancePoolStateFilter} onChange={(event) => setInstancePoolStateFilter(event.target.value)}><option value="">All states</option>{instancePoolStateOptions.map((state) => <option key={state} value={state}>{state}</option>)}</select></label>
-                <label>Capability<select value={instanceCapabilityFilter} onChange={(event) => setInstanceCapabilityFilter(event.target.value)}><option value="">All capabilities</option>{instanceCapabilityOptions.map((capability) => <option key={capability} value={capability}>{capability}</option>)}</select></label>
-                <label>Runtime Status<select value={instanceRuntimeFilter} onChange={(event) => setInstanceRuntimeFilter(event.target.value)}><option value="">All runtime states</option>{instanceRuntimeOptions.map((runtimeStatus) => <option key={runtimeStatus} value={runtimeStatus}>{runtimeStatus}</option>)}</select></label>
-                <label>Priority<input value={memberForm.priority} onChange={(event) => setMemberForm({ ...memberForm, priority: event.target.value })} /></label>
-                <button disabled={!selectedInstanceId} onClick={() => openPoolManager(selectedInstanceId)}>Manage Selected Pools</button>
+            <div className="instanceOpsPage">
+              <div className="resourceKpiBar">
+                {[
+                  ["Total", instanceManagementKpis.total],
+                  ["AVAILABLE", instanceManagementKpis.available],
+                  ["STANDBY", instanceManagementKpis.standby],
+                  ["WORKFLOW", instanceManagementKpis.workflow],
+                  ["MAINTENANCE", instanceManagementKpis.maintenance],
+                  ["DISABLED", instanceManagementKpis.disabled],
+                  ["RETIRED", instanceManagementKpis.retired],
+                  ["Missing adbId", instanceManagementKpis.missingAdb],
+                  ["IMAGE_EDIT", instanceManagementKpis.imageEdit],
+                  ["VIDEO_GENERATE", instanceManagementKpis.videoGenerate],
+                  ["MUSIC_GENERATE", instanceManagementKpis.musicGenerate],
+                  ["VIDEO_COMPOSE", instanceManagementKpis.videoCompose],
+                  ["POST_CONTENT", instanceManagementKpis.postContent]
+                ].map(([label, value]) => (
+                  <div className="resourceKpiCard compactKpi" key={String(label)}>
+                    <Boxes size={16} />
+                    <span>{String(label)}</span>
+                    <strong>{String(value)}</strong>
+                  </div>
+                ))}
               </div>
-              <div className="adminTable">
-                {filteredInstances
-                  .slice(0, 20)
-                  .map((instance) => (
-                    <div className="adminRow" key={instance.id} onClick={() => setSelectedInstanceId(instance.id)}>
-                      <b>{instance.id}</b><span>{instance.name ?? "-"}</span><span>{instance.adbId ?? "-"}</span><span>{instance.status} / {instance.runtimeStatus}</span><small>{displayDateTime(instance.lastSeenAt ?? undefined)}</small>
-                      <span className="statusPill">{instance.currentPoolType ?? "AVAILABLE"}</span>
+
+              <div className="resourceFiltersPanel">
+                <label>Search<input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder="instanceId, name, host, adb..." /></label>
+                <label>Host<select value={selectedHostId} onChange={(event) => setSelectedHostId(event.target.value)}><option value="">All hosts</option>{hosts.map((host) => <option key={host.id} value={host.hostId}>{host.name}</option>)}</select></label>
+                <label>Current Pool<select value={instancePoolStateFilter} onChange={(event) => setInstancePoolStateFilter(event.target.value)}><option value="">All states</option>{instancePoolStateOptions.map((state) => <option key={state} value={state}>{state}</option>)}</select></label>
+                <label>Runtime<select value={instanceRuntimeFilter} onChange={(event) => setInstanceRuntimeFilter(event.target.value)}><option value="">All runtime states</option>{instanceRuntimeOptions.map((runtimeStatus) => <option key={runtimeStatus} value={runtimeStatus}>{runtimeStatus}</option>)}</select></label>
+                <label>Status<select value={instanceStatusFilter} onChange={(event) => setInstanceStatusFilter(event.target.value)}><option value="">All statuses</option>{instanceStatusOptions.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
+                <label>Capability<select value={instanceCapabilityFilter} onChange={(event) => setInstanceCapabilityFilter(event.target.value)}><option value="">All capabilities</option>{instanceCapabilityOptions.map((capability) => <option key={capability} value={capability}>{capability}</option>)}</select></label>
+                <label>ADB Mapping<select value={instanceAdbFilter} onChange={(event) => setInstanceAdbFilter(event.target.value)}><option value="">All</option><option value="has">Has adbId</option><option value="missing">Missing adbId</option></select></label>
+                <label>ADB Confidence<select value={instanceAdbConfidenceFilter} onChange={(event) => setInstanceAdbConfidenceFilter(event.target.value)}><option value="">All</option>{instanceAdbConfidenceOptions.map((confidence) => <option key={confidence} value={confidence}>{confidence}</option>)}<option value="manual">Manual mapping</option></select></label>
+                <label>Last seen after<input type="date" value={instanceLastSeenFilter} onChange={(event) => setInstanceLastSeenFilter(event.target.value)} /></label>
+                <div className="resourceFilterChecks">
+                  <label><input type="checkbox" checked={instanceMaintenanceFilter} onChange={(event) => setInstanceMaintenanceFilter(event.target.checked)} /> Maintenance reason</label>
+                </div>
+              </div>
+
+              <div className="jobsOpsToolbar">
+                <div className="segmentedControl">
+                  <button className={instanceViewMode === "board" ? "active" : ""} onClick={() => setInstanceViewMode("board")}>Board</button>
+                  <button className={instanceViewMode === "table" ? "active" : ""} onClick={() => setInstanceViewMode("table")}>Table</button>
+                </div>
+                <button onClick={() => refreshQueue()}><RefreshCcw size={15} /> Refresh</button>
+              </div>
+
+              <div className="bulkJobBar">
+                <strong>{selectedCapacityInstanceIds.length} selected</strong>
+                <label>Capability<select value={instanceBulkCapability} onChange={(event) => setInstanceBulkCapability(event.target.value)}>{capacityStageOptions.map((stageType) => <option key={stageType}>{stageType}</option>)}</select></label>
+                <button disabled={!selectedCapacityInstanceIds.length} onClick={() => bulkMoveOperationalInstances("move-available")}>Move Available</button>
+                <button disabled={!selectedCapacityInstanceIds.length} onClick={() => bulkMoveOperationalInstances("move-standby")}>Move Standby</button>
+                <button disabled={!selectedCapacityInstanceIds.length} onClick={() => bulkMoveOperationalInstances("move-maintenance")}>Move Maintenance</button>
+                <button disabled={!selectedCapacityInstanceIds.length} onClick={() => bulkMoveOperationalInstances("disable")}>Disable</button>
+                <button disabled={!selectedCapacityInstanceIds.length} onClick={() => bulkMoveOperationalInstances("retire")}>Retire</button>
+                <button disabled={!selectedCapacityInstanceIds.length} onClick={() => bulkApplyOperationalCapability("add")}>Set capability</button>
+                <button disabled={!selectedCapacityInstanceIds.length} onClick={() => bulkApplyOperationalCapability("remove")}>Remove capability</button>
+              </div>
+
+              {instanceViewMode === "board" ? (
+                <div className="instanceOpsBoard">
+                  {operationalInstanceColumns.map((column) => (
+                    <section className="managementJobColumn" key={column.poolType}>
+                      <header><strong>{column.poolType}</strong><span>{column.items.length}</span></header>
+                      <div className="managementJobCards">
+                        {column.items.map((instance) => (
+                          <article className={`instanceOpsCard ${instanceDrawerId === instance.id ? "selected" : ""}`} key={instance.id} onClick={() => openInstanceOperations(instance)}>
+                            <header>
+                              <input type="checkbox" checked={selectedCapacityInstanceIds.includes(instance.id)} onChange={(event) => { event.stopPropagation(); toggleCapacitySelectedInstance(instance.id); }} onClick={(event) => event.stopPropagation()} />
+                              <strong title={instance.id}>{instance.id}</strong>
+                              <span className="statusPill">{instance.status}</span>
+                            </header>
+                            {renderInstanceScreenshotPreview(instance)}
+                            <div className="resourceMetaGrid">
+                              <span>Host</span><strong>{instance.hostId}</strong>
+                              <span>Local</span><strong>{instance.localId ?? "-"}</strong>
+                              <span>ADB</span><strong>{instance.adbId ?? "Unknown"}</strong>
+                              <span>Mapping</span><strong>{adbMappingConfidence(instance) || "unknown"}</strong>
+                              <span>Runtime</span><strong>{instance.runtimeStatus || "-"}</strong>
+                              <span>Workflow</span><strong>{displayShortId(instance.currentWorkflowRunId)}</strong>
+                              <span>Last Seen</span><strong>{displayDateTime(instance.lastSeenAt ?? undefined)}</strong>
+                            </div>
+                            <div className="resourceBadgeRow">{renderCapabilityBadges(instance)}</div>
+                            <div className="resourceBadgeRow">
+                              <span className={`poolBadge ${hasUnknownAdbMapping(instance) ? "warningBadge" : "capabilityBadge"}`}>{adbMappingConfidence(instance) || "unknown"}</span>
+                              <span className="poolBadge">{adbMappingSource(instance) || "none"}</span>
+                            </div>
+                            {hasUnknownAdbMapping(instance) ? <span className="poolBadge warningBadge">ADB mapping unknown. Runtime commands require adbId.</span> : null}
+                            {instance.currentPoolType === "STANDBY" && !(normalizeInstanceCapabilities(instance.capabilities).canRun ?? []).length ? <span className="poolBadge warningBadge">STANDBY without capabilities</span> : null}
+                            {instance.maintenanceReason ? <small className="jobErrorBadge">{instance.maintenanceReason}</small> : null}
+                            <div className="resourceActions">
+                              <button title="Open" onClick={(event) => { event.stopPropagation(); openInstanceOperations(instance); }}><Eye size={15} /></button>
+                              <button title="Test Screenshot" disabled={!instance.adbId} onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "screenshot"); }}><Image size={15} /></button>
+                              <button title="Send Text" disabled={!instance.adbId} onClick={(event) => { event.stopPropagation(); const host = hostForInstance(instance); if (host) runHostDrawerAction(host, "send-text", instance); }}><Edit3 size={15} /></button>
+                              <button title="Map ADB" onClick={(event) => { event.stopPropagation(); openAdbMapping(instance); }}><Boxes size={15} /></button>
+                              <button title="Move Available" onClick={(event) => { event.stopPropagation(); moveInstance(instance, "move-available"); }}>A</button>
+                              <button title="Move Standby" onClick={(event) => { event.stopPropagation(); moveInstance(instance, "move-standby"); }}>S</button>
+                              <button title="Move Maintenance" onClick={(event) => { event.stopPropagation(); moveInstance(instance, "move-maintenance"); }}>M</button>
+                              <button title="Disable" onClick={(event) => { event.stopPropagation(); moveInstance(instance, "disable"); }}><Archive size={15} /></button>
+                              <button title="Retire" onClick={(event) => { event.stopPropagation(); moveInstance(instance, "retire"); }}><Trash2 size={15} /></button>
+                            </div>
+                          </article>
+                        ))}
+                        {!column.items.length ? <p className="emptyDetail">No instances.</p> : null}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                <div className="instanceOpsTable">
+                  <div className="instanceOpsTableHeader"><span></span><span>Instance</span><span>Host</span><span>ADB</span><span>Status</span><span>Pool</span><span>Capabilities</span><span>Last Seen</span><span>Actions</span></div>
+                  {filteredOperationalInstances.map((instance) => (
+                    <div className="instanceOpsTableRow" key={instance.id} onClick={() => openInstanceOperations(instance)}>
+                      <input type="checkbox" checked={selectedCapacityInstanceIds.includes(instance.id)} onChange={(event) => { event.stopPropagation(); toggleCapacitySelectedInstance(instance.id); }} onClick={(event) => event.stopPropagation()} />
+                      <strong>{instance.id}</strong>
+                      <span>{instance.hostId}</span>
+                      <span>{instance.adbId ?? "Unknown"}</span>
+                      <span>{instance.status} / {instance.runtimeStatus || "-"}</span>
+                      <span><span className="statusPill">{instance.currentPoolType ?? "AVAILABLE"}</span><span className="poolBadge">{adbMappingConfidence(instance) || "unknown"}</span></span>
                       <span className="poolBadgeList">{renderCapabilityBadges(instance)}</span>
-                      {hasUnknownAdbMapping(instance) ? <span className="poolBadge warningBadge">ADB mapping unknown</span> : null}
-                      <span>{instance.maintenanceReason ?? "-"}</span>
-                      <span className="poolBadgeList">{renderPoolBadges(instance.id)}</span>
-                      <button disabled={!instance.adbId} onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "screenshot"); }}>Screenshot</button>
-                      <button onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "start"); }}>Start</button>
-                      <button onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "stop"); }}>Stop</button>
-                      <button onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "restart"); }}>Restart</button>
-                      <button onClick={(event) => { event.stopPropagation(); openPoolManager(instance.id); }}>Manage Pools</button>
-                      {renderInstanceMovementActions(instance)}
+                      <span>{displayDateTime(instance.lastSeenAt ?? undefined)}</span>
+                      <div className="resourceActions"><button onClick={(event) => { event.stopPropagation(); openInstanceOperations(instance); }}><Eye size={15} /></button><button disabled={!instance.adbId} onClick={(event) => { event.stopPropagation(); instanceHostAction(instance, "screenshot"); }}><Image size={15} /></button><button title="Map ADB" onClick={(event) => { event.stopPropagation(); openAdbMapping(instance); }}><Boxes size={15} /></button>{renderInstanceMovementActions(instance)}</div>
                     </div>
                   ))}
-                {!filteredInstances.length ? <div className="jobsEmpty">No instances match the current filters.</div> : null}
-              </div>
+                  {!filteredOperationalInstances.length ? <div className="jobsEmpty">No instances match the current filters.</div> : null}
+                </div>
+              )}
+
+              {selectedInstanceDrawer ? (
+                <aside className="instanceOpsDrawer">
+                  <div className="drawerHeader">
+                    <div>
+                      <strong>{selectedInstanceDrawer.id}</strong>
+                      <small>{selectedInstanceDrawer.hostId} / {selectedInstanceDrawer.adbId ?? "ADB unknown"}</small>
+                    </div>
+                    <button className="iconButton" onClick={() => setInstanceDrawerId("")} title="Close instance drawer">x</button>
+                  </div>
+                  <div className="resourceDrawerTabs">
+                    {([
+                      ["overview", "Overview"],
+                      ["capabilities", "Capabilities"],
+                      ["runtime", "Runtime/Allocation"],
+                      ["health", "Health/Test"],
+                      ["history", "History"],
+                      ["json", "Debug JSON"]
+                    ] as Array<[typeof instanceDrawerTab, string]>).map(([tab, label]) => (
+                      <button key={tab} className={instanceDrawerTab === tab ? "active" : ""} onClick={() => setInstanceDrawerTab(tab)}>{label}</button>
+                    ))}
+                  </div>
+
+                  {instanceDrawerTab === "overview" ? (
+                    <div className="resourceDrawerBody">
+                      <div className="resourceMetaGrid detail">
+                        <span>Name</span><strong>{selectedInstanceDrawer.name ?? "-"}</strong>
+                        <span>Pool</span><strong>{selectedInstanceDrawer.currentPoolType ?? "AVAILABLE"}</strong>
+                        <span>Status</span><strong>{selectedInstanceDrawer.status}</strong>
+                        <span>Runtime</span><strong>{selectedInstanceDrawer.runtimeStatus || "-"}</strong>
+                        <span>Host</span><strong>{selectedInstanceDrawer.hostId}</strong>
+                        <span>Local ID</span><strong>{selectedInstanceDrawer.localId}</strong>
+                        <span>ADB ID</span><strong>{selectedInstanceDrawer.adbId ?? "Unknown"}</strong>
+                        <span>ADB confidence</span><strong>{adbMappingConfidence(selectedInstanceDrawer) || "unknown"}</strong>
+                        <span>Mapping source</span><strong>{adbMappingSource(selectedInstanceDrawer) || "none"}</strong>
+                        <span>Manual ADB</span><strong>{selectedInstanceDrawer.manualAdbId ?? "-"}</strong>
+                        <span>Workflow Run</span><strong>{displayShortId(selectedInstanceDrawer.currentWorkflowRunId)}</strong>
+                        <span>Last Seen</span><strong>{displayDateTime(selectedInstanceDrawer.lastSeenAt ?? undefined)}</strong>
+                      </div>
+                      {hasUnknownAdbMapping(selectedInstanceDrawer) ? <span className="poolBadge warningBadge">ADB mapping unknown. Runtime commands require adbId.</span> : null}
+                      {selectedInstanceDrawer.maintenanceReason ? <span className="jobErrorBadge">{selectedInstanceDrawer.maintenanceReason}</span> : null}
+                      <div className="resourceBadgeRow">{renderCapabilityBadges(selectedInstanceDrawer)}</div>
+                    </div>
+                  ) : null}
+
+                  {instanceDrawerTab === "capabilities" ? (
+                    <div className="resourceDrawerBody">
+                      <div className="capacityCheckboxGrid">
+                        {capacityStageOptions.map((stageType) => (
+                          <label key={stageType}><input type="checkbox" checked={(capacityCapabilityDraft.canRun ?? []).includes(stageType)} onChange={(event) => updateCapacityCanRun(stageType, event.target.checked)} /> {stageType}</label>
+                        ))}
+                      </div>
+                      <label>Apps<input value={(capacityCapabilityDraft.apps ?? []).join(", ")} onChange={(event) => setCapacityCapabilityDraft({ ...capacityCapabilityDraft, apps: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} placeholder="chatgpt, pixverse" /></label>
+                      <label>Browser Profile<input value={String(capacityCapabilityDraft.browserProfile ?? "")} onChange={(event) => setCapacityCapabilityDraft({ ...capacityCapabilityDraft, browserProfile: event.target.value })} /></label>
+                      <div className="resourceFilterChecks">
+                        <label><input type="checkbox" checked={Boolean(capacityCapabilityDraft.supportsUpload)} onChange={(event) => setCapacityCapabilityDraft({ ...capacityCapabilityDraft, supportsUpload: event.target.checked })} /> Supports Upload</label>
+                        <label><input type="checkbox" checked={Boolean(capacityCapabilityDraft.supportsDownload)} onChange={(event) => setCapacityCapabilityDraft({ ...capacityCapabilityDraft, supportsDownload: event.target.checked })} /> Supports Download</label>
+                      </div>
+                      <label>Notes<textarea rows={4} value={String(capacityCapabilityDraft.notes ?? "")} onChange={(event) => setCapacityCapabilityDraft({ ...capacityCapabilityDraft, notes: event.target.value })} /></label>
+                      <div className="resourceActions">
+                        <button onClick={saveInstanceDrawerCapabilities}>Save Capabilities</button>
+                        <label>Copy From<select value={instanceCopySourceId} onChange={(event) => setInstanceCopySourceId(event.target.value)}><option value="">Select instance</option>{instances.filter((instance) => instance.id !== selectedInstanceDrawer.id).map((instance) => <option key={instance.id} value={instance.id}>{instance.id}</option>)}</select></label>
+                        <button disabled={!instanceCopySourceId} onClick={copyInstanceDrawerCapabilities}>Copy</button>
+                        <button onClick={() => setInstanceCapabilities(selectedInstanceDrawer)}>JSON</button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {instanceDrawerTab === "runtime" ? (
+                    <div className="resourceDrawerBody">
+                      <div className="resourceMetaGrid detail">
+                        <span>Active allocation</span><strong>{displayShortId(selectedInstanceDrawerAllocation?.id)}</strong>
+                        <span>Allocation mode</span><strong>{selectedInstanceDrawerAllocation?.allocationMode ?? getString(selectedInstanceDrawerAllocation?.metadata?.allocationMode) ?? "-"}</strong>
+                        <span>Allocation status</span><strong>{selectedInstanceDrawerAllocation?.status ?? "-"}</strong>
+                        <span>Runtime session</span><strong>{displayShortId(selectedInstanceDrawerRuntime?.id)}</strong>
+                        <span>Current step</span><strong>{selectedInstanceDrawerRuntime?.currentStepNo ?? "-"}</strong>
+                      </div>
+                      <div className="relationshipList">{selectedInstanceDrawerJobs.slice(0, 8).map((job) => <span key={job.id}>{job.targetStageType} / {job.status} / {displayShortId(job.id)}</span>)}</div>
+                    </div>
+                  ) : null}
+
+                  {instanceDrawerTab === "health" ? (
+                    <div className="resourceDrawerBody">
+                      {!selectedInstanceDrawer.adbId ? <span className="poolBadge warningBadge">ADB mapping unknown. Runtime commands require adbId.</span> : null}
+                      <label>Text<input value={hostSendText} onChange={(event) => setHostSendText(event.target.value)} /></label>
+                      <div className="resourceActions">
+                        <button disabled={!selectedInstanceDrawer.adbId} onClick={() => instanceHostAction(selectedInstanceDrawer, "screenshot")}>Screenshot</button>
+                        <button disabled={!selectedInstanceDrawer.adbId} onClick={() => { const host = hostForInstance(selectedInstanceDrawer); if (host) runHostDrawerAction(host, "send-text", selectedInstanceDrawer); }}>Send Text</button>
+                        <button disabled={!selectedInstanceDrawer.adbId} onClick={() => { const host = hostForInstance(selectedInstanceDrawer); if (host) runHostDrawerAction(host, "download-latest", selectedInstanceDrawer); }}>Download Latest</button>
+                        <button onClick={() => instanceHostAction(selectedInstanceDrawer, "restart")}>Reconnect/Restart</button>
+                      </div>
+                      <pre className="jsonBlock">{compactJson(hostResult)}</pre>
+                    </div>
+                  ) : null}
+
+                  {instanceDrawerTab === "history" ? (
+                    <div className="resourceDrawerBody">
+                      <h4>Recent Jobs</h4>
+                      <div className="relationshipList">{selectedInstanceDrawerJobs.slice(0, 12).map((job) => <span key={job.id}>{job.targetStageType} / {job.status} / {displayShortId(job.id)}</span>)}</div>
+                      <h4>Allocations</h4>
+                      <div className="relationshipList">{selectedInstanceDrawerAllocations.map((allocation) => <span key={allocation.id}>{allocation.status} / {allocation.allocationMode ?? getString(allocation.metadata?.allocationMode) ?? "-"} / {displayShortId(allocation.id)}</span>)}</div>
+                      <h4>Runtime</h4>
+                      <div className="relationshipList">{runtimeSessions.filter((session) => session.instanceId === selectedInstanceDrawer.id).slice(0, 10).map((session) => <span key={session.id}>{session.status} / step {session.currentStepNo ?? 0} / {displayShortId(session.id)}</span>)}</div>
+                    </div>
+                  ) : null}
+
+                  {instanceDrawerTab === "json" ? <pre className="jsonBlock">{compactJson({ instance: selectedInstanceDrawer, allocation: selectedInstanceDrawerAllocation, jobs: selectedInstanceDrawerJobs, runtime: selectedInstanceDrawerRuntime })}</pre> : null}
+                </aside>
+              ) : null}
+
+              {adbMappingInstance && managementSection === "instances" ? (
+                <aside className="adbMappingPanel">
+                  <div className="drawerHeader">
+                    <div>
+                      <strong>Map ADB</strong>
+                      <small>{adbMappingInstance.id} / local {adbMappingInstance.localId}</small>
+                    </div>
+                    <button className="iconButton" onClick={() => setAdbMappingInstanceId("")}>x</button>
+                  </div>
+                  <div className="resourceMetaGrid detail">
+                    <span>Name</span><strong>{adbMappingInstance.name ?? "-"}</strong>
+                    <span>LD status</span><strong>{getString(getRecord(adbMappingInstance.metadata?.raw).ldStatus) || "-"}</strong>
+                    <span>Current ADB</span><strong>{adbMappingInstance.adbId ?? "Unknown"}</strong>
+                    <span>Confidence</span><strong>{adbMappingConfidence(adbMappingInstance) || "unknown"}</strong>
+                    <span>Source</span><strong>{adbMappingSource(adbMappingInstance) || "none"}</strong>
+                  </div>
+                  <div className="adbDevicePicker">
+                    {adbDevices.map((device) => {
+                      const mapped = instances.find((instance) => instance.hostId === adbMappingInstance.hostId && instance.adbId === device.adbId);
+                      return (
+                        <button key={device.adbId} className={selectedManualAdbId === device.adbId ? "selected" : ""} onClick={() => setSelectedManualAdbId(device.adbId)}>
+                          <strong>{device.adbId}</strong>
+                          <span>{device.state}</span>
+                          <small>{mapped ? `mapped: ${mapped.id}` : "unmapped"}</small>
+                        </button>
+                      );
+                    })}
+                    {!adbDevices.length ? <p className="emptyDetail">Click Validate/Refresh to load ADB devices from this host.</p> : null}
+                  </div>
+                  <div className="resourceActions">
+                    <button onClick={() => { const host = hostForInstance(adbMappingInstance); if (host) runHostDrawerAction(host, "devices"); }}>Validate/Refresh</button>
+                    <button disabled={!selectedManualAdbId} onClick={assignManualAdbMapping}>Assign selected adbId</button>
+                    <button onClick={() => clearManualAdbMapping(adbMappingInstance)}>Clear mapping</button>
+                  </div>
+                </aside>
+              ) : null}
             </div>
           ) : null}
 
@@ -5385,6 +6319,7 @@ export function App() {
                               <strong>{instance.id}</strong>
                               <span className="statusPill">{instance.status}</span>
                             </header>
+                            {renderInstanceScreenshotPreview(instance)}
                             <div className="resourceMetaGrid">
                               <span>Host</span><strong>{instance.hostId}</strong>
                               <span>Local</span><strong>{instance.localId ?? "-"}</strong>
@@ -5707,6 +6642,7 @@ export function App() {
                               <button onClick={saveScriptMetadata}><Check size={15} /> Save Metadata</button>
                               <button onClick={() => duplicateSelectedScript()}><Copy size={15} /> Duplicate</button>
                               <button onClick={archiveSelectedScript}><Archive size={15} /> Archive</button>
+                              <button className="dangerButton" onClick={deleteSelectedScript}><Trash2 size={15} /> Delete Script</button>
                             </div>
                           </div>
                         ) : null}
@@ -6612,7 +7548,7 @@ export function App() {
                           <div className="groupedResourceRows">
                             {entry.resources.map((batch) => (
                               <button className={selectedResourceId === batch.id ? "groupedResourceRow selected" : "groupedResourceRow"} key={batch.id} onClick={() => openProductionResource(batch)}>
-                                <span className="resourceTypeBadge">{batch.batchType}</span>
+                                <span className="resourceTypeBadge">{productionResourceType(batch)}</span>
                                 <strong>{batchDisplayName(batch, entry.group)}</strong>
                                 <span>{batch.status}</span>
                                 <small>{displayDateTime(batch.createdAt)}</small>
@@ -6642,7 +7578,7 @@ export function App() {
                         <div className="drawerHeader">
                           <div>
                             <strong>{batchDisplayName(batch, group)}</strong>
-                            <small>{batch.batchType} / {displayShortId(batch.id)}</small>
+                            <small>{productionResourceType(batch)} / {displayShortId(batch.id)}</small>
                           </div>
                           <button className="iconButton" onClick={() => setSelectedResourceId("")} title="Close">x</button>
                         </div>
@@ -6670,6 +7606,9 @@ export function App() {
                             </div>
                             {batch.batchType === "POST_CONTENT" ? <div className="postPreview"><strong>{post.title || "Post content"}</strong><p>{post.caption || post.postText}</p><small>{post.hashtags.join(" ")} {post.cta ? `/ ${post.cta}` : ""}</small></div> : null}
                             {batch.batchType === "MUSIC_TRACK" ? <div className="postPreview"><strong>{[music.mood, music.tempo, music.style].filter(Boolean).join(" / ") || "Music track"}</strong><p>{[music.scene, music.emotion].filter(Boolean).join(" / ")}</p><small>{music.tags.join(", ")}</small></div> : null}
+                            <div className="resourceActions">
+                              <button className="dangerButton" onClick={() => deleteProductionResource(batch)}><Trash2 size={15} /> {productionResourceIsCharacterGroup(batch) ? "Delete Character Group" : "Delete Resource"}</button>
+                            </div>
                           </div>
                         ) : null}
 
@@ -6761,7 +7700,34 @@ export function App() {
                 <button onClick={() => adminAction("Creating rule", () => api("/orchestrator/rules", { method: "POST", body: JSON.stringify({ ...ruleForm, priority: Number(ruleForm.priority), config: parseJsonText(ruleForm.config), isActive: true }) }))}>Create Rule</button>
                 <button onClick={() => adminAction("Manual scan", () => api("/orchestrator/scan", { method: "POST" }))}>Manual Scan</button>
               </div>
-              <div className="adminTable">{orchestratorRules.map((rule) => <div className="adminRow" key={rule.id}><b>{rule.name}</b><span>{rule.triggerBatchType} to {rule.targetStageType}</span><span>{rule.priority}</span><span>{rule.isActive ? "active" : "disabled"}</span><button onClick={() => adminAction("Toggle rule", () => api(`/orchestrator/rules/${rule.id}/${rule.isActive ? "disable" : "enable"}`, { method: "POST" }))}>{rule.isActive ? "Disable" : "Enable"}</button></div>)}</div>
+              <div className="adminTable">{orchestratorRules.map((rule) => <div className={`adminRow ${selectedRuleId === rule.id ? "selected" : ""}`} key={rule.id} onClick={() => setSelectedRuleId(rule.id)}><b>{rule.name}</b><span>{rule.triggerBatchType} to {rule.targetStageType}</span><span>{rule.priority}</span><span>{rule.isActive ? "active" : "disabled"}</span><button onClick={(event) => { event.stopPropagation(); adminAction("Toggle rule", () => api(`/orchestrator/rules/${rule.id}/${rule.isActive ? "disable" : "enable"}`, { method: "POST" })); }}>{rule.isActive ? "Disable" : "Enable"}</button></div>)}</div>
+              <aside className="resourceDetailDrawer">
+                {selectedRule ? (
+                  <>
+                    <div className="drawerHeader">
+                      <div>
+                        <strong>{selectedRule.name}</strong>
+                        <small>{selectedRule.triggerBatchType} / {selectedRule.targetStageType}</small>
+                      </div>
+                      <button className="iconButton" onClick={() => setSelectedRuleId("")}>x</button>
+                    </div>
+                    <div className="resourceDrawerBody">
+                      <div className="resourceMetaGrid detail">
+                        <span>Rule ID</span><strong>{selectedRule.id}</strong>
+                        <span>Trigger</span><strong>{selectedRule.triggerBatchType}.{selectedRule.triggerStatus}</strong>
+                        <span>Target Stage</span><strong>{selectedRule.targetStageType}</strong>
+                        <span>Priority</span><strong>{selectedRule.priority}</strong>
+                        <span>Status</span><strong>{selectedRule.isActive ? "active" : "disabled"}</strong>
+                      </div>
+                      <details className="resourceCreatePanel"><summary>Debug JSON</summary><pre className="jsonBlock">{compactJson(selectedRule.config ?? {})}</pre></details>
+                      <div className="resourceActions">
+                        <button onClick={() => adminAction("Toggle rule", () => api(`/orchestrator/rules/${selectedRule.id}/${selectedRule.isActive ? "disable" : "enable"}`, { method: "POST" }))}>{selectedRule.isActive ? "Disable" : "Enable"}</button>
+                        <button className="dangerButton" onClick={() => deleteSelectedRule(selectedRule)}><Trash2 size={15} /> Delete Rule</button>
+                      </div>
+                    </div>
+                  </>
+                ) : <p className="emptyDetail">Select an orchestrator rule to view details.</p>}
+              </aside>
             </div>
           ) : null}
 
@@ -6910,6 +7876,9 @@ export function App() {
                           </div>
                           <div className="postPreview"><strong>Error</strong><p>{findJobError(selectedJob, runtimeSession, scriptRun) || "No error reported."}</p></div>
                           <div className="jobCardActions">{renderJobStatusActions(selectedJob)}</div>
+                          <div className="resourceActions">
+                            <button className="dangerButton" onClick={() => deleteSelectedJob(selectedJob)}><Trash2 size={15} /> Delete Job</button>
+                          </div>
                         </div>
                       ) : null}
 
@@ -7129,6 +8098,9 @@ export function App() {
                             <span>Duration</span><strong>{displayDuration(selectedRuntime.startedAt ?? selectedRuntime.updatedAt, selectedRuntime.finishedAt)}</strong>
                           </div>
                           <div className="postPreview"><strong>Error</strong><p>{findJobError(selectedRuntimeJob, selectedRuntime, scriptRun) || "No error reported."}</p></div>
+                          <div className="resourceActions">
+                            <button className="dangerButton" onClick={() => deleteSelectedRuntime(selectedRuntime)}><Trash2 size={15} /> Delete Runtime Session</button>
+                          </div>
                         </div>
                       ) : null}
 
@@ -7376,6 +8348,7 @@ export function App() {
                     <strong title={instance.id}>{instance.id}</strong>
                     <small>{instance.hostId}</small>
                     <small>{instance.adbId ?? "-"}</small>
+                    {renderInstanceScreenshotPreview(instance)}
                     <span className="poolBadgeList">{renderCapabilityBadges(instance)}</span>
                     {hasUnknownAdbMapping(instance) ? <span className="poolBadge warningBadge">ADB mapping unknown</span> : null}
                     <small>{instance.runtimeStatus ?? "-"}</small>

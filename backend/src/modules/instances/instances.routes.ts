@@ -43,6 +43,24 @@ instancesRouter.patch("/:id/capabilities", (req, res) => {
   }
 });
 
+instancesRouter.post("/:id/manual-adb-mapping", async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body as { adbId?: unknown } : {};
+    const adbId = typeof body.adbId === "string" ? body.adbId : "";
+    res.json({ ok: true, data: await instancesService.setManualAdbMapping(req.params.id, adbId) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+instancesRouter.post("/:id/clear-adb-mapping", (req, res) => {
+  try {
+    res.json({ ok: true, data: instancesService.clearAdbMapping(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 instancesRouter.post("/:id/move-available", (req, res) => {
   try {
     res.json({ ok: true, data: instancesService.moveToPoolState(req.params.id, "AVAILABLE") });

@@ -93,6 +93,15 @@ productionBatchRouter.delete("/:id/items/:itemId", (req, res) => {
   }
 });
 
+productionBatchRouter.delete("/:id", (req, res) => {
+  try {
+    productionBatchService.delete(req.params.id);
+    res.json({ ok: true, data: { deleted: true } });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 productionBatchRouter.post("/:id/reserve", (req, res) => {
   try {
     res.json({ ok: true, data: productionBatchService.reserve(req.params.id) });

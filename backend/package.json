@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "db:migrate": "tsx src/database/migrate.ts",
     "cleanup:media": "tsx scripts/cleanup-media-in-db.ts",
+    "cleanup:adb": "tsx scripts/cleanup-invalid-adb-mappings.ts",
     "thumbnails:generate": "tsx scripts/generate-missing-thumbnails.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

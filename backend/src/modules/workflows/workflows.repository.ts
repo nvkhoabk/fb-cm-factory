@@ -268,7 +268,39 @@ export const workflowsRepository = {
   },
 
   delete(id: string) {
-    return db.prepare("DELETE FROM workflows WHERE id = ?").run(id).changes > 0;
+    const transaction = db.transaction(() => {
+      const runRows = db.prepare("SELECT id FROM workflow_runs WHERE workflow_id = ?").all(id) as Array<{ id: string }>;
+      const stageRows = db.prepare("SELECT id FROM workflow_stages WHERE workflow_id = ?").all(id) as Array<{ id: string }>;
+      const runIds = runRows.map((row) => row.id);
+      const stageIds = stageRows.map((row) => row.id);
+
+      for (const runId of runIds) {
+        db.prepare("UPDATE instance_allocations SET workflow_run_id = NULL WHERE workflow_run_id = ?").run(runId);
+        db.prepare("UPDATE production_batches SET workflow_run_id = NULL WHERE workflow_run_id = ?").run(runId);
+        db.prepare("UPDATE production_batch_usage SET workflow_run_id = NULL WHERE workflow_run_id = ?").run(runId);
+        db.prepare("UPDATE prompt_sets SET workflow_run_id = NULL WHERE workflow_run_id = ?").run(runId);
+        db.prepare("UPDATE assets SET created_by_workflow_run_id = NULL WHERE created_by_workflow_run_id = ?").run(runId);
+        db.prepare("UPDATE asset_relations SET workflow_run_id = NULL WHERE workflow_run_id = ?").run(runId);
+        db.prepare("UPDATE asset_reservations SET workflow_run_id = NULL WHERE workflow_run_id = ?").run(runId);
+        db.prepare("UPDATE instances SET current_workflow_run_id = NULL WHERE current_workflow_run_id = ?").run(runId);
+        db.prepare("DELETE FROM workflow_stage_runs WHERE workflow_run_id = ?").run(runId);
+      }
+
+      for (const stageId of stageIds) {
+        db.prepare("UPDATE assets SET created_by_stage_run_id = NULL WHERE created_by_stage_run_id = ?").run(stageId);
+        db.prepare("UPDATE asset_relations SET stage_run_id = NULL WHERE stage_run_id = ?").run(stageId);
+        db.prepare("UPDATE asset_reservations SET stage_run_id = NULL WHERE stage_run_id = ?").run(stageId);
+        db.prepare("DELETE FROM workflow_stage_runs WHERE workflow_stage_id = ?").run(stageId);
+      }
+
+      db.prepare("UPDATE production_batches SET workflow_id = NULL WHERE workflow_id = ?").run(id);
+      db.prepare("DELETE FROM workflow_runs WHERE workflow_id = ?").run(id);
+      db.prepare("DELETE FROM workflow_stages WHERE workflow_id = ?").run(id);
+      db.prepare("DELETE FROM workflow_versions WHERE workflow_id = ?").run(id);
+      return db.prepare("DELETE FROM workflows WHERE id = ?").run(id).changes > 0;
+    });
+
+    return transaction();
   },
 
   createStage(workflowId: string, input: CreateWorkflowStageInput) {

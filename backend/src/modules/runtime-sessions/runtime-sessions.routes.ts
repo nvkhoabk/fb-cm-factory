@@ -44,6 +44,15 @@ runtimeSessionsRouter.patch("/:id", (req, res) => {
   }
 });
 
+runtimeSessionsRouter.delete("/:id", (req, res) => {
+  try {
+    runtimeSessionsService.deleteSession(req.params.id);
+    res.json({ ok: true, data: { deleted: true } });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 runtimeSessionsRouter.get("/:id/steps", (req, res) => {
   try {
     res.json({ ok: true, data: runtimeSessionsService.listSteps(req.params.id) });

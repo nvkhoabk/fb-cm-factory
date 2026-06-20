@@ -205,6 +205,10 @@ export const orchestratorRepository = {
     return this.getRule(id);
   },
 
+  deleteRule(id: string) {
+    return db.prepare("DELETE FROM orchestrator_rules WHERE id = ?").run(id).changes > 0;
+  },
+
   listJobs() {
     return db.prepare("SELECT * FROM orchestrator_jobs ORDER BY created_at DESC")
       .all()
@@ -214,6 +218,24 @@ export const orchestratorRepository = {
   getJob(id: string) {
     const row = db.prepare("SELECT * FROM orchestrator_jobs WHERE id = ?").get(id);
     return row ? mapJob(row as Record<string, unknown>) : null;
+  },
+
+  deleteJob(id: string) {
+    const transaction = db.transaction(() => {
+      const sessionRows = db.prepare("SELECT id FROM runtime_sessions WHERE job_id = ?").all(id) as Array<{ id: string }>;
+      for (const session of sessionRows) {
+        const runRows = db.prepare("SELECT id FROM script_runs WHERE runtime_session_id = ?").all(session.id) as Array<{ id: string }>;
+        for (const run of runRows) {
+          db.prepare("DELETE FROM script_run_steps WHERE script_run_id = ?").run(run.id);
+        }
+        db.prepare("DELETE FROM script_runs WHERE runtime_session_id = ?").run(session.id);
+        db.prepare("DELETE FROM runtime_session_steps WHERE runtime_session_id = ?").run(session.id);
+      }
+      db.prepare("DELETE FROM runtime_sessions WHERE job_id = ?").run(id);
+      db.prepare("DELETE FROM instance_allocations WHERE orchestrator_job_id = ?").run(id);
+      return db.prepare("DELETE FROM orchestrator_jobs WHERE id = ?").run(id).changes > 0;
+    });
+    return transaction();
   },
 
   getJobBySourceAndStage(sourceBatchId: string, targetStageType: string) {

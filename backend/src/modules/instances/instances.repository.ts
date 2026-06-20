@@ -31,6 +31,10 @@ export type UpsertInstanceInput = {
   runtimeStatus?: string;
   metadata?: Record<string, unknown>;
   lastSeenAt?: string;
+  adbMappingConfidence?: string | null;
+  adbMappingSource?: string | null;
+  adbMappingUpdatedAt?: string | null;
+  manualAdbId?: string | null;
 };
 
 function mapInstance(row: Record<string, unknown>) {
@@ -47,6 +51,10 @@ function mapInstance(row: Record<string, unknown>) {
     currentWorkflowRunId: row.current_workflow_run_id ?? null,
     maintenanceReason: row.maintenance_reason ?? null,
     lastErrorAt: row.last_error_at ?? null,
+    adbMappingConfidence: row.adb_mapping_confidence ?? "unknown",
+    adbMappingSource: row.adb_mapping_source ?? "none",
+    adbMappingUpdatedAt: row.adb_mapping_updated_at ?? null,
+    manualAdbId: row.manual_adb_id ?? null,
     metadata: jsonParse(row.metadata_json, {}),
     lastSeenAt: row.last_seen_at ?? null,
     createdAt: row.created_at,
@@ -100,10 +108,14 @@ export const instancesRepository = {
     db.prepare(`
       INSERT INTO instances (
         id, host_id, local_id, name, adb_id, status, runtime_status,
-        metadata_json, last_seen_at, current_pool_type, created_at, updated_at
+        metadata_json, last_seen_at, current_pool_type,
+        adb_mapping_confidence, adb_mapping_source, adb_mapping_updated_at, manual_adb_id,
+        created_at, updated_at
       ) VALUES (
         @id, @hostId, @localId, @name, @adbId, @status, @runtimeStatus,
-        @metadataJson, @lastSeenAt, 'AVAILABLE', @createdAt, @updatedAt
+        @metadataJson, @lastSeenAt, 'AVAILABLE',
+        @adbMappingConfidence, @adbMappingSource, @adbMappingUpdatedAt, @manualAdbId,
+        @createdAt, @updatedAt
       )
       ON CONFLICT(id) DO UPDATE SET
         host_id = excluded.host_id,
@@ -114,6 +126,10 @@ export const instancesRepository = {
         runtime_status = excluded.runtime_status,
         metadata_json = excluded.metadata_json,
         last_seen_at = excluded.last_seen_at,
+        adb_mapping_confidence = excluded.adb_mapping_confidence,
+        adb_mapping_source = excluded.adb_mapping_source,
+        adb_mapping_updated_at = excluded.adb_mapping_updated_at,
+        manual_adb_id = COALESCE(excluded.manual_adb_id, instances.manual_adb_id),
         updated_at = excluded.updated_at
     `).run({
       id: input.id,
@@ -125,6 +141,10 @@ export const instancesRepository = {
       runtimeStatus: input.runtimeStatus ?? "IDLE",
       metadataJson: jsonString(input.metadata ?? {}, {}),
       lastSeenAt,
+      adbMappingConfidence: input.adbMappingConfidence ?? "unknown",
+      adbMappingSource: input.adbMappingSource ?? "none",
+      adbMappingUpdatedAt: input.adbMappingUpdatedAt ?? timestamp,
+      manualAdbId: input.manualAdbId ?? null,
       createdAt: timestamp,
       updatedAt: timestamp
     });
@@ -157,22 +177,82 @@ export const instancesRepository = {
     return this.get(id);
   },
 
+  setManualAdbMapping(id: string, adbId: string, validated: boolean) {
+    const timestamp = now();
+    const instance = this.get(id);
+    if (!instance) throw new AppError("INSTANCE_NOT_FOUND", "Instance not found", 404);
+
+    db.prepare(`
+      UPDATE instances
+      SET adb_id = ?,
+          manual_adb_id = ?,
+          adb_mapping_confidence = 'manual',
+          adb_mapping_source = 'manual',
+          adb_mapping_updated_at = ?,
+          status = ?,
+          runtime_status = ?,
+          updated_at = ?
+      WHERE id = ?
+    `).run(
+      adbId,
+      adbId,
+      timestamp,
+      validated ? "ONLINE" : instance.status,
+      validated ? "IDLE" : instance.runtimeStatus,
+      timestamp,
+      id
+    );
+
+    return this.get(id);
+  },
+
+  clearAdbMapping(id: string) {
+    const timestamp = now();
+    const changes = db.prepare(`
+      UPDATE instances
+      SET adb_id = NULL,
+          manual_adb_id = NULL,
+          adb_mapping_confidence = 'unknown',
+          adb_mapping_source = 'none',
+          adb_mapping_updated_at = ?,
+          status = CASE WHEN status IN ('ONLINE', 'ACTIVE') THEN 'OFFLINE' ELSE status END,
+          runtime_status = CASE WHEN runtime_status = 'ONLINE' THEN 'INACTIVE' ELSE runtime_status END,
+          updated_at = ?
+      WHERE id = ?
+    `).run(timestamp, timestamp, id).changes;
+
+    if (!changes) throw new AppError("INSTANCE_NOT_FOUND", "Instance not found", 404);
+    return this.get(id);
+  },
+
   markMissingForHost(hostId: string, activeIds: string[]) {
     const timestamp = now();
     if (activeIds.length === 0) {
       db.prepare(`
         UPDATE instances
-        SET status = 'OFFLINE', runtime_status = 'INACTIVE', updated_at = ?
+        SET status = 'OFFLINE',
+            runtime_status = 'INACTIVE',
+            adb_id = CASE WHEN adb_mapping_confidence = 'manual' THEN adb_id ELSE NULL END,
+            adb_mapping_confidence = CASE WHEN adb_mapping_confidence = 'manual' THEN adb_mapping_confidence ELSE 'unknown' END,
+            adb_mapping_source = CASE WHEN adb_mapping_confidence = 'manual' THEN adb_mapping_source ELSE 'none' END,
+            adb_mapping_updated_at = ?,
+            updated_at = ?
         WHERE host_id = ?
-      `).run(timestamp, hostId);
+      `).run(timestamp, timestamp, hostId);
       return;
     }
 
     const placeholders = activeIds.map(() => "?").join(",");
     db.prepare(`
       UPDATE instances
-      SET status = 'OFFLINE', runtime_status = 'INACTIVE', updated_at = ?
+      SET status = 'OFFLINE',
+          runtime_status = 'INACTIVE',
+          adb_id = CASE WHEN adb_mapping_confidence = 'manual' THEN adb_id ELSE NULL END,
+          adb_mapping_confidence = CASE WHEN adb_mapping_confidence = 'manual' THEN adb_mapping_confidence ELSE 'unknown' END,
+          adb_mapping_source = CASE WHEN adb_mapping_confidence = 'manual' THEN adb_mapping_source ELSE 'none' END,
+          adb_mapping_updated_at = ?,
+          updated_at = ?
       WHERE host_id = ? AND id NOT IN (${placeholders})
-    `).run(timestamp, hostId, ...activeIds);
+    `).run(timestamp, timestamp, hostId, ...activeIds);
   }
 };

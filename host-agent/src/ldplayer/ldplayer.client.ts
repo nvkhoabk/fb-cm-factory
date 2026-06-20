@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { config } from "../config";
+import { adbClient } from "../adb/adb.client";
 import type { CommandResult } from "../adb/adb.client";
 
 const execFileAsync = promisify(execFile);
@@ -33,10 +34,24 @@ export async function runLdConsole(args: string[]): Promise<CommandResult> {
 
 function mockLdConsoleStdout(args: string[]) {
   if (args[0] === "list2") {
-    return "0,Mock Instance,0,0,0,0,0,0,0,0,0\n";
+    return "0,Mock Stopped,0,0,0,0,0,0,0,0,0\n2,Mock Running,0,0,1,1234,0,0,0,0,0\n";
   }
 
   return "OK\n";
+}
+
+function ldStatusFromParts(parts: string[]) {
+  const androidStarted = parts[4]?.trim();
+  const processId = Number(parts[5]?.trim() ?? 0);
+  if (androidStarted === "1" || processId > 0) return "running";
+  if (androidStarted === "0" || processId === 0) return "stopped";
+  return "unknown";
+}
+
+function derivedAdbId(localId: string | number) {
+  const index = Number(localId);
+  if (!Number.isInteger(index) || index < 0) return null;
+  return `emulator-${5554 + index * 2}`;
 }
 
 export function parseLdInstances(output: string) {
@@ -49,9 +64,22 @@ export function parseLdInstances(output: string) {
       return {
         localId: parts[0],
         name: parts[1] ?? "",
+        ldStatus: ldStatusFromParts(parts),
         raw: line
       };
     });
+}
+
+async function verifyAdbId(adbId: string, devices: Array<{ adbId: string; state: string }>) {
+  const device = devices.find((item) => item.adbId === adbId);
+  if (!device || !["device", "online"].includes(String(device.state).toLowerCase())) return false;
+
+  try {
+    await adbClient.testAdb(adbId);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export const ldplayerClient = {
@@ -59,8 +87,27 @@ export const ldplayerClient = {
 
   async listLdInstances() {
     const result = await runLdConsole(["list2"]);
+    const adb = await adbClient.getAdbDevices().catch(() => ({ devices: [] as Array<{ adbId: string; state: string }> }));
+    const instances = await Promise.all(parseLdInstances(result.stdout).map(async (instance) => {
+      const candidateAdbId = derivedAdbId(instance.localId);
+      const isRunning = instance.ldStatus === "running";
+      const verified = Boolean(isRunning && candidateAdbId && await verifyAdbId(candidateAdbId, adb.devices));
+      return {
+        hostId: config.hostId,
+        localId: Number.isFinite(Number(instance.localId)) ? Number(instance.localId) : instance.localId,
+        instanceId: `${config.hostId}-ld-${instance.localId}`,
+        name: instance.name,
+        ldStatus: instance.ldStatus,
+        adbId: verified ? candidateAdbId : null,
+        adbStatus: verified ? "online" : isRunning ? "unknown" : "offline",
+        adbMappingConfidence: verified ? "derived" : "unknown",
+        mappingSource: verified ? "ldconsole" : "none",
+        raw: instance.raw
+      };
+    }));
     return {
-      instances: parseLdInstances(result.stdout),
+      instances,
+      adbDevices: adb.devices,
       raw: result.stdout,
       mock: result.mock
     };

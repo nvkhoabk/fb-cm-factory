@@ -68,6 +68,12 @@ export const productionBatchService = {
     }
   },
 
+  delete(id: string) {
+    if (!productionBatchRepository.delete(id)) {
+      throw new AppError("PRODUCTION_BATCH_NOT_FOUND", "Production batch not found", 404);
+    }
+  },
+
   reserve(id: string) {
     const batch = productionBatchRepository.get(id);
     if (!batch) throw new AppError("PRODUCTION_BATCH_NOT_FOUND", "Production batch not found", 404);

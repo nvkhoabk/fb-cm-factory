@@ -52,6 +52,15 @@ orchestratorRouter.post("/rules/:id/disable", (req, res) => {
   }
 });
 
+orchestratorRouter.delete("/rules/:id", (req, res) => {
+  try {
+    orchestratorService.deleteRule(req.params.id);
+    res.json({ ok: true, data: { deleted: true } });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 orchestratorRouter.get("/jobs", (_req, res) => {
   res.json({ ok: true, data: orchestratorService.listJobs() });
 });
@@ -92,6 +101,15 @@ orchestratorRouter.post("/jobs/:id/fail", (req, res) => {
   try {
     const input = failOrchestratorJobSchema.parse(req.body ?? {});
     res.json({ ok: true, data: orchestratorService.failJob(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+orchestratorRouter.delete("/jobs/:id", (req, res) => {
+  try {
+    orchestratorService.deleteJob(req.params.id);
+    res.json({ ok: true, data: { deleted: true } });
   } catch (error) {
     sendError(res, error);
   }

@@ -164,6 +164,18 @@ export const orchestratorService = {
     return rule;
   },
 
+  deleteRule(id: string) {
+    if (!orchestratorRepository.deleteRule(id)) {
+      throw new AppError("ORCHESTRATOR_RULE_NOT_FOUND", "Orchestrator rule not found", 404);
+    }
+  },
+
+  deleteJob(id: string) {
+    if (!orchestratorRepository.deleteJob(id)) {
+      throw new AppError("ORCHESTRATOR_JOB_NOT_FOUND", "Orchestrator job not found", 404);
+    }
+  },
+
   scan() {
     orchestratorRepository.seedDefaultRulesIfEmpty();
 

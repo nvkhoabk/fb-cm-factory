@@ -2959,6 +2959,245 @@ h2 {
   width: 100%;
 }
 
+.hostOpsPage,
+.instanceOpsPage {
+  display: grid;
+  gap: 12px;
+}
+
+.hostOpsGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+.hostOpsCard,
+.hostChildInstanceCard,
+.instanceOpsCard,
+.hostOpsDrawer,
+.instanceOpsDrawer,
+.adbMappingPanel,
+.instanceOpsTable {
+  background: #ffffff;
+  border: 1px solid #d8e3dc;
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.hostOpsCard,
+.hostChildInstanceCard,
+.instanceOpsCard {
+  cursor: pointer;
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+}
+
+.hostOpsCard.selected,
+.instanceOpsCard.selected {
+  border-color: #1f7a3a;
+  box-shadow: inset 0 0 0 1px #1f7a3a;
+}
+
+.hostOpsCard header,
+.hostChildInstanceCard header,
+.instanceOpsCard header {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.hostOpsCard header strong,
+.hostChildInstanceCard header strong,
+.instanceOpsCard header strong {
+  color: #183f27;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hostOpsCard header small {
+  color: #61746a;
+  display: block;
+}
+
+.hostOpsDrawer,
+.instanceOpsDrawer,
+.adbMappingPanel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.adbMappingPanel {
+  border-color: #b7dbc3;
+  box-shadow: 0 12px 28px rgba(31, 122, 58, 0.12);
+}
+
+.adbDevicePicker {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.adbDevicePicker button {
+  background: #f8fbf8;
+  border: 1px solid #d8e3dc;
+  border-radius: 8px;
+  color: #173d25;
+  display: grid;
+  gap: 3px;
+  padding: 9px;
+  text-align: left;
+}
+
+.adbDevicePicker button.selected {
+  background: #e7f6eb;
+  border-color: #1f7a3a;
+  box-shadow: inset 0 0 0 1px #1f7a3a;
+}
+
+.adbDevicePicker small,
+.adbDevicePicker span {
+  color: #607466;
+  font-size: 12px;
+}
+
+.hostChildInstanceList {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+}
+
+.instanceOpsBoard {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(6, minmax(245px, 1fr));
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.instanceOpsCard header {
+  justify-content: start;
+}
+
+.instanceOpsCard header input {
+  flex: 0 0 auto;
+}
+
+.instanceOpsCard header .statusPill {
+  margin-left: auto;
+}
+
+.instancePreviewSlot {
+  align-items: center;
+  background: #f4faf6;
+  border: 1px dashed #c7dfcf;
+  border-radius: 8px;
+  color: #477055;
+  display: flex;
+  gap: 8px;
+  min-height: 82px;
+  overflow: hidden;
+  padding: 8px;
+}
+
+.instancePreviewSlot.hasImage {
+  align-items: stretch;
+  background: #0d1711;
+  border-style: solid;
+  color: #dfeee4;
+  display: grid;
+  gap: 6px;
+  grid-template-rows: minmax(92px, 1fr) auto;
+  padding: 6px;
+}
+
+.instancePreviewSlot img {
+  background: #07100a;
+  border-radius: 6px;
+  height: 120px;
+  object-fit: contain;
+  width: 100%;
+}
+
+.instancePreviewSlot small {
+  color: #5c7565;
+  font-weight: 800;
+}
+
+.instancePreviewSlot.hasImage small {
+  color: #dfeee4;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compactKpi {
+  min-height: 62px;
+}
+
+.instanceOpsTable {
+  display: grid;
+  overflow-x: auto;
+}
+
+.instanceOpsTableHeader,
+.instanceOpsTableRow {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 28px minmax(220px, 1.3fr) minmax(120px, 0.8fr) minmax(120px, 0.8fr) minmax(140px, 0.8fr) minmax(110px, 0.6fr) minmax(220px, 1.2fr) minmax(130px, 0.7fr) minmax(360px, 1.5fr);
+  min-width: 1380px;
+  padding: 9px 10px;
+}
+
+.instanceOpsTableHeader {
+  background: #f2fbf5;
+  border-bottom: 1px solid #d8e3dc;
+  color: #3d6d4c;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.instanceOpsTableRow {
+  border-bottom: 1px solid #edf2ee;
+  cursor: pointer;
+}
+
+.instanceOpsTableRow:hover {
+  background: #f8fbf8;
+}
+
+.hostOpsDrawer label,
+.instanceOpsDrawer label,
+.adbMappingPanel label {
+  color: #3f5748;
+  display: grid;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 5px;
+}
+
+.hostOpsDrawer input,
+.hostOpsDrawer select,
+.instanceOpsDrawer input,
+.instanceOpsDrawer select,
+.instanceOpsDrawer textarea,
+.adbMappingPanel input,
+.adbMappingPanel select {
+  background: #ffffff;
+  border: 1px solid #cbd9ce;
+  border-radius: 7px;
+  color: #17251b;
+  min-height: 34px;
+  padding: 7px 8px;
+  width: 100%;
+}
+
 .resourceFilterChecks {
   align-items: center;
   display: flex;

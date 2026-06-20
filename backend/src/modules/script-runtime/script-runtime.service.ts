@@ -131,6 +131,12 @@ export const scriptRuntimeService = {
     return script;
   },
 
+  deleteScript(id: string) {
+    if (!scriptRuntimeRepository.deleteScript(id)) {
+      throw new AppError("SCRIPT_NOT_FOUND", "Script not found", 404);
+    }
+  },
+
   createScriptVersion(scriptId: string, input: CreateScriptVersionInput) {
     const script = scriptRuntimeRepository.getScript(scriptId);
     if (!script) throw new AppError("SCRIPT_NOT_FOUND", "Script not found", 404);

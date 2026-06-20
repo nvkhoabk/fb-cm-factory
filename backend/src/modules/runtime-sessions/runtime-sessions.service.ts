@@ -26,6 +26,12 @@ export const runtimeSessionsService = {
     return session;
   },
 
+  deleteSession(id: string) {
+    if (!runtimeSessionsRepository.deleteSession(id)) {
+      throw new AppError("RUNTIME_SESSION_NOT_FOUND", "Runtime session not found", 404);
+    }
+  },
+
   listSteps(id: string) {
     this.getSession(id);
     return runtimeSessionsRepository.listSteps(id);

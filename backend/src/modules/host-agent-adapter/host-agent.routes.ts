@@ -70,6 +70,14 @@ hostAgentRouter.get("/:id/health", async (req, res) => {
   }
 });
 
+hostAgentRouter.get("/:id/adb-devices", async (req, res) => {
+  try {
+    res.json({ ok: true, data: await hostAgentService.listAdbDevices(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 hostAgentRouter.post("/:id/sync-instances", async (req, res) => {
   try {
     res.json({ ok: true, data: await hostAgentService.syncInstances(req.params.id) });

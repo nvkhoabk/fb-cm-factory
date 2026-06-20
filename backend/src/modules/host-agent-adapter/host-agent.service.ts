@@ -44,8 +44,33 @@ function normalizeHostInstances(value: unknown) {
   return instances.map((item) => item as Record<string, unknown>);
 }
 
+function normalizeHostAdbDevices(value: unknown) {
+  if (!value || typeof value !== "object") return [];
+  const devices = (value as { adbDevices?: unknown }).adbDevices;
+  if (!Array.isArray(devices)) return [];
+  return devices.map((item) => item as Record<string, unknown>);
+}
+
 function directAdbId(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function normalizedText(value: unknown) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function trustedMappingConfidence(value: unknown) {
+  const confidence = normalizedText(value);
+  return ["direct", "derived", "manual"].includes(confidence) ? confidence : null;
+}
+
+function isStoppedOrOffline(item: Record<string, unknown>) {
+  const ldStatus = normalizedText(item.ldStatus);
+  const adbStatus = normalizedText(item.adbStatus);
+  const status = normalizedText(item.status);
+  return ["stopped", "offline"].includes(ldStatus)
+    || ["offline", "stopped"].includes(adbStatus)
+    || ["offline", "stopped"].includes(status);
 }
 
 export const hostAgentService = {
@@ -135,34 +160,59 @@ export const hostAgentService = {
     };
   },
 
+  async listAdbDevices(hostId: string) {
+    const { host, target } = this.targetForHost(hostId);
+    return {
+      host: publicHost(host),
+      devices: await hostAgentClient.listAdbDevices(target)
+    };
+  },
+
   async syncInstances(hostId: string) {
     const { host, target } = this.targetForHost(hostId);
     const instancePayload = await hostAgentClient.listInstances(target);
     const discovered = normalizeHostInstances(instancePayload);
+    const payloadAdbDevices = normalizeHostAdbDevices(instancePayload);
     const timestamp = now();
 
     const synced = discovered.map((item, index) => {
       const localId = String(item.localId ?? item.index ?? item.id ?? index);
       const id = canonicalInstanceId(String(host.hostId), localId);
       const existing = instancesRepository.get(id);
-      const direct = directAdbId(item.adbId);
-      const preserved = direct ? null : directAdbId(existing?.adbId);
-      const adbId = direct ?? preserved;
-      const adbMappingConfidence = direct ? "direct" : preserved ? "preserved" : "unknown";
+      const confidence = trustedMappingConfidence(item.adbMappingConfidence);
+      const stoppedOrOffline = isStoppedOrOffline(item);
+      const manualAdbId = directAdbId(existing?.manualAdbId);
+      const manualStillOnline = Boolean(manualAdbId && !stoppedOrOffline && payloadAdbDevices.some((device) => (
+        directAdbId(device.adbId) === manualAdbId
+        && ["device", "online"].includes(normalizedText(device.state))
+      )));
+      const agentAdbId = !stoppedOrOffline && confidence ? directAdbId(item.adbId) : null;
+      const mappedAdbId = manualStillOnline ? manualAdbId : agentAdbId;
+      const adbMappingConfidence = manualStillOnline ? "manual" : mappedAdbId ? confidence : "unknown";
+      const mappingSource = manualStillOnline ? "manual" : mappedAdbId ? String(item.mappingSource ?? confidence) : "none";
+      const status = stoppedOrOffline
+        ? (normalizedText(item.ldStatus) === "stopped" ? "STOPPED" : "OFFLINE")
+        : mappedAdbId ? "ONLINE" : "DISCOVERED";
       return instancesRepository.upsert({
         id,
         hostId: String(host.hostId),
         localId,
         name: typeof item.name === "string" ? item.name : `LDPlayer ${localId}`,
-        adbId,
-        status: adbId ? "ONLINE" : "DISCOVERED",
-        runtimeStatus: "IDLE",
+        adbId: mappedAdbId,
+        status,
+        runtimeStatus: mappedAdbId ? "IDLE" : stoppedOrOffline ? "INACTIVE" : "IDLE",
         metadata: {
           ...(existing?.metadata && typeof existing.metadata === "object" ? existing.metadata : {}),
           raw: item,
           adbMappingConfidence,
+          mappingSource,
+          adbMappingUpdatedAt: timestamp,
           hostDbId: host.id
         },
+        adbMappingConfidence,
+        adbMappingSource: mappingSource,
+        adbMappingUpdatedAt: timestamp,
+        manualAdbId: manualAdbId ?? (confidence === "manual" && mappedAdbId ? mappedAdbId : null),
         lastSeenAt: timestamp
       });
     }).filter(Boolean);
