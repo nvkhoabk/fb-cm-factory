@@ -44,6 +44,31 @@ export const downloadLatestCommandSchema = instanceCommandSchema.extend({
   targetFolder: z.string().optional()
 });
 
+export const pushUploadFileCommandSchema = instanceCommandSchema.extend({
+  runtimeSessionId: z.string().min(1).optional(),
+  jobId: z.string().min(1).optional(),
+  assetId: z.string().min(1),
+  localId: z.union([z.string(), z.number()]).optional()
+}).refine((input) => Boolean(input.runtimeSessionId || input.jobId), {
+  message: "runtimeSessionId or jobId is required"
+});
+
+export const openFileCommandSchema = instanceCommandSchema.extend({
+  remotePath: z.string().min(1),
+  mimeType: z.string().optional()
+});
+
+export const cleanupUploadSessionCommandSchema = instanceCommandSchema.extend({
+  runtimeSessionId: z.string().min(1)
+});
+
+export const cleanupOldTempCommandSchema = instanceCommandSchema.extend({
+  olderThanHours: z.number().positive().optional(),
+  includeUploads: z.boolean().optional(),
+  includeLiveScreenshots: z.boolean().optional(),
+  includeDebugScreenshots: z.boolean().optional()
+});
+
 export type CreateHostInput = z.infer<typeof createHostSchema>;
 export type InstanceCommandInput = z.infer<typeof instanceCommandSchema>;
 export type LiveScreenshotCommandInput = z.infer<typeof liveScreenshotCommandSchema>;
@@ -52,3 +77,7 @@ export type SwipeCommandInput = z.infer<typeof swipeCommandSchema>;
 export type SendTextCommandInput = z.infer<typeof sendTextCommandSchema>;
 export type SendKeyCommandInput = z.infer<typeof sendKeyCommandSchema>;
 export type DownloadLatestCommandInput = z.infer<typeof downloadLatestCommandSchema>;
+export type PushUploadFileCommandInput = z.infer<typeof pushUploadFileCommandSchema>;
+export type OpenFileCommandInput = z.infer<typeof openFileCommandSchema>;
+export type CleanupUploadSessionCommandInput = z.infer<typeof cleanupUploadSessionCommandSchema>;
+export type CleanupOldTempCommandInput = z.infer<typeof cleanupOldTempCommandSchema>;

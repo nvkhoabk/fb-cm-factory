@@ -1,5 +1,8 @@
 import { config } from "../../config";
+import fs from "node:fs";
+import path from "node:path";
 import { db } from "../../database/db";
+import { assetsService } from "../assets/assets.service";
 import { runtimeSessionsService } from "../runtime-sessions/runtime-sessions.service";
 import { instancesRepository } from "../instances/instances.repository";
 import { AppError, createId, now } from "../shared/resource";
@@ -7,7 +10,12 @@ import { hostAgentClient } from "./host-agent.client";
 import type {
   CreateHostInput,
   DownloadLatestCommandInput,
+  InstanceCommandInput,
   LiveScreenshotCommandInput,
+  CleanupOldTempCommandInput,
+  CleanupUploadSessionCommandInput,
+  OpenFileCommandInput,
+  PushUploadFileCommandInput,
   SendKeyCommandInput,
   SendTextCommandInput,
   SwipeCommandInput,
@@ -46,6 +54,36 @@ function normalizeHostStorageUrl(host: ReturnType<typeof mapHost>, value: unknow
     publicUrl: url,
     screenshotUrl: typeof record.screenshotUrl === "string" ? url : record.screenshotUrl,
     url: typeof record.url === "string" ? url : record.url
+  };
+}
+
+function ensureInsideStorageRoot(filePath: string) {
+  const root = path.resolve(config.storageRoot);
+  const resolved = path.resolve(filePath);
+  const relative = path.relative(root, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new AppError("ASSET_FILE_OUTSIDE_STORAGE_ROOT", "Asset file must be stored under STORAGE_ROOT", 400);
+  }
+  return resolved;
+}
+
+function resolveAssetSourceFile(assetId: string) {
+  const asset = assetsService.get(assetId);
+  if (!asset) throw new AppError("ASSET_NOT_FOUND", "Asset not found", 404);
+  if (!asset.filePath) throw new AppError("ASSET_FILE_NOT_AVAILABLE", "Asset does not have a filePath", 400);
+
+  const candidate = path.isAbsolute(asset.filePath)
+    ? asset.filePath
+    : path.resolve(config.storageRoot, asset.filePath);
+  const sourceAbsolutePath = ensureInsideStorageRoot(candidate);
+  if (!fs.existsSync(sourceAbsolutePath) || !fs.statSync(sourceAbsolutePath).isFile()) {
+    throw new AppError("ASSET_FILE_NOT_FOUND", "Asset file does not exist on disk", 404);
+  }
+
+  return {
+    asset,
+    sourceAbsolutePath,
+    fileName: asset.name || path.basename(sourceAbsolutePath)
   };
 }
 
@@ -311,6 +349,65 @@ export const hostAgentService = {
     return {
       host: publicHost(host),
       result: await hostAgentClient.downloadLatest(target, input)
+    };
+  },
+
+  async pushUploadFile(hostId: string, input: PushUploadFileCommandInput) {
+    const { host, target } = this.targetForHost(hostId);
+    const source = resolveAssetSourceFile(input.assetId);
+    return {
+      host: publicHost(host),
+      asset: source.asset,
+      result: await hostAgentClient.pushUploadFile(target, {
+        instanceId: input.instanceId,
+        localId: input.localId,
+        adbId: input.adbId,
+        runtimeSessionId: input.runtimeSessionId,
+        jobId: input.jobId,
+        assetId: input.assetId,
+        sourceAbsolutePath: source.sourceAbsolutePath,
+        fileName: source.fileName
+      })
+    };
+  },
+
+  async openFile(hostId: string, input: OpenFileCommandInput) {
+    const { host, target } = this.targetForHost(hostId);
+    return {
+      host: publicHost(host),
+      result: await hostAgentClient.openFile(target, input)
+    };
+  },
+
+  async cleanupUploadSession(hostId: string, input: CleanupUploadSessionCommandInput) {
+    const { host, target } = this.targetForHost(hostId);
+    return {
+      host: publicHost(host),
+      result: await hostAgentClient.cleanupUploadSession(target, input)
+    };
+  },
+
+  async cleanupUploadStaging(hostId: string, input: CleanupOldTempCommandInput) {
+    const { host, target } = this.targetForHost(hostId);
+    return {
+      host: publicHost(host),
+      result: await hostAgentClient.cleanupUploadStaging(target, input)
+    };
+  },
+
+  async cleanupFactoryTemp(hostId: string, input: CleanupOldTempCommandInput) {
+    const { host, target } = this.targetForHost(hostId);
+    return {
+      host: publicHost(host),
+      result: await hostAgentClient.cleanupFactoryTemp(target, input)
+    };
+  },
+
+  async factoryTempUsage(hostId: string, input: InstanceCommandInput) {
+    const { host, target } = this.targetForHost(hostId);
+    return {
+      host: publicHost(host),
+      result: await hostAgentClient.factoryTempUsage(target, input)
     };
   },
 

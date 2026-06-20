@@ -12,12 +12,16 @@ function sendError(res: import("express").Response, error: unknown) {
     "NO_MATCHING_FILE_FOUND",
     "ADB_KEYBOARD_NOT_AVAILABLE",
     "SEND_TEXT_FAILED",
-    "TEXT_REQUIRED"
+    "TEXT_REQUIRED",
+    "RUNTIME_CONTEXT_REQUIRED",
+    "ASSET_ID_REQUIRED",
+    "UPLOAD_FILE_NOT_FOUND",
+    "INVALID_REMOTE_PATH"
   ]);
   const code = knownCodes.has(errorName)
     ? errorName
     : message.includes("adbId") ? "ADB_ID_REQUIRED" : "INSTANCE_COMMAND_ERROR";
-  res.status(code === "ADB_ID_REQUIRED" || code === "TEXT_REQUIRED" || code === "NO_MATCHING_FILE_FOUND" ? 400 : 500)
+  res.status(code === "ADB_ID_REQUIRED" || code === "TEXT_REQUIRED" || code === "NO_MATCHING_FILE_FOUND" || code === "RUNTIME_CONTEXT_REQUIRED" || code === "ASSET_ID_REQUIRED" || code === "UPLOAD_FILE_NOT_FOUND" || code === "INVALID_REMOTE_PATH" ? 400 : 500)
     .json({ ok: false, error: { code, message } });
 }
 
@@ -127,6 +131,98 @@ instanceRouter.post("/:localId/download-latest", requireAgentApiKey, async (req,
         sourceDir: typeof req.body?.sourceDir === "string" ? req.body.sourceDir : undefined,
         extensions: Array.isArray(req.body?.extensions) ? req.body.extensions.map(String) : undefined,
         targetFolder: typeof req.body?.targetFolder === "string" ? req.body.targetFolder : undefined
+      })
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+instanceRouter.post("/:localId/push-upload-file", requireAgentApiKey, async (req, res) => {
+  try {
+    res.json({
+      ok: true,
+      data: await instanceCommands.pushUploadFile({
+        instanceId: typeof req.body?.instanceId === "string" ? req.body.instanceId : req.params.localId,
+        adbId: String(req.body?.adbId ?? ""),
+        runtimeSessionId: typeof req.body?.runtimeSessionId === "string" ? req.body.runtimeSessionId : undefined,
+        jobId: typeof req.body?.jobId === "string" ? req.body.jobId : undefined,
+        assetId: String(req.body?.assetId ?? ""),
+        sourceAbsolutePath: String(req.body?.sourceAbsolutePath ?? ""),
+        fileName: typeof req.body?.fileName === "string" ? req.body.fileName : undefined
+      })
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+instanceRouter.post("/:localId/open-file", requireAgentApiKey, async (req, res) => {
+  try {
+    res.json({
+      ok: true,
+      data: await instanceCommands.openFile({
+        adbId: String(req.body?.adbId ?? ""),
+        remotePath: String(req.body?.remotePath ?? ""),
+        mimeType: typeof req.body?.mimeType === "string" ? req.body.mimeType : undefined
+      })
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+instanceRouter.post("/:localId/cleanup-upload-session", requireAgentApiKey, async (req, res) => {
+  try {
+    res.json({
+      ok: true,
+      data: await instanceCommands.cleanupUploadSession({
+        adbId: String(req.body?.adbId ?? ""),
+        runtimeSessionId: String(req.body?.runtimeSessionId ?? "")
+      })
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+instanceRouter.post("/:localId/cleanup-upload-staging", requireAgentApiKey, async (req, res) => {
+  try {
+    res.json({
+      ok: true,
+      data: await instanceCommands.cleanupUploadStaging({
+        adbId: String(req.body?.adbId ?? ""),
+        olderThanHours: req.body?.olderThanHours === undefined ? undefined : numberBody(req.body.olderThanHours, "olderThanHours")
+      })
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+instanceRouter.post("/:localId/cleanup-factory-temp", requireAgentApiKey, async (req, res) => {
+  try {
+    res.json({
+      ok: true,
+      data: await instanceCommands.cleanupFactoryTemp({
+        adbId: String(req.body?.adbId ?? ""),
+        olderThanHours: req.body?.olderThanHours === undefined ? undefined : numberBody(req.body.olderThanHours, "olderThanHours"),
+        includeUploads: req.body?.includeUploads === undefined ? undefined : Boolean(req.body.includeUploads),
+        includeLiveScreenshots: req.body?.includeLiveScreenshots === undefined ? undefined : Boolean(req.body.includeLiveScreenshots),
+        includeDebugScreenshots: req.body?.includeDebugScreenshots === undefined ? undefined : Boolean(req.body.includeDebugScreenshots)
+      })
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+instanceRouter.get("/:localId/factory-temp-usage", requireAgentApiKey, async (req, res) => {
+  try {
+    res.json({
+      ok: true,
+      data: await instanceCommands.factoryTempUsage({
+        adbId: String(req.query.adbId ?? "")
       })
     });
   } catch (error) {

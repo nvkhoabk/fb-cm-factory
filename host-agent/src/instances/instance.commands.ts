@@ -30,6 +30,35 @@ export type KeyInput = {
   keyCode: string | number;
 };
 
+export type PushUploadFileInput = {
+  instanceId?: string;
+  adbId: string;
+  runtimeSessionId?: string;
+  jobId?: string;
+  assetId: string;
+  sourceAbsolutePath: string;
+  fileName?: string;
+};
+
+export type OpenFileInput = {
+  adbId: string;
+  remotePath: string;
+  mimeType?: string;
+};
+
+export type CleanupUploadSessionInput = {
+  adbId: string;
+  runtimeSessionId: string;
+};
+
+export type CleanupOldTempInput = {
+  adbId: string;
+  olderThanHours?: number;
+  includeUploads?: boolean;
+  includeLiveScreenshots?: boolean;
+  includeDebugScreenshots?: boolean;
+};
+
 function requireAdbId(adbId: unknown) {
   if (typeof adbId !== "string" || !adbId) {
     throw new Error("adbId is required");
@@ -65,6 +94,40 @@ function safePathSegment(value: string) {
   return value.replace(/[^a-z0-9._-]+/gi, "-").replace(/^-+|-+$/g, "") || "instance";
 }
 
+function shellQuote(value: string) {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function safeRemoteFileName(value: string) {
+  return path.basename(value)
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    || "upload-file";
+}
+
+function requireRuntimeKey(input: { runtimeSessionId?: string; jobId?: string }) {
+  const key = input.runtimeSessionId || input.jobId;
+  if (!key) throw commandError("RUNTIME_CONTEXT_REQUIRED", "runtimeSessionId or jobId is required");
+  return safePathSegment(key);
+}
+
+function uploadRemoteDir(runtimeKey: string) {
+  return `/sdcard/fb-cm-factory/uploads/${runtimeKey}`;
+}
+
+function oldFoldersCleanupCommand(baseDir: string, olderThanHours: number) {
+  const minutes = Math.max(1, Math.floor(olderThanHours * 60));
+  return [
+    `dir=${shellQuote(baseDir)}`,
+    `[ -d "$dir" ] || exit 0`,
+    `find "$dir" -mindepth 1 -maxdepth 1 -type d -mmin +${minutes} -exec rm -rf {} \\;`
+  ].join("; ");
+}
+
+function tempUsageCommand() {
+  return `for item in uploads:/sdcard/fb-cm-factory/uploads live:/sdcard/fb-cm-factory/live screenshots:/sdcard/fb-cm-factory/screenshots; do name="\${item%%:*}"; dir="\${item#*:}"; if [ -d "$dir" ]; then bytes=$(du -s "$dir" 2>/dev/null | awk '{print $1 * 1024}'); else bytes=0; fi; printf '%s=%s\\n' "$name" "\${bytes:-0}"; done`;
+}
+
 function mockPngBuffer() {
   return Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAZAAAAEsCAYAAADtt+XCAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAGXRFWHRTb2Z0d2FyZQBQQ0xpcCByZW5kZXJlcjSByy0AAARNSURBVHic7d1BbsIwEABB//9lOAuItjQq2h5UIJY9kMGEiPWrUfTAcQzDMEzbsT4A4Oe1+wAA8J0ECAIgCBEEQBAgCIAgRBAAQYAgAIIQQQAEAYIACEIEARAECIIgCBAEQBAiCIAgQBAAQYggAIIAQQAEIYIACAIEQRAECIIgCBEEQBAgCIAgRBAAQYAgAIIQQQAEAYIACEIEARAECIIgCBAEQBAiCIAgQBAAQYggAIIAQQAEIYIACAIEQRAECIIgCBEEQBAgCIAgRBAAQYAgAIIQQQAEAYIACEIEARAECIIgCBAEQBAiCIAgQBAAQYggAIIAQQAEIYIACAIEQRAECIIgCBEEQBAgCIAgRBAAQYAgAIIQQQAEAYIACEIEARAECIIgCBAEQBAiCIAgQBAAQYggAIIAQQAEIYIACAIEQRAECIIgCBEEQBAgCIAgRBAAQYAgAIIQQQAEAYIACEIEARAECIIgCBAEQBAiCIAgQBAAQYggAIIAQQAEIYIACAIEQRAECIIgCBEEQBAgCIAgRBAAQYAgAIIQQQAEAYIACEIEARAECIIgCBAEQBAiCIAgQBAAQYggAIIAQQAEIYIACAIEQRAECIIgCBEEQBAgCIAgRBAAQYAgAIIQQQAEAYIACEIEARAECIIgCBAEQBAiCIAgQBAAQYggAIIAQQAEIYIACAIEQRAECIIgCBEEQBAgCIAgRBAAQYAgAIIQQQAEAYIACEIEARAECIIgCBAEQBAiCIAgQBAAQYggAIIAQQAEIYIACAIEQRAECIIgCBEEQBAgCIAgRBAAQYAgAIIQQQAEAYIACEIEARAECIIgCBAEQBAiCIAgQBAAQYggAIIAQQAEIYIACAIEQRAECIIgCBEEQBAgCIAgRBAAQYAgAIIQQQAEAYIACEIEARAECIIgCBAEQBAiCIAgQBAAQYggAIIAQQAEIYIACAIEQRAECIIgCBEEQBAgCIAgRBAAQYAgAIIQQQAEAYIACEIEARAECIIgCBAEQBAiCIAgQBAAQYggAIIAQQAEIYIACAIEQRAECIIgCBEEQBAgCIAgRBAAQYAgAIIQQQAEAYIACEIEARAECIIgCBAEQBAiCIAgQBAAQYggAIIAQQAEIYIACAIEQRAECIIgCBEEQBAgCIAgRBAAQYAgAIIQQQAEAYIACEIEARAECIIgCBAEQBAiCIAgQBAAQYggAIIAQQAEIYIACAIEQRAECIIgCBEGQ7vcBvE5hMzs7hWwAAAAASUVORK5CYII=",
@@ -86,6 +149,17 @@ function validMockPngBuffer() {
 
 function debugInteraction(action: string, details: Record<string, unknown>) {
   console.info(`[host-agent][interaction] ${action} ${JSON.stringify(details)}`);
+}
+
+function normalizeKeyCode(keyCode: string | number) {
+  if (typeof keyCode === "number") return keyCode;
+  const normalized = String(keyCode).trim().toUpperCase();
+  return ({
+    BACK: 4,
+    HOME: 3,
+    ENTER: 66,
+    TAB: 61
+  } as Record<string, number>)[normalized] ?? keyCode;
 }
 
 export const instanceCommands = {
@@ -199,12 +273,151 @@ export const instanceCommands = {
 
   async sendKey(input: KeyInput) {
     requireAdbId(input.adbId);
-    debugInteraction("send-key", { adbId: input.adbId, keyCode: input.keyCode });
-    return adbClient.runAdb(["-s", input.adbId, "shell", "input", "keyevent", String(input.keyCode)]);
+    const keyCode = normalizeKeyCode(input.keyCode);
+    debugInteraction("send-key", { adbId: input.adbId, keyCode });
+    return adbClient.runAdb(["-s", input.adbId, "shell", "input", "keyevent", String(keyCode)]);
   },
 
   async downloadLatest(input: DownloadLatestInput) {
     requireAdbId(input.adbId);
     return downloadLatestService.downloadLatest(input);
+  },
+
+  async pushUploadFile(input: PushUploadFileInput) {
+    const adbId = requireAdbId(input.adbId);
+    const runtimeKey = requireRuntimeKey(input);
+    if (!input.assetId) throw commandError("ASSET_ID_REQUIRED", "assetId is required");
+    if (!input.sourceAbsolutePath || !fs.existsSync(input.sourceAbsolutePath) || !fs.statSync(input.sourceAbsolutePath).isFile()) {
+      throw commandError("UPLOAD_FILE_NOT_FOUND", "sourceAbsolutePath must point to an existing file");
+    }
+
+    const remoteDir = uploadRemoteDir(runtimeKey);
+    const originalName = safeRemoteFileName(input.fileName || path.basename(input.sourceAbsolutePath));
+    const remoteFileName = `${safePathSegment(input.assetId)}-${Date.now()}-${originalName}`;
+    const remotePath = `${remoteDir}/${remoteFileName}`;
+
+    debugInteraction("push-upload-file", {
+      adbId,
+      assetId: input.assetId,
+      runtimeSessionId: input.runtimeSessionId,
+      jobId: input.jobId,
+      remotePath
+    });
+
+    if (!config.mockMode) {
+      await adbClient.runAdb(["-s", adbId, "shell", "mkdir", "-p", remoteDir]);
+      await adbClient.runAdb(["-s", adbId, "push", input.sourceAbsolutePath, remotePath]);
+      await adbClient.runAdb([
+        "-s",
+        adbId,
+        "shell",
+        "am",
+        "broadcast",
+        "-a",
+        "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+        "-d",
+        `file://${remotePath}`
+      ]);
+    }
+
+    return {
+      runtimeSessionId: input.runtimeSessionId ?? null,
+      jobId: input.jobId ?? null,
+      assetId: input.assetId,
+      adbId,
+      remotePath,
+      remoteDir,
+      remoteFileName
+    };
+  },
+
+  async openFile(input: OpenFileInput) {
+    const adbId = requireAdbId(input.adbId);
+    if (!input.remotePath || !input.remotePath.startsWith("/sdcard/fb-cm-factory/uploads/")) {
+      throw commandError("INVALID_REMOTE_PATH", "remotePath must point to fb-cm-factory upload staging");
+    }
+    debugInteraction("open-file", { adbId, remotePath: input.remotePath, mimeType: input.mimeType ?? "*/*" });
+    if (!config.mockMode) {
+      await adbClient.runAdb([
+        "-s",
+        adbId,
+        "shell",
+        "am",
+        "start",
+        "-a",
+        "android.intent.action.VIEW",
+        "-d",
+        `file://${input.remotePath}`,
+        "-t",
+        input.mimeType ?? "*/*"
+      ]);
+    }
+    return { adbId, remotePath: input.remotePath, mimeType: input.mimeType ?? "*/*" };
+  },
+
+  async cleanupUploadSession(input: CleanupUploadSessionInput) {
+    const adbId = requireAdbId(input.adbId);
+    if (!input.runtimeSessionId) throw commandError("RUNTIME_CONTEXT_REQUIRED", "runtimeSessionId is required");
+    const runtimeKey = safePathSegment(input.runtimeSessionId);
+    const remoteDir = uploadRemoteDir(runtimeKey);
+    debugInteraction("cleanup-upload-session", { adbId, remoteDir });
+    if (!config.mockMode) {
+      await adbClient.runAdb(["-s", adbId, "shell", "rm", "-rf", remoteDir]);
+    }
+    return { adbId, runtimeSessionId: input.runtimeSessionId, remoteDir, deleted: true };
+  },
+
+  async cleanupUploadStaging(input: CleanupOldTempInput) {
+    const adbId = requireAdbId(input.adbId);
+    const olderThanHours = input.olderThanHours ?? 24;
+    debugInteraction("cleanup-upload-staging", { adbId, olderThanHours });
+    if (!config.mockMode) {
+      await adbClient.runAdb(["-s", adbId, "shell", "sh", "-c", oldFoldersCleanupCommand("/sdcard/fb-cm-factory/uploads", olderThanHours)]);
+    }
+    return { adbId, olderThanHours, cleaned: true };
+  },
+
+  async cleanupFactoryTemp(input: CleanupOldTempInput) {
+    const adbId = requireAdbId(input.adbId);
+    const olderThanHours = input.olderThanHours ?? 24;
+    const dirs = [
+      input.includeUploads === false ? null : "/sdcard/fb-cm-factory/uploads",
+      input.includeLiveScreenshots === false ? null : "/sdcard/fb-cm-factory/live",
+      input.includeDebugScreenshots === false ? null : "/sdcard/fb-cm-factory/screenshots"
+    ].filter(Boolean) as string[];
+    debugInteraction("cleanup-factory-temp", { adbId, olderThanHours, dirs });
+    if (!config.mockMode) {
+      for (const dir of dirs) {
+        await adbClient.runAdb(["-s", adbId, "shell", "sh", "-c", oldFoldersCleanupCommand(dir, olderThanHours)]);
+      }
+    }
+    return { adbId, olderThanHours, dirs, cleaned: true };
+  },
+
+  async factoryTempUsage(input: { adbId: string }) {
+    const adbId = requireAdbId(input.adbId);
+    if (config.mockMode) {
+      return { adbId, uploadBytes: 0, liveBytes: 0, screenshotBytes: 0, totalBytes: 0 };
+    }
+    const result = await adbClient.runAdb(["-s", adbId, "shell", "sh", "-c", tempUsageCommand()]);
+    const values = Object.fromEntries(
+      result.stdout.split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          const [key, value] = line.split("=");
+          return [key, Number(value) || 0];
+        })
+    );
+    const uploadBytes = Number(values.uploads ?? 0);
+    const liveBytes = Number(values.live ?? 0);
+    const screenshotBytes = Number(values.screenshots ?? 0);
+    return {
+      adbId,
+      uploadBytes,
+      liveBytes,
+      screenshotBytes,
+      totalBytes: uploadBytes + liveBytes + screenshotBytes
+    };
   }
 };

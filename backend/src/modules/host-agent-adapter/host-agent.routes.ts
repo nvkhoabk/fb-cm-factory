@@ -3,9 +3,13 @@ import { ZodError, type z } from "zod";
 import { sendError } from "../shared/resource";
 import {
   createHostSchema,
+  cleanupOldTempCommandSchema,
+  cleanupUploadSessionCommandSchema,
   downloadLatestCommandSchema,
   instanceCommandSchema,
   liveScreenshotCommandSchema,
+  openFileCommandSchema,
+  pushUploadFileCommandSchema,
   sendKeyCommandSchema,
   sendTextCommandSchema,
   swipeCommandSchema,
@@ -172,6 +176,78 @@ hostAgentRouter.post("/:id/download-latest", async (req, res) => {
   try {
     const input = parseCommand(downloadLatestCommandSchema, req.body);
     res.json({ ok: true, data: await hostAgentService.downloadLatest(req.params.id, input) });
+  } catch (error) {
+    sendHostAgentError(res, error);
+  }
+});
+
+hostAgentRouter.post("/:id/instances/:instanceId/push-upload-file", async (req, res) => {
+  try {
+    const input = parseCommand(pushUploadFileCommandSchema, {
+      ...(req.body ?? {}),
+      instanceId: req.params.instanceId
+    });
+    res.json({ ok: true, data: await hostAgentService.pushUploadFile(req.params.id, input) });
+  } catch (error) {
+    sendHostAgentError(res, error);
+  }
+});
+
+hostAgentRouter.post("/:id/instances/:instanceId/open-file", async (req, res) => {
+  try {
+    const input = parseCommand(openFileCommandSchema, {
+      ...(req.body ?? {}),
+      instanceId: req.params.instanceId
+    });
+    res.json({ ok: true, data: await hostAgentService.openFile(req.params.id, input) });
+  } catch (error) {
+    sendHostAgentError(res, error);
+  }
+});
+
+hostAgentRouter.post("/:id/instances/:instanceId/cleanup-upload-session", async (req, res) => {
+  try {
+    const input = parseCommand(cleanupUploadSessionCommandSchema, {
+      ...(req.body ?? {}),
+      instanceId: req.params.instanceId
+    });
+    res.json({ ok: true, data: await hostAgentService.cleanupUploadSession(req.params.id, input) });
+  } catch (error) {
+    sendHostAgentError(res, error);
+  }
+});
+
+hostAgentRouter.post("/:id/instances/:instanceId/cleanup-upload-staging", async (req, res) => {
+  try {
+    const input = parseCommand(cleanupOldTempCommandSchema, {
+      ...(req.body ?? {}),
+      instanceId: req.params.instanceId
+    });
+    res.json({ ok: true, data: await hostAgentService.cleanupUploadStaging(req.params.id, input) });
+  } catch (error) {
+    sendHostAgentError(res, error);
+  }
+});
+
+hostAgentRouter.post("/:id/instances/:instanceId/cleanup-factory-temp", async (req, res) => {
+  try {
+    const input = parseCommand(cleanupOldTempCommandSchema, {
+      ...(req.body ?? {}),
+      instanceId: req.params.instanceId
+    });
+    res.json({ ok: true, data: await hostAgentService.cleanupFactoryTemp(req.params.id, input) });
+  } catch (error) {
+    sendHostAgentError(res, error);
+  }
+});
+
+hostAgentRouter.get("/:id/instances/:instanceId/factory-temp-usage", async (req, res) => {
+  try {
+    const input = parseCommand(instanceCommandSchema, {
+      instanceId: req.params.instanceId,
+      adbId: req.query.adbId
+    });
+    res.json({ ok: true, data: await hostAgentService.factoryTempUsage(req.params.id, input) });
   } catch (error) {
     sendHostAgentError(res, error);
   }

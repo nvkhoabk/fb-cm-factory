@@ -68,6 +68,25 @@ function renderInputTemplates(value: unknown, context: Record<string, unknown>):
   return value;
 }
 
+function firstRecordFrom(value: unknown) {
+  if (Array.isArray(value)) return value.find((item) => item && typeof item === "object") as Record<string, unknown> | undefined;
+  return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
+}
+
+function deriveAssetContext(context: Record<string, unknown>) {
+  const direct = context.asset && typeof context.asset === "object" ? context.asset as Record<string, unknown> : {};
+  const snapshot = (context.sourceAssetsSnapshot && typeof context.sourceAssetsSnapshot === "object" ? context.sourceAssetsSnapshot : undefined)
+    ?? getPathValue(context, "batch.metadata.sourceAssetsSnapshot")
+    ?? getPathValue(context, "productionBatch.metadata.sourceAssetsSnapshot")
+    ?? getPathValue(context, "sourceBatch.metadata.sourceAssetsSnapshot");
+  const snapshotRecord = snapshot && typeof snapshot === "object" ? snapshot as Record<string, unknown> : {};
+  const character = firstRecordFrom(snapshotRecord.characters);
+  return mergeContext({
+    youngOriginalImage: character?.youngOriginalImage,
+    oldOriginalImage: character?.oldOriginalImage
+  }, direct);
+}
+
 function resolveAdbId(input: Record<string, unknown>, context: Record<string, unknown>) {
   const direct = input.adbId;
   if (typeof direct === "string" && direct) return direct;
@@ -281,7 +300,9 @@ export const scriptRuntimeService = {
     try {
       for (const step of steps) {
         const output = await this.executeStep(scriptRunId, step, context);
+        const outputRecord = output && typeof output === "object" ? output as Record<string, unknown> : {};
         context = mergeContext(context, {
+          uploadedFiles: Array.isArray(outputRecord.uploadedFiles) ? outputRecord.uploadedFiles : context.uploadedFiles,
           lastStepNo: step.stepNo,
           lastStepType: step.stepType,
           lastStepOutput: output
@@ -342,7 +363,8 @@ export const scriptRuntimeService = {
   async executeStep(scriptRunId: string, step: NormalizedScriptStep, context: Record<string, unknown>) {
     const run = this.getScriptRun(scriptRunId);
     const session = runtimeSessionsService.getSession(String(run.runtimeSessionId));
-    const input = renderInputTemplates(mergeContext(step.input), context) as Record<string, unknown>;
+    const effectiveContext = mergeContext(context, { asset: deriveAssetContext(context) });
+    const input = renderInputTemplates(mergeContext(step.input), effectiveContext) as Record<string, unknown>;
 
     const stepRow = scriptRuntimeRepository.createScriptRunStep({
       scriptRunId,
@@ -353,7 +375,7 @@ export const scriptRuntimeService = {
     });
 
     try {
-      const output = await this.dispatchStep(session, step.stepType, input, context);
+      const output = await this.dispatchStep(session, step.stepType, input, effectiveContext);
       const outputRecord = output && typeof output === "object"
         ? output as Record<string, unknown>
         : { value: output };
@@ -438,6 +460,24 @@ export const scriptRuntimeService = {
       });
     }
 
+    if (stepType === "send-text-submit") {
+      const adbId = resolveAdbId(input, _context);
+      const textResult = await hostAgentService.sendText(session.hostId, {
+        instanceId: session.instanceId,
+        adbId,
+        text: String(input.text ?? "")
+      });
+      const keyResult = await hostAgentService.sendKey(session.hostId, {
+        instanceId: session.instanceId,
+        adbId,
+        key: typeof input.submitKey === "number" ? input.submitKey : String(input.submitKey ?? "ENTER")
+      });
+      return {
+        text: textResult,
+        submit: keyResult
+      };
+    }
+
     if (stepType === "send-key") {
       return hostAgentService.sendKey(session.hostId, {
         instanceId: session.instanceId,
@@ -468,10 +508,40 @@ export const scriptRuntimeService = {
     }
 
     if (stepType === "upload-file") {
+      const assetId = typeof input.assetId === "string" && input.assetId
+        ? input.assetId
+        : typeof input.fileAssetId === "string" && input.fileAssetId
+          ? input.fileAssetId
+          : "";
+      if (!assetId) throw new AppError("ASSET_ID_REQUIRED", "upload-file requires assetId");
+      const result = await hostAgentService.pushUploadFile(session.hostId, {
+        instanceId: session.instanceId,
+        adbId: resolveAdbId(input, _context),
+        runtimeSessionId: String(session.id),
+        jobId: typeof session.jobId === "string" ? session.jobId : undefined,
+        assetId
+      });
+      const uploadedFile = (result as Record<string, unknown>).result ?? result;
+      const existingUploads = Array.isArray(_context.uploadedFiles) ? _context.uploadedFiles : [];
+      const uploadedFiles = [...existingUploads, uploadedFile];
+      _context.uploadedFiles = uploadedFiles;
       return {
-        skipped: true,
-        reason: "upload-file is reserved for host-agent implementations that expose upload APIs"
+        uploadedFile,
+        uploadedFiles,
+        target: input.target ?? "android-file-picker",
+        openPicker: input.openPicker !== false
       };
+    }
+
+    if (stepType === "cleanup-factory-temp") {
+      return hostAgentService.cleanupFactoryTemp(session.hostId, {
+        instanceId: session.instanceId,
+        adbId: resolveAdbId(input, _context),
+        olderThanHours: typeof input.olderThanHours === "number" ? input.olderThanHours : undefined,
+        includeUploads: typeof input.includeUploads === "boolean" ? input.includeUploads : undefined,
+        includeLiveScreenshots: typeof input.includeLiveScreenshots === "boolean" ? input.includeLiveScreenshots : undefined,
+        includeDebugScreenshots: typeof input.includeDebugScreenshots === "boolean" ? input.includeDebugScreenshots : undefined
+      });
     }
 
     if (stepType === "wait-screen") {

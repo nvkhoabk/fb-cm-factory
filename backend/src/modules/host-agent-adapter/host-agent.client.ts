@@ -164,5 +164,103 @@ export const hostAgentClient = {
         targetFolder: input.targetFolder
       })
     });
+  },
+
+  pushUploadFile(target: HostAgentTarget, input: {
+    instanceId: string;
+    localId?: string | number;
+    adbId: string;
+    runtimeSessionId?: string;
+    jobId?: string;
+    assetId: string;
+    sourceAbsolutePath: string;
+    fileName?: string;
+  }) {
+    const localId = input.localId === undefined || input.localId === null || input.localId === ""
+      ? input.instanceId
+      : String(input.localId);
+    return requestAgent(target, `/instances/${encodeURIComponent(localId)}/push-upload-file`, {
+      method: "POST",
+      body: body(input)
+    });
+  },
+
+  openFile(target: HostAgentTarget, input: {
+    instanceId: string;
+    localId?: string | number;
+    adbId: string;
+    remotePath: string;
+    mimeType?: string;
+  }) {
+    const localId = input.localId === undefined || input.localId === null || input.localId === ""
+      ? input.instanceId
+      : String(input.localId);
+    return requestAgent(target, `/instances/${encodeURIComponent(localId)}/open-file`, {
+      method: "POST",
+      body: body(input)
+    });
+  },
+
+  cleanupUploadSession(target: HostAgentTarget, input: {
+    instanceId: string;
+    localId?: string | number;
+    adbId: string;
+    runtimeSessionId: string;
+  }) {
+    const localId = input.localId === undefined || input.localId === null || input.localId === ""
+      ? input.instanceId
+      : String(input.localId);
+    return requestAgent(target, `/instances/${encodeURIComponent(localId)}/cleanup-upload-session`, {
+      method: "POST",
+      body: body(input)
+    });
+  },
+
+  cleanupUploadStaging(target: HostAgentTarget, input: {
+    instanceId: string;
+    localId?: string | number;
+    adbId: string;
+    olderThanHours?: number;
+  }) {
+    const localId = input.localId === undefined || input.localId === null || input.localId === ""
+      ? input.instanceId
+      : String(input.localId);
+    return requestAgent(target, `/instances/${encodeURIComponent(localId)}/cleanup-upload-staging`, {
+      method: "POST",
+      body: body(input)
+    });
+  },
+
+  cleanupFactoryTemp(target: HostAgentTarget, input: {
+    instanceId: string;
+    localId?: string | number;
+    adbId: string;
+    olderThanHours?: number;
+    includeUploads?: boolean;
+    includeLiveScreenshots?: boolean;
+    includeDebugScreenshots?: boolean;
+  }) {
+    const localId = input.localId === undefined || input.localId === null || input.localId === ""
+      ? input.instanceId
+      : String(input.localId);
+    return requestAgent(target, `/instances/${encodeURIComponent(localId)}/cleanup-factory-temp`, {
+      method: "POST",
+      body: body(input)
+    });
+  },
+
+  factoryTempUsage(target: HostAgentTarget, input: {
+    instanceId: string;
+    localId?: string | number;
+    adbId: string;
+  }) {
+    const localId = input.localId === undefined || input.localId === null || input.localId === ""
+      ? input.instanceId
+      : String(input.localId);
+    return requestAgent(
+      target,
+      `/instances/${encodeURIComponent(localId)}/factory-temp-usage?adbId=${encodeURIComponent(input.adbId)}`,
+      { method: "GET" }
+    );
   }
 };

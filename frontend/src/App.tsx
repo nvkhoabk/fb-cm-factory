@@ -610,22 +610,24 @@ const jobBoardStatusOptions = ["PENDING", "ALLOCATED", "RUNNING", "COMPLETED", "
 const productionQueueStatusOptions = ["PENDING", "ALLOCATED", "RUNNING", "WAITING_RESOURCE", "WAITING_MUSIC", "FAILED_RECOVERABLE", "FAILED", "COMPLETED"];
 const productionPipelineStages = ["CHARACTER_GROUP", "IMAGE_EDIT", "VIDEO_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT"];
 const promptCategoryOptions = ["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT", "UTILITY"];
-const scriptStepTemplates: Record<string, { label: string; fields: Array<{ key: string; label: string; type?: "number" | "json" | "text"; required?: boolean }> }> = {
+const scriptStepTemplates: Record<string, { label: string; fields: Array<{ key: string; label: string; type?: "number" | "json" | "text" | "boolean"; required?: boolean }> }> = {
   wait: { label: "wait", fields: [{ key: "ms", label: "ms", type: "number", required: true }] },
   screenshot: { label: "screenshot", fields: [{ key: "label", label: "label" }] },
   tap: { label: "tap", fields: [{ key: "x", label: "x", type: "number", required: true }, { key: "y", label: "y", type: "number", required: true }] },
   swipe: { label: "swipe", fields: [{ key: "x1", label: "x1", type: "number", required: true }, { key: "y1", label: "y1", type: "number", required: true }, { key: "x2", label: "x2", type: "number", required: true }, { key: "y2", label: "y2", type: "number", required: true }, { key: "duration", label: "duration", type: "number" }] },
   "send-text": { label: "send-text", fields: [{ key: "text", label: "text", required: true }] },
+  "send-text-submit": { label: "send-text-submit", fields: [{ key: "text", label: "text", required: true }, { key: "submitKey", label: "submitKey" }] },
   "send-key": { label: "send-key", fields: [{ key: "key", label: "key", required: true }] },
   "download-latest": { label: "download-latest", fields: [{ key: "sourceDir", label: "sourceDir" }, { key: "extensions", label: "extensions", type: "json" }, { key: "targetFolder", label: "targetFolder" }] },
   "check-screen": { label: "check-screen", fields: [{ key: "templateId", label: "templateId", required: true }, { key: "timeoutMs", label: "timeoutMs", type: "number" }, { key: "matchType", label: "matchType" }] },
   "wait-screen": { label: "wait-screen", fields: [{ key: "templateId", label: "templateId", required: true }, { key: "timeoutMs", label: "timeoutMs", type: "number" }, { key: "intervalMs", label: "intervalMs", type: "number" }] },
-  "upload-file": { label: "upload-file", fields: [{ key: "fileAssetId", label: "fileAssetId", required: true }, { key: "target", label: "target" }] },
+  "upload-file": { label: "upload-file", fields: [{ key: "assetId", label: "assetId", required: true }, { key: "target", label: "target" }, { key: "openPicker", label: "openPicker", type: "boolean" }, { key: "cleanupAfterRun", label: "cleanupAfterRun", type: "boolean" }] },
+  "cleanup-factory-temp": { label: "cleanup-factory-temp", fields: [{ key: "olderThanHours", label: "olderThanHours", type: "number" }, { key: "includeUploads", label: "includeUploads", type: "boolean" }, { key: "includeLiveScreenshots", label: "includeLiveScreenshots", type: "boolean" }, { key: "includeDebugScreenshots", label: "includeDebugScreenshots", type: "boolean" }] },
   retry: { label: "retry", fields: [{ key: "maxRetries", label: "maxRetries", type: "number", required: true }, { key: "retryDelayMs", label: "retryDelayMs", type: "number" }] },
   if: { label: "if", fields: [{ key: "condition", label: "condition", required: true }, { key: "thenSteps", label: "thenSteps", type: "json" }, { key: "elseSteps", label: "elseSteps", type: "json" }] },
   "run-sub-script": { label: "run-sub-script", fields: [{ key: "scriptId", label: "scriptId", required: true }, { key: "versionId", label: "versionId" }] }
 };
-const scriptRuntimeVariables = ["{{prompt.image}}", "{{prompt.video}}", "{{prompt.music}}", "{{prompt.post}}", "{{group.name}}", "{{group.size}}", "{{batch.id}}", "{{asset.publicUrl}}", "{{runtime.instanceId}}", "{{runtime.adbId}}"];
+const scriptRuntimeVariables = ["{{prompt.image}}", "{{prompt.video}}", "{{prompt.music}}", "{{prompt.post}}", "{{group.name}}", "{{group.size}}", "{{batch.id}}", "{{asset.publicUrl}}", "{{asset.youngOriginalImage.id}}", "{{asset.oldOriginalImage.id}}", "{{runtime.instanceId}}", "{{runtime.adbId}}"];
 const standardGroupAttributeKeys = ["background", "outfit", "emotion", "scene"];
 const workflowJobTypes = ["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT"];
 const defaultFullPipelineRules = [
@@ -1144,7 +1146,6 @@ function LiveInstanceView({
     if (!canRun || !text) return;
     if (mode === "script-designer") {
       onCaptureStep?.({ type: "send-text", config: { text } });
-      return;
     }
     await api(`/hosts/${hostId}/send-text`, {
       method: "POST",
@@ -1153,11 +1154,26 @@ function LiveInstanceView({
     onStatus?.("Text sent");
   }
 
+  async function runSendTextSubmit() {
+    if (!canRun || !text) return;
+    if (mode === "script-designer") {
+      onCaptureStep?.({ type: "send-text-submit", config: { text, submitKey: "ENTER" } });
+    }
+    await api(`/hosts/${hostId}/send-text`, {
+      method: "POST",
+      body: JSON.stringify({ instanceId, adbId, text })
+    });
+    await api(`/hosts/${hostId}/send-key`, {
+      method: "POST",
+      body: JSON.stringify({ instanceId, adbId, key: "ENTER" })
+    });
+    onStatus?.("Text sent and submitted");
+  }
+
   async function runSendKey(key: string) {
     if (!canRun) return;
     if (mode === "script-designer") {
-      onCaptureStep?.({ type: "send-key", config: { keyCode: key } });
-      return;
+      onCaptureStep?.({ type: "send-key", config: { key } });
     }
     await api(`/hosts/${hostId}/send-key`, {
       method: "POST",
@@ -1180,7 +1196,6 @@ function LiveInstanceView({
       setLastTap(point);
       if (mode === "script-designer") {
         onCaptureStep?.({ type: "tap", config: point });
-        return;
       }
       runTap(point);
     }
@@ -1204,9 +1219,8 @@ function LiveInstanceView({
     setSwipeStart(null);
     if (mode === "script-designer") {
       onCaptureStep?.({ type: "swipe", config: { ...swipe, durationMs: 300 } });
-    } else {
-      runSwipe(swipe);
     }
+    runSwipe(swipe);
   }
 
   return (
@@ -1258,10 +1272,12 @@ function LiveInstanceView({
           <label>Text<input value={text} onChange={(event) => setText(event.target.value)} placeholder="Send text through ADB Keyboard" /></label>
           <div className="resourceActions">
             <button disabled={!canRun || !text} onClick={runSendText}>Send Text</button>
+            <button disabled={!canRun || !text} onClick={runSendTextSubmit}>Send + Submit</button>
             {["BACK", "HOME", "ENTER", "TAB"].map((key) => <button disabled={!canRun} key={key} onClick={() => runSendKey(key)}>{key}</button>)}
             {mode === "script-designer" ? (
               <>
                 <button onClick={() => onCaptureStep?.({ type: "screenshot", config: {} })}>Add Screenshot Step</button>
+                <button onClick={() => onCaptureStep?.({ type: "upload-file", config: { assetId: "{{asset.youngOriginalImage.id}}", target: "android-file-picker", openPicker: true, cleanupAfterRun: true } })}>Add Upload File Step</button>
                 <button onClick={() => onCaptureStep?.({ type: "download-latest", config: {} })}>Add Download Latest Step</button>
               </>
             ) : null}
@@ -1477,7 +1493,7 @@ function scriptStepFlowLabel(step: Record<string, unknown>) {
   if (type === "retry") return `RETRY ${config.attempts ?? config.maxAttempts ?? ""}`.trim();
   if (type === "wait" || type === "wait-screen") return "WAIT";
   if (type === "check-screen") return "CHECK";
-  if (["tap", "swipe", "send-text", "send-key"].includes(type)) return "ACTION";
+  if (["tap", "swipe", "send-text", "send-text-submit", "send-key"].includes(type)) return "ACTION";
   if (["upload-file", "download-latest", "screenshot"].includes(type)) return "IO";
   if (type === "run-sub-script") return "SUB-SCRIPT";
   return "STEP";
@@ -4490,7 +4506,7 @@ export function App() {
 
   function addScriptStep(type = "wait") {
     const template = scriptStepTemplates[type];
-    const config = Object.fromEntries((template?.fields ?? []).map((field) => [field.key, field.type === "number" ? 0 : field.type === "json" ? [] : ""]));
+    const config = Object.fromEntries((template?.fields ?? []).map((field) => [field.key, field.type === "number" ? 0 : field.type === "json" ? [] : field.type === "boolean" ? true : field.key === "target" && type === "upload-file" ? "android-file-picker" : ""]));
     const next = [...scriptDraft.steps, normalizeScriptStep({ type, config }, scriptDraft.steps.length)];
     setSelectedScriptStepIndex(next.length - 1);
     setScriptDraftDefinition({ steps: next });
@@ -4532,7 +4548,7 @@ export function App() {
     if (!step) return;
     const config = scriptStepConfig(step);
     const template = scriptStepTemplates[scriptStepType(step)];
-    const textField = template?.fields.find((field) => field.type !== "number" && field.type !== "json")?.key ?? "text";
+    const textField = template?.fields.find((field) => field.type !== "number" && field.type !== "json" && field.type !== "boolean")?.key ?? "text";
     updateScriptStepConfig(selectedScriptStepIndex, textField, `${getString(config[textField])}${variable}`);
   }
 
@@ -6961,6 +6977,21 @@ export function App() {
                                         <label key={field.key}>{field.label}
                                           {field.type === "json" ? (
                                             <textarea value={compactJson(config[field.key] ?? [])} onChange={(event) => updateScriptStepConfig(index, field.key, parseJsonText(event.target.value, [] as unknown as Record<string, unknown>))} />
+                                          ) : field.type === "boolean" ? (
+                                            <input
+                                              type="checkbox"
+                                              checked={config[field.key] !== false}
+                                              onChange={(event) => updateScriptStepConfig(index, field.key, event.target.checked)}
+                                            />
+                                          ) : type === "upload-file" && field.key === "assetId" ? (
+                                            <select value={String(config[field.key] ?? "")} onChange={(event) => updateScriptStepConfig(index, field.key, event.target.value)}>
+                                              <option value="">Select asset...</option>
+                                              <option value="{{asset.youngOriginalImage.id}}">Young Original from runtime context</option>
+                                              <option value="{{asset.oldOriginalImage.id}}">Old Original from runtime context</option>
+                                              {assets.filter((asset) => asset.filePath || asset.publicUrl).slice(0, 200).map((asset) => (
+                                                <option key={asset.id} value={asset.id}>{asset.name || asset.id}</option>
+                                              ))}
+                                            </select>
                                           ) : (
                                             <input
                                               type={field.type === "number" ? "number" : "text"}
@@ -7206,6 +7237,21 @@ export function App() {
                                     <label key={field.key}>{field.label}
                                       {field.type === "json" ? (
                                         <textarea value={compactJson(config[field.key] ?? [])} onChange={(event) => updateScriptStepConfig(safeIndex, field.key, parseJsonText(event.target.value, [] as unknown as Record<string, unknown>))} />
+                                      ) : field.type === "boolean" ? (
+                                        <input
+                                          type="checkbox"
+                                          checked={config[field.key] !== false}
+                                          onChange={(event) => updateScriptStepConfig(safeIndex, field.key, event.target.checked)}
+                                        />
+                                      ) : type === "upload-file" && field.key === "assetId" ? (
+                                        <select value={String(config[field.key] ?? "")} onChange={(event) => updateScriptStepConfig(safeIndex, field.key, event.target.value)}>
+                                          <option value="">Select asset...</option>
+                                          <option value="{{asset.youngOriginalImage.id}}">Young Original from runtime context</option>
+                                          <option value="{{asset.oldOriginalImage.id}}">Old Original from runtime context</option>
+                                          {assets.filter((asset) => asset.filePath || asset.publicUrl).slice(0, 200).map((asset) => (
+                                            <option key={asset.id} value={asset.id}>{asset.name || asset.id}</option>
+                                          ))}
+                                        </select>
                                       ) : (
                                         <input
                                           type={field.type === "number" ? "number" : "text"}
@@ -7216,6 +7262,7 @@ export function App() {
                                     </label>
                                   ))}
                                   {!template ? <p className="emptyDetail">Unknown step type. Use JSON editor fallback for custom config.</p> : null}
+                                  {type === "upload-file" ? <p className="emptyDetail">Upload staging uses /sdcard/fb-cm-factory/uploads/&lt;runtimeSessionId&gt;/ and never uses /sdcard/Download.</p> : null}
                                 </div>
                               </>
                             );
