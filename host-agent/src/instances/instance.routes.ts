@@ -24,8 +24,11 @@ function sendError(res: import("express").Response, error: unknown) {
   const code = knownCodes.has(errorName)
     ? errorName
     : message.includes("adbId") ? "ADB_ID_REQUIRED" : "INSTANCE_COMMAND_ERROR";
+  const detail = error && typeof error === "object" && "detail" in error
+    ? (error as { detail?: unknown }).detail
+    : undefined;
   res.status(code === "ADB_ID_REQUIRED" || code === "TEXT_REQUIRED" || code === "NO_MATCHING_FILE_FOUND" || code === "RUNTIME_CONTEXT_REQUIRED" || code === "ASSET_ID_REQUIRED" || code === "UPLOAD_FILE_NOT_FOUND" || code === "INVALID_REMOTE_PATH" || code === "INVALID_SCROLL_INPUT" || code === "DOWNLOAD_OUTPUT_NOT_FOUND" ? 400 : code === "CLEAR_DOWNLOAD_FAILED" ? 502 : 500)
-    .json({ ok: false, error: { code, message } });
+    .json({ ok: false, error: { code, message, ...(detail === undefined ? {} : { detail }) } });
 }
 
 function numberBody(value: unknown, key: string) {

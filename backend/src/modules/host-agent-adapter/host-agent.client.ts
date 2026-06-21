@@ -6,6 +6,7 @@ type HostAgentResponse = {
   error?: {
     code?: string;
     message?: string;
+    detail?: unknown;
   };
 };
 
@@ -44,7 +45,8 @@ async function requestAgent(
       throw new AppError(
         body.error?.code ?? "HOST_AGENT_REQUEST_FAILED",
         body.error?.message ?? `Host Agent request failed with ${response.status}`,
-        response.status >= 500 ? 502 : response.status
+        response.status >= 500 ? 502 : response.status,
+        body.error?.detail
       );
     }
 

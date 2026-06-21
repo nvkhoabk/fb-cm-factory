@@ -663,10 +663,14 @@ export function migrate() {
       error_code TEXT,
       error_message TEXT,
       screenshot_asset_id TEXT,
+      screenshot_file_path TEXT,
+      screenshot_public_url TEXT,
+      screenshot_thumbnail_url TEXT,
       status TEXT DEFAULT 'NEW',
       classification TEXT DEFAULT 'UNKNOWN',
       resolution_type TEXT,
       recovery_script_id TEXT,
+      metadata_json TEXT DEFAULT '{}',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -729,6 +733,10 @@ export function migrate() {
   addColumnIfMissing("error_events", "classification", "TEXT DEFAULT 'UNKNOWN'");
   addColumnIfMissing("error_events", "resolution_type", "TEXT");
   addColumnIfMissing("error_events", "recovery_script_id", "TEXT");
+  addColumnIfMissing("error_events", "screenshot_file_path", "TEXT");
+  addColumnIfMissing("error_events", "screenshot_public_url", "TEXT");
+  addColumnIfMissing("error_events", "screenshot_thumbnail_url", "TEXT");
+  addColumnIfMissing("error_events", "metadata_json", "TEXT DEFAULT '{}'");
 
   db.prepare(`
     UPDATE instances

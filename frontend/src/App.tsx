@@ -393,6 +393,9 @@ type ErrorEventRecord = {
   errorCode?: string | null;
   errorMessage?: string | null;
   screenshotAssetId?: string | null;
+  screenshotFilePath?: string | null;
+  screenshotPublicUrl?: string | null;
+  screenshotThumbnailUrl?: string | null;
   screenshotAsset?: {
     id?: string | null;
     publicUrl?: string | null;
@@ -404,6 +407,7 @@ type ErrorEventRecord = {
   classification: string;
   resolutionType?: string | null;
   recoveryScriptId?: string | null;
+  metadata?: Record<string, unknown>;
   createdAt?: string | null;
   updatedAt?: string | null;
 };
@@ -3311,7 +3315,7 @@ export function App() {
       api<ScriptRun[]>("/script-runs"),
       api<ScriptRecord[]>("/scripts"),
       api<ScreenTemplateRecord[]>("/screen-templates"),
-      api<ErrorEventRecord[]>("/error-center/events"),
+      api<ErrorEventRecord[]>("/error-events"),
       api<ErrorCenterKpis>("/error-center/kpis"),
       api<OrchestratorRule[]>("/orchestrator/rules")
     ]);
@@ -4383,7 +4387,7 @@ export function App() {
       api<ScriptRun[]>("/script-runs"),
       api<ScriptRecord[]>("/scripts"),
       api<ScreenTemplateRecord[]>("/screen-templates"),
-      api<ErrorEventRecord[]>("/error-center/events"),
+      api<ErrorEventRecord[]>("/error-events"),
       api<ErrorCenterKpis>("/error-center/kpis"),
       api<OrchestratorRule[]>("/orchestrator/rules")
     ]);
@@ -4996,7 +5000,7 @@ export function App() {
 
   async function updateErrorEvent(eventId: string, patch: Record<string, unknown>) {
     return adminAction("Updating error event", async () => {
-      const updated = await api<ErrorEventRecord>(`/error-center/events/${eventId}`, {
+      const updated = await api<ErrorEventRecord>(`/error-events/${eventId}`, {
         method: "PATCH",
         body: JSON.stringify(patch)
       });
@@ -5008,7 +5012,7 @@ export function App() {
 
   async function createTemplateFromError(event: ErrorEventRecord) {
     return adminAction("Creating screen template from error", async () => {
-      const template = await api<ScreenTemplateRecord>(`/error-center/events/${event.id}/screen-template`, {
+      const template = await api<ScreenTemplateRecord>(`/error-events/${event.id}/create-screen-template`, {
         method: "POST",
         body: JSON.stringify({
           name: `${event.errorCode ?? "Error"} template`,
@@ -5031,10 +5035,26 @@ export function App() {
     const screenTemplateId = window.prompt("Screen template id", screenTemplates[0]?.id ?? "");
     if (!screenTemplateId) return;
     return adminAction("Attaching recovery script", async () => {
-      const result = await api(`/error-center/events/${event.id}/recovery-script`, {
+      const result = await api(`/error-events/${event.id}/attach-recovery-script`, {
         method: "POST",
         body: JSON.stringify({ recoveryScriptId, screenTemplateId, enabled: true, priority: 100 })
       });
+      await refreshQueue();
+      return result;
+    });
+  }
+
+  async function resolveErrorEvent(event: ErrorEventRecord) {
+    return adminAction("Resolving error event", async () => {
+      const result = await api(`/error-events/${event.id}/resolve`, { method: "POST" });
+      await refreshQueue();
+      return result;
+    });
+  }
+
+  async function ignoreErrorEvent(event: ErrorEventRecord) {
+    return adminAction("Ignoring error event", async () => {
+      const result = await api(`/error-events/${event.id}/ignore`, { method: "POST" });
       await refreshQueue();
       return result;
     });
@@ -6567,7 +6587,7 @@ export function App() {
                 .filter((event) => (!errorCenterFilters.status || event.status === errorCenterFilters.status)
                   && (!errorCenterFilters.classification || event.classification === errorCenterFilters.classification))
                 .map((event) => {
-                  const imageUrl = event.screenshotAsset?.thumbnailPublicUrl ?? event.screenshotAsset?.publicUrl ?? "";
+                  const imageUrl = event.screenshotThumbnailUrl ?? event.screenshotPublicUrl ?? event.screenshotAsset?.thumbnailPublicUrl ?? event.screenshotAsset?.publicUrl ?? "";
                   return (
                     <article className={`managementJobCard ${selectedErrorEventId === event.id ? "selected" : ""}`} key={event.id} onClick={() => { setSelectedErrorEventId(event.id); setErrorDetailTab("overview"); }}>
                       <header>
@@ -6588,7 +6608,7 @@ export function App() {
                         <button onClick={(click) => { click.stopPropagation(); setSelectedErrorEventId(event.id); }}>Open</button>
                         <button onClick={(click) => { click.stopPropagation(); createTemplateFromError(event); }}>Create Screen Template</button>
                         <button onClick={(click) => { click.stopPropagation(); attachRecoveryScriptToError(event); }}>Attach Recovery Script</button>
-                        <button onClick={(click) => { click.stopPropagation(); updateErrorEvent(event.id, { status: "RESOLVED", resolutionType: "MANUAL" }); }}>Resolve</button>
+                        <button onClick={(click) => { click.stopPropagation(); resolveErrorEvent(event); }}>Resolve</button>
                       </div>
                     </article>
                   );
@@ -6599,7 +6619,7 @@ export function App() {
               const event = errorEvents.find((item) => item.id === selectedErrorEventId) ?? errorEvents[0] ?? null;
               const runtime = event?.runtimeSessionId ? runtimeSessions.find((session) => session.id === event.runtimeSessionId) : null;
               const run = event?.scriptRunId ? scriptRuns.find((scriptRun) => scriptRun.id === event.scriptRunId) : null;
-              const imageUrl = event?.screenshotAsset?.publicUrl ?? event?.screenshotAsset?.thumbnailPublicUrl ?? "";
+              const imageUrl = event?.screenshotPublicUrl ?? event?.screenshotThumbnailUrl ?? event?.screenshotAsset?.publicUrl ?? event?.screenshotAsset?.thumbnailPublicUrl ?? "";
               return (
                 <aside className="resourceDrawer panel">
                   {event ? (
@@ -6636,8 +6656,8 @@ export function App() {
                           <div className="resourceActions">
                             <button onClick={() => createTemplateFromError(event)}>Create Screen Template</button>
                             <button onClick={() => attachRecoveryScriptToError(event)}>Attach Recovery Script</button>
-                            <button onClick={() => updateErrorEvent(event.id, { status: "IGNORED" })}>Ignore</button>
-                            <button onClick={() => updateErrorEvent(event.id, { status: "RESOLVED", resolutionType: "MANUAL" })}>Resolve</button>
+                            <button onClick={() => ignoreErrorEvent(event)}>Ignore</button>
+                            <button onClick={() => resolveErrorEvent(event)}>Resolve</button>
                           </div>
                           <pre className="jsonBlock">{compactJson({ recoveryScriptId: event.recoveryScriptId, resolutionType: event.resolutionType })}</pre>
                         </div>

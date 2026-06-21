@@ -100,6 +100,7 @@ function clearDownloadCommand(sourceDir: string, extensions: string[]) {
     `dir=${shellQuote(sourceDir)}`,
     `count=0`,
     `names=""`,
+    `[ -d "$dir" ] || { printf 'COUNT=0\\n'; exit 0; }`,
     `for f in "$dir"/*; do`,
     `[ -f "$f" ] || continue`,
     `ext="\${f##*.}"`,
@@ -144,7 +145,18 @@ export const downloadLatestService = {
     } catch (error) {
       const clearError = new Error("CLEAR_DOWNLOAD_FAILED");
       clearError.name = "CLEAR_DOWNLOAD_FAILED";
-      (clearError as Error & { cause?: unknown }).cause = error;
+      const cause = error && typeof error === "object" ? error as Record<string, unknown> : {};
+      (clearError as Error & { cause?: unknown; detail?: unknown }).cause = error;
+      (clearError as Error & { detail?: unknown }).detail = {
+        adbId: input.adbId,
+        sourceDir,
+        extensions,
+        command: config.adbPath,
+        args: ["-s", input.adbId, "shell", "sh", "-c", clearDownloadCommand(sourceDir, extensions)],
+        stdout: typeof cause.stdout === "string" ? cause.stdout : "",
+        stderr: typeof cause.stderr === "string" ? cause.stderr : "",
+        message: error instanceof Error ? error.message : String(error)
+      };
       throw clearError;
     }
   },

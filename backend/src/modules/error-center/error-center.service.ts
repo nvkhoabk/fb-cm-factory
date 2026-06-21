@@ -110,7 +110,14 @@ export const errorCenterService = {
       adbId: input.adbId ?? null,
       errorCode: errorCode(input.error),
       errorMessage: errorMessage(input.error),
-      screenshotAssetId: null
+      screenshotAssetId: null,
+      screenshotFilePath: null,
+      screenshotPublicUrl: null,
+      screenshotThumbnailUrl: null,
+      metadata: {
+        context: input.context ?? {},
+        capturedAt: now()
+      }
     });
     if (!placeholder?.id) return placeholder;
 
@@ -159,6 +166,20 @@ export const errorCenterService = {
             }
           });
           screenshotAssetId = typeof asset?.id === "string" ? asset.id : null;
+          if (screenshotAssetId) {
+            const assetRecord = asset as NonNullable<typeof asset>;
+            return errorCenterRepository.setScreenshot({
+              id: placeholder.id,
+              screenshotAssetId,
+              screenshotFilePath: typeof assetRecord.filePath === "string" ? assetRecord.filePath : stored.filePath,
+              screenshotPublicUrl: typeof assetRecord.publicUrl === "string" ? assetRecord.publicUrl : stored.publicUrl,
+              screenshotThumbnailUrl: typeof assetRecord.thumbnailPublicUrl === "string" ? assetRecord.thumbnailPublicUrl : stored.publicUrl,
+              metadata: {
+                sourceUrl: stored.sourceUrl,
+                screenshotStorageKey: stored.storageKey
+              }
+            });
+          }
         }
       } catch (captureError) {
         console.warn("[error-center] failed to capture error screenshot", captureError);
@@ -171,16 +192,16 @@ export const errorCenterService = {
   createScreenTemplateFromError(id: string, input: CreateScreenTemplateFromErrorInput) {
     const event = this.getEvent(id);
     const asset = event.screenshotAsset as Record<string, unknown> | null;
-    if (!asset?.id) throw new AppError("ERROR_SCREENSHOT_REQUIRED", "Error event does not have a screenshot asset", 400);
+    if (!asset?.id && !event.screenshotPublicUrl) throw new AppError("ERROR_SCREENSHOT_REQUIRED", "Error event does not have a screenshot", 400);
     return screenTemplateService.create({
       name: input.name ?? `${event.errorCode ?? "Error"} ${event.id}`,
       category: input.category,
       matchType: input.matchType,
       templateType: input.matchType,
-      templateImageAssetId: String(asset.id),
-      templateImagePath: typeof asset.filePath === "string" ? asset.filePath : null,
-      templateImageUrl: typeof asset.publicUrl === "string" ? asset.publicUrl : null,
-      templateThumbnailUrl: typeof asset.thumbnailPublicUrl === "string" ? asset.thumbnailPublicUrl : typeof asset.publicUrl === "string" ? asset.publicUrl : null,
+      templateImageAssetId: asset?.id ? String(asset.id) : null,
+      templateImagePath: typeof asset?.filePath === "string" ? asset.filePath : event.screenshotFilePath ?? null,
+      templateImageUrl: typeof asset?.publicUrl === "string" ? asset.publicUrl : event.screenshotPublicUrl ?? null,
+      templateThumbnailUrl: typeof asset?.thumbnailPublicUrl === "string" ? asset.thumbnailPublicUrl : event.screenshotThumbnailUrl ?? event.screenshotPublicUrl ?? null,
       threshold: input.threshold,
       status: "DRAFT",
       description: `Created from error event ${event.id}`,

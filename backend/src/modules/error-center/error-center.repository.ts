@@ -25,11 +25,15 @@ export function mapErrorEvent(row: Record<string, unknown>) {
     errorCode: text(row, "error_code"),
     errorMessage: text(row, "error_message"),
     screenshotAssetId: text(row, "screenshot_asset_id"),
+    screenshotFilePath: text(row, "screenshot_file_path") ?? asset?.filePath ?? null,
+    screenshotPublicUrl: text(row, "screenshot_public_url") ?? asset?.publicUrl ?? null,
+    screenshotThumbnailUrl: text(row, "screenshot_thumbnail_url") ?? asset?.thumbnailPublicUrl ?? null,
     screenshotAsset: asset,
     status: text(row, "status") ?? "NEW",
     classification: text(row, "classification") ?? "UNKNOWN",
     resolutionType: text(row, "resolution_type"),
     recoveryScriptId: text(row, "recovery_script_id"),
+    metadata: jsonParse(row.metadata_json, {}),
     createdAt: text(row, "created_at"),
     updatedAt: text(row, "updated_at")
   };
@@ -96,20 +100,32 @@ export const errorCenterRepository = {
     errorCode?: string | null;
     errorMessage?: string | null;
     screenshotAssetId?: string | null;
+    screenshotFilePath?: string | null;
+    screenshotPublicUrl?: string | null;
+    screenshotThumbnailUrl?: string | null;
+    metadata?: Record<string, unknown>;
   }) {
     const id = createId("err");
     const timestamp = now();
     db.prepare(`
       INSERT INTO error_events (
         id, runtime_session_id, script_run_id, step_no, host_id, instance_id, adb_id,
-        error_code, error_message, screenshot_asset_id, status, classification,
-        resolution_type, recovery_script_id, created_at, updated_at
+        error_code, error_message, screenshot_asset_id, screenshot_file_path,
+        screenshot_public_url, screenshot_thumbnail_url, status, classification,
+        resolution_type, recovery_script_id, metadata_json, created_at, updated_at
       ) VALUES (
         @id, @runtimeSessionId, @scriptRunId, @stepNo, @hostId, @instanceId, @adbId,
-        @errorCode, @errorMessage, @screenshotAssetId, 'NEW', 'UNKNOWN',
-        NULL, NULL, @createdAt, @updatedAt
+        @errorCode, @errorMessage, @screenshotAssetId, @screenshotFilePath,
+        @screenshotPublicUrl, @screenshotThumbnailUrl, 'NEW', 'UNKNOWN',
+        NULL, NULL, @metadataJson, @createdAt, @updatedAt
       )
-    `).run({ id, ...input, createdAt: timestamp, updatedAt: timestamp });
+    `).run({
+      id,
+      ...input,
+      metadataJson: JSON.stringify(input.metadata ?? {}),
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
     return this.getEvent(id);
   },
 
@@ -138,6 +154,40 @@ export const errorCenterRepository = {
       updatedAt: now()
     });
     return this.getEvent(id);
+  },
+
+  setScreenshot(input: {
+    id: string;
+    screenshotAssetId?: string | null;
+    screenshotFilePath?: string | null;
+    screenshotPublicUrl?: string | null;
+    screenshotThumbnailUrl?: string | null;
+    metadata?: Record<string, unknown>;
+  }) {
+    const current = this.getEvent(input.id);
+    const metadata = {
+      ...(current?.metadata && typeof current.metadata === "object" ? current.metadata : {}),
+      ...(input.metadata ?? {})
+    };
+    db.prepare(`
+      UPDATE error_events
+      SET screenshot_asset_id = @screenshotAssetId,
+          screenshot_file_path = @screenshotFilePath,
+          screenshot_public_url = @screenshotPublicUrl,
+          screenshot_thumbnail_url = @screenshotThumbnailUrl,
+          metadata_json = @metadataJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id: input.id,
+      screenshotAssetId: input.screenshotAssetId ?? current?.screenshotAssetId ?? null,
+      screenshotFilePath: input.screenshotFilePath ?? current?.screenshotFilePath ?? null,
+      screenshotPublicUrl: input.screenshotPublicUrl ?? current?.screenshotPublicUrl ?? null,
+      screenshotThumbnailUrl: input.screenshotThumbnailUrl ?? current?.screenshotThumbnailUrl ?? null,
+      metadataJson: JSON.stringify(metadata),
+      updatedAt: now()
+    });
+    return this.getEvent(input.id);
   },
 
   setScreenshotAsset(id: string, screenshotAssetId: string) {
