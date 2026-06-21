@@ -41,7 +41,7 @@ function latestFileCommand(sourceDir: string, extensions: string[]) {
     `printf '%s\\t%s\\t%s\\n' "$ts" "$size" "$f"`,
     `;; esac`,
     `done | sort -nr`
-  ].join("; ");
+  ].join("\n");
 }
 
 function isBlockedFactorySourceDir(sourceDir: string) {
@@ -111,12 +111,12 @@ function clearDownloadCommand(sourceDir: string, extensions: string[]) {
     `done`,
     `printf 'COUNT=%s\\n' "$count"`,
     `printf '%b' "$names"`
-  ].join("; ");
+  ].join("\n");
 }
 
 export const downloadLatestService = {
   async clearDownload(input: ClearDownloadInput) {
-    const sourceDir = input.sourceDir ?? "/sdcard/Download";
+    const sourceDir = input.sourceDir?.trim() || "/sdcard/Download";
     const extensions = allowedExtensions(input.extensions);
 
     if (config.mockMode) {
@@ -162,7 +162,7 @@ export const downloadLatestService = {
   },
 
   async downloadLatest(input: DownloadLatestInput) {
-    const sourceDir = input.sourceDir ?? "/sdcard/Download";
+    const sourceDir = input.sourceDir?.trim() || "/sdcard/Download";
     const extensions = allowedExtensions(input.extensions);
     const targetFolder = taskOutputFolder(input.targetFolder);
     const folder = storageService.ensureTargetFolder(targetFolder);

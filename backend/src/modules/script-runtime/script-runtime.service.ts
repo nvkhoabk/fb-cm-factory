@@ -1246,7 +1246,7 @@ export const scriptRuntimeService = {
         instanceId: session.instanceId,
         localId: resolveLocalId(input, _context),
         adbId: resolveAdbId(input, _context),
-        sourceDir: typeof input.sourceDir === "string" ? input.sourceDir : undefined,
+        sourceDir: typeof input.sourceDir === "string" && input.sourceDir.trim() ? input.sourceDir.trim() : undefined,
         extensions: Array.isArray(input.extensions) ? input.extensions.map(String) : undefined,
         targetFolder: typeof input.targetFolder === "string" ? input.targetFolder : "task-outputs",
         deleteAfterPull: typeof input.deleteAfterPull === "boolean" ? input.deleteAfterPull : undefined
@@ -1265,7 +1265,7 @@ export const scriptRuntimeService = {
         instanceId: session.instanceId,
         localId: resolveLocalId(input, _context),
         adbId: resolveAdbId(input, _context),
-        sourceDir: typeof input.sourceDir === "string" ? input.sourceDir : undefined,
+        sourceDir: typeof input.sourceDir === "string" && input.sourceDir.trim() ? input.sourceDir.trim() : undefined,
         extensions: Array.isArray(input.extensions) ? input.extensions.map(String) : undefined
       });
     }
