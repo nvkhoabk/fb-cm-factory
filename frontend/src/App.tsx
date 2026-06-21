@@ -366,14 +366,54 @@ type ScreenTemplateRecord = {
   id: string;
   name: string;
   category: string;
-  templateType: "OCR_TEXT" | "IMAGE_MATCH" | "REGION_MATCH" | string;
+  matchType?: "IMAGE" | "OCR_TEXT" | "REGION_IMAGE" | "MANUAL_FLAG" | string;
+  templateType: "IMAGE" | "OCR_TEXT" | "REGION_IMAGE" | "MANUAL_FLAG" | string;
+  description?: string | null;
+  templateImageAssetId?: string | null;
+  templateImagePath?: string | null;
   templateImageUrl?: string | null;
+  templateThumbnailUrl?: string | null;
   ocrText?: string | null;
   threshold: number;
   region?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
   status: string;
   createdAt?: string | null;
   updatedAt?: string | null;
+};
+
+type ErrorEventRecord = {
+  id: string;
+  runtimeSessionId?: string | null;
+  scriptRunId?: string | null;
+  stepNo?: number | null;
+  hostId?: string | null;
+  instanceId?: string | null;
+  adbId?: string | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  screenshotAssetId?: string | null;
+  screenshotAsset?: {
+    id?: string | null;
+    publicUrl?: string | null;
+    thumbnailPublicUrl?: string | null;
+    filePath?: string | null;
+    metadata?: Record<string, unknown>;
+  } | null;
+  status: string;
+  classification: string;
+  resolutionType?: string | null;
+  recoveryScriptId?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+type ErrorCenterKpis = {
+  newErrors: number;
+  classifiedErrors: number;
+  autoRecoverable: number;
+  resolved: number;
+  unresolved: number;
 };
 
 type OrchestratorRule = {
@@ -580,7 +620,7 @@ type ManagementSection =
   | "orchestrator-rules"
   | "jobs"
   | "runtime-sessions";
-type AppPage = "control-center" | "studio" | "asset-center" | "production-jobs" | "management";
+type AppPage = "control-center" | "studio" | "asset-center" | "production-jobs" | "monitoring" | "management";
 type CapacityPoolsTab = "operational" | "capabilities" | "workflow" | "legacy";
 type CapacityDrawerTab = "overview" | "capabilities" | "allocation" | "history" | "host" | "json";
 type ProductionControlView = "group" | "job";
@@ -681,13 +721,13 @@ const scriptStepTemplates: Record<string, { label: string; fields: Array<{ key: 
   "scroll-to-end": { label: "Scroll To End", fields: [{ key: "direction", label: "direction" }, { key: "iterations", label: "iterations", type: "number" }, { key: "durationMs", label: "durationMs", type: "number" }, { key: "pauseMs", label: "pauseMs", type: "number" }] },
   "clear-download": { label: "clear-download", fields: [{ key: "sourceDir", label: "sourceDir" }, { key: "extensions", label: "extensions", type: "json" }] },
   "download-latest": { label: "download-latest", fields: [{ key: "sourceDir", label: "sourceDir" }, { key: "extensions", label: "extensions", type: "json" }, { key: "targetFolder", label: "targetFolder" }, { key: "outputRole", label: "outputRole" }, { key: "bindTo", label: "bindTo", type: "json" }, { key: "createAsset", label: "createAsset", type: "boolean" }, { key: "createOrUpdateBatch", label: "createOrUpdateBatch", type: "boolean" }] },
-  "check-screen": { label: "check-screen", fields: [{ key: "templateId", label: "Screen Template", required: true }, { key: "matchType", label: "Match Type" }, { key: "threshold", label: "threshold", type: "number" }, { key: "timeoutMs", label: "timeoutMs", type: "number" }] },
+  "check-screen": { label: "check-screen", fields: [{ key: "templateId", label: "Screen Template", required: true }, { key: "matchType", label: "Match Type" }, { key: "threshold", label: "threshold", type: "number" }, { key: "timeoutMs", label: "timeoutMs", type: "number" }, { key: "saveScreenshot", label: "saveScreenshot", type: "boolean" }, { key: "failIfNotMatched", label: "failIfNotMatched", type: "boolean" }] },
   "wait-screen": { label: "wait-screen", fields: [{ key: "templateId", label: "Screen Template", required: true }, { key: "matchType", label: "Match Type" }, { key: "timeoutMs", label: "timeoutMs", type: "number" }, { key: "pollIntervalMs", label: "pollIntervalMs", type: "number" }, { key: "threshold", label: "threshold", type: "number" }] },
   "upload-file": { label: "upload-file", fields: [{ key: "assetSource", label: "Asset Source", required: true }, { key: "assetId", label: "Asset" }, { key: "target", label: "Target" }, { key: "openPicker", label: "openPicker", type: "boolean" }, { key: "cleanupAfterRun", label: "cleanupAfterRun", type: "boolean" }] },
   "cleanup-factory-temp": { label: "cleanup-factory-temp", fields: [{ key: "olderThanHours", label: "olderThanHours", type: "number" }, { key: "includeUploads", label: "includeUploads", type: "boolean" }, { key: "includeLiveScreenshots", label: "includeLiveScreenshots", type: "boolean" }, { key: "includeDebugScreenshots", label: "includeDebugScreenshots", type: "boolean" }] },
   retry: { label: "retry", fields: [{ key: "targetStepNo", label: "targetStepNo", type: "number", required: true }, { key: "maxRetries", label: "maxRetries", type: "number", required: true }, { key: "retryDelayMs", label: "retryDelayMs", type: "number" }] },
   if: { label: "if", fields: [{ key: "condition", label: "condition", type: "json", required: true }, { key: "thenSteps", label: "thenSteps", type: "json" }, { key: "elseSteps", label: "elseSteps", type: "json" }] },
-  "run-sub-script": { label: "run-sub-script", fields: [{ key: "scriptId", label: "scriptId", required: true }, { key: "versionId", label: "versionId" }, { key: "inheritContext", label: "inheritContext", type: "boolean" }] }
+  "run-sub-script": { label: "run-sub-script", fields: [{ key: "scriptId", label: "scriptId", required: true }, { key: "versionId", label: "versionId" }, { key: "inheritContext", label: "inheritContext", type: "boolean" }, { key: "continueOnFailure", label: "continueOnFailure", type: "boolean" }] }
 };
 const scriptRuntimeVariables = ["{{prompt.image}}", "{{prompt.video}}", "{{prompt.music}}", "{{prompt.post}}", "{{group.name}}", "{{group.size}}", "{{batch.id}}", "{{asset.publicUrl}}", "{{asset.youngOriginalImage.id}}", "{{asset.oldOriginalImage.id}}", "{{runtime.instanceId}}", "{{runtime.adbId}}"];
 const standardGroupAttributeKeys = ["background", "outfit", "emotion", "scene"];
@@ -715,6 +755,7 @@ const translations: Record<LanguageCode, Record<string, string>> = {
     "app.productionJobs": "Production Control Center",
     "app.assetCenter": "Asset Center",
     "app.productionStudio": "Production Studio",
+    "app.monitoring": "Monitoring",
     "app.management": "Management",
     "app.language": "Language",
     "app.refresh": "Refresh",
@@ -1283,6 +1324,36 @@ function LiveInstanceView({
     onStatus?.(`Key sent: ${key}`);
   }
 
+  async function createScreenTemplateFromCurrentScreenshot() {
+    if (!screenshotUrl) {
+      onStatus?.("Refresh live screenshot before creating a screen template");
+      return;
+    }
+    const name = window.prompt("Screen template name", `Screen Template ${new Date().toLocaleTimeString()}`);
+    if (!name) return;
+    const category = window.prompt("Category", "SYSTEM") || "SYSTEM";
+    const matchType = window.prompt("Match type: IMAGE, OCR_TEXT, REGION_IMAGE, MANUAL_FLAG", "IMAGE") || "IMAGE";
+    const thresholdText = window.prompt("Threshold", "0.8") || "0.8";
+    try {
+      await api("/screen-templates", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          category,
+          matchType,
+          templateImageUrl: screenshotUrl,
+          templateThumbnailUrl: screenshotUrl,
+          threshold: Number(thresholdText),
+          status: "DRAFT",
+          metadata: { source: "live-capture", instanceId, adbId }
+        })
+      });
+      onStatus?.("Screen template created from current screenshot");
+    } catch (error) {
+      onStatus?.(error instanceof Error ? error.message : "Could not create screen template");
+    }
+  }
+
   async function copyCoordinate(point = coordinate) {
     if (!point) return;
     await navigator.clipboard.writeText(`${point.x},${point.y}`);
@@ -1485,6 +1556,7 @@ function LiveInstanceView({
             {mode === "script-designer" ? (
               <>
                 <button onClick={() => onCaptureStep?.({ type: "screenshot", config: {} })}>Add Screenshot Step</button>
+                <button disabled={!screenshotUrl} onClick={createScreenTemplateFromCurrentScreenshot}>Create Screen Template</button>
                 <button onClick={() => setShowScrollStepModal(true)}>Add Scroll To End Step</button>
                 <button onClick={() => onCaptureStep?.({ type: "clear-download", description: "Clear Android Download folder", config: { sourceDir: "/sdcard/Download", extensions: ["png", "jpg", "jpeg", "webp", "mp4"] } })}>Add Clear Download Step</button>
                 <button onClick={() => onCaptureStep?.({ type: "upload-file", description: "Upload next original image from character group", config: { assetSource: "IMAGE_EDIT_NEXT_SOURCE", target: "android-file-picker", openPicker: true, cleanupAfterRun: true } })}>Add Upload File Step</button>
@@ -1950,6 +2022,8 @@ export function App() {
   const [runtimeSessions, setRuntimeSessions] = useState<RuntimeSession[]>([]);
   const [scriptRuns, setScriptRuns] = useState<ScriptRun[]>([]);
   const [screenTemplates, setScreenTemplates] = useState<ScreenTemplateRecord[]>([]);
+  const [errorEvents, setErrorEvents] = useState<ErrorEventRecord[]>([]);
+  const [errorKpis, setErrorKpis] = useState<ErrorCenterKpis>({ newErrors: 0, classifiedErrors: 0, autoRecoverable: 0, resolved: 0, unresolved: 0 });
   const [scriptVersions, setScriptVersions] = useState<ScriptVersionRecord[]>([]);
   const [scriptVersionIndex, setScriptVersionIndex] = useState<Record<string, ScriptVersionRecord[]>>({});
   const [launchedJobs, setLaunchedJobs] = useState<OrchestratorJob[]>([]);
@@ -2045,14 +2119,26 @@ export function App() {
   const [selectedScreenTemplateId, setSelectedScreenTemplateId] = useState("");
   const [screenTemplateForm, setScreenTemplateForm] = useState({
     name: "",
-    category: "Utility",
-    templateType: "OCR_TEXT",
+    category: "SYSTEM",
+    matchType: "OCR_TEXT",
+    description: "",
+    templateImageAssetId: "",
+    templateImagePath: "",
     templateImageUrl: "",
+    templateThumbnailUrl: "",
     ocrText: "",
     threshold: "0.8",
     region: "{}",
-    status: "active"
+    metadata: "{}",
+    status: "ACTIVE"
   });
+  const [screenTemplateFilters, setScreenTemplateFilters] = useState({ category: "", matchType: "", status: "" });
+  const [screenTemplateDrawerTab, setScreenTemplateDrawerTab] = useState<"overview" | "image" | "region" | "ocr" | "test" | "json">("overview");
+  const [screenTemplateTestInstanceId, setScreenTemplateTestInstanceId] = useState("");
+  const [screenTemplateTestResult, setScreenTemplateTestResult] = useState<unknown>(null);
+  const [selectedErrorEventId, setSelectedErrorEventId] = useState("");
+  const [errorCenterFilters, setErrorCenterFilters] = useState({ status: "", classification: "" });
+  const [errorDetailTab, setErrorDetailTab] = useState<"overview" | "screenshot" | "runtime" | "script" | "recovery" | "json">("overview");
   const [orchestratorRules, setOrchestratorRules] = useState<OrchestratorRule[]>([]);
   const [selectedRuleId, setSelectedRuleId] = useState("");
   const [selectedPoolId, setSelectedPoolId] = useState("");
@@ -2292,9 +2378,11 @@ export function App() {
       ? t("app.productionJobs")
       : page === "asset-center"
         ? t("app.assetCenter")
-        : page === "management"
-          ? t("app.management")
-          : t("app.productionStudio");
+        : page === "monitoring"
+          ? t("app.monitoring")
+          : page === "management"
+            ? t("app.management")
+            : t("app.productionStudio");
   const selectedJob = useMemo(
     () => jobs.find((job) => job.id === selectedJobId) ?? null,
     [jobs, selectedJobId]
@@ -3200,6 +3288,8 @@ export function App() {
       scriptRunData,
       scriptData,
       screenTemplateData,
+      errorEventData,
+      errorKpiData,
       ruleData
     ] = await Promise.all([
       api<CharacterRecord[]>("/characters"),
@@ -3221,6 +3311,8 @@ export function App() {
       api<ScriptRun[]>("/script-runs"),
       api<ScriptRecord[]>("/scripts"),
       api<ScreenTemplateRecord[]>("/screen-templates"),
+      api<ErrorEventRecord[]>("/error-center/events"),
+      api<ErrorCenterKpis>("/error-center/kpis"),
       api<OrchestratorRule[]>("/orchestrator/rules")
     ]);
 
@@ -3247,6 +3339,8 @@ export function App() {
     setScriptRuns(scriptRunData);
     setScripts(scriptData);
     setScreenTemplates(screenTemplateData);
+    setErrorEvents(errorEventData);
+    setErrorKpis(errorKpiData);
     await loadScriptVersionIndex(scriptData);
     setOrchestratorRules(ruleData);
     setSelectedGroups((current) => current.length ? current : groupData[0] ? [groupData[0].id] : []);
@@ -4272,7 +4366,7 @@ export function App() {
   }
 
   async function refreshQueue() {
-    const [latestCharacters, latestGroups, latestHosts, latestWorkflows, latestWorkflowRuns, latestInstances, latestPools, latestBatches, latestAssets, latestJobs, latestAllocations, latestGroupRuns, latestSessions, latestScriptRuns, latestScripts, latestScreenTemplates, latestRules] = await Promise.all([
+    const [latestCharacters, latestGroups, latestHosts, latestWorkflows, latestWorkflowRuns, latestInstances, latestPools, latestBatches, latestAssets, latestJobs, latestAllocations, latestGroupRuns, latestSessions, latestScriptRuns, latestScripts, latestScreenTemplates, latestErrorEvents, latestErrorKpis, latestRules] = await Promise.all([
       api<CharacterRecord[]>("/characters"),
       api<CharacterGroup[]>("/character-groups"),
       api<HostRecord[]>("/hosts"),
@@ -4289,6 +4383,8 @@ export function App() {
       api<ScriptRun[]>("/script-runs"),
       api<ScriptRecord[]>("/scripts"),
       api<ScreenTemplateRecord[]>("/screen-templates"),
+      api<ErrorEventRecord[]>("/error-center/events"),
+      api<ErrorCenterKpis>("/error-center/kpis"),
       api<OrchestratorRule[]>("/orchestrator/rules")
     ]);
     setCharacters(latestCharacters);
@@ -4311,6 +4407,8 @@ export function App() {
     setScriptRuns(latestScriptRuns);
     setScripts(latestScripts);
     setScreenTemplates(latestScreenTemplates);
+    setErrorEvents(latestErrorEvents);
+    setErrorKpis(latestErrorKpis);
     await loadScriptVersionIndex(latestScripts);
     setOrchestratorRules(latestRules);
     setLastJobsRefreshAt(new Date().toISOString());
@@ -4781,25 +4879,36 @@ export function App() {
     setScreenTemplateForm({
       name: template.name,
       category: template.category,
-      templateType: template.templateType || "OCR_TEXT",
+      matchType: template.matchType || template.templateType || "OCR_TEXT",
+      description: template.description ?? "",
+      templateImageAssetId: template.templateImageAssetId ?? "",
+      templateImagePath: template.templateImagePath ?? "",
       templateImageUrl: template.templateImageUrl ?? "",
+      templateThumbnailUrl: template.templateThumbnailUrl ?? "",
       ocrText: template.ocrText ?? "",
       threshold: String(template.threshold ?? 0.8),
       region: compactJson(template.region ?? {}),
-      status: template.status || "active"
+      metadata: compactJson(template.metadata ?? {}),
+      status: template.status || "ACTIVE"
     });
+    setScreenTemplateDrawerTab("overview");
   }
 
   function screenTemplatePayload() {
     return {
       name: screenTemplateForm.name || "New Screen Template",
-      category: screenTemplateForm.category || "Utility",
-      templateType: screenTemplateForm.templateType || "OCR_TEXT",
+      category: screenTemplateForm.category || "SYSTEM",
+      matchType: screenTemplateForm.matchType || "OCR_TEXT",
+      description: screenTemplateForm.description || null,
+      templateImageAssetId: screenTemplateForm.templateImageAssetId || null,
+      templateImagePath: screenTemplateForm.templateImagePath || null,
       templateImageUrl: screenTemplateForm.templateImageUrl || null,
+      templateThumbnailUrl: screenTemplateForm.templateThumbnailUrl || screenTemplateForm.templateImageUrl || null,
       ocrText: screenTemplateForm.ocrText || null,
       threshold: Number(screenTemplateForm.threshold || 0.8),
       region: parseJsonText(screenTemplateForm.region, {}),
-      status: screenTemplateForm.status || "active"
+      metadata: parseJsonText(screenTemplateForm.metadata, {}),
+      status: screenTemplateForm.status || "ACTIVE"
     };
   }
 
@@ -4843,6 +4952,91 @@ export function App() {
       if (latest[0]) selectScreenTemplate(latest[0]);
       else setSelectedScreenTemplateId("");
       return deleted;
+    });
+  }
+
+  async function archiveScreenTemplate() {
+    if (!selectedScreenTemplateId) return;
+    return adminAction("Archiving screen template", async () => {
+      const updated = await api<ScreenTemplateRecord>(`/screen-templates/${selectedScreenTemplateId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ ...screenTemplatePayload(), status: "ARCHIVED" })
+      });
+      await refreshScreenTemplates();
+      selectScreenTemplate(updated);
+      return updated;
+    });
+  }
+
+  async function testSelectedScreenTemplate() {
+    const templateId = selectedScreenTemplateId;
+    const instance = instances.find((item) => item.id === screenTemplateTestInstanceId || item.id === hostInstanceId) ?? null;
+    if (!templateId || !instance?.adbId) {
+      setStatus("Select a screen template and an online instance with adbId");
+      return;
+    }
+    const host = hostForInstance(instance);
+    if (!host) {
+      setStatus("Could not resolve host for selected instance");
+      return;
+    }
+    return adminAction("Testing screen template", async () => {
+      const result = await api(`/screen-templates/${templateId}/test`, {
+        method: "POST",
+        body: JSON.stringify({
+          hostId: host.id,
+          instanceId: instance.id,
+          adbId: instance.adbId
+        })
+      });
+      setScreenTemplateTestResult(result);
+      return result;
+    });
+  }
+
+  async function updateErrorEvent(eventId: string, patch: Record<string, unknown>) {
+    return adminAction("Updating error event", async () => {
+      const updated = await api<ErrorEventRecord>(`/error-center/events/${eventId}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch)
+      });
+      await refreshQueue();
+      setSelectedErrorEventId(updated.id);
+      return updated;
+    });
+  }
+
+  async function createTemplateFromError(event: ErrorEventRecord) {
+    return adminAction("Creating screen template from error", async () => {
+      const template = await api<ScreenTemplateRecord>(`/error-center/events/${event.id}/screen-template`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: `${event.errorCode ?? "Error"} template`,
+          category: event.classification === "UNKNOWN" ? "SYSTEM" : event.classification,
+          matchType: "IMAGE",
+          threshold: 0.8
+        })
+      });
+      await refreshQueue();
+      setManagementSection("screen-templates");
+      setPage("management");
+      selectScreenTemplate(template);
+      return template;
+    });
+  }
+
+  async function attachRecoveryScriptToError(event: ErrorEventRecord) {
+    const recoveryScriptId = window.prompt("Recovery script id", event.recoveryScriptId ?? "");
+    if (!recoveryScriptId) return;
+    const screenTemplateId = window.prompt("Screen template id", screenTemplates[0]?.id ?? "");
+    if (!screenTemplateId) return;
+    return adminAction("Attaching recovery script", async () => {
+      const result = await api(`/error-center/events/${event.id}/recovery-script`, {
+        method: "POST",
+        body: JSON.stringify({ recoveryScriptId, screenTemplateId, enabled: true, priority: 100 })
+      });
+      await refreshQueue();
+      return result;
     });
   }
 
@@ -6327,11 +6521,136 @@ export function App() {
           <Sparkles size={16} />
           {t("app.productionStudio")}
         </button>
+        <button className={page === "monitoring" ? "active" : ""} onClick={() => setPage("monitoring")}>
+          <AlertTriangle size={16} />
+          {t("app.monitoring")}
+        </button>
         <button className={page === "management" ? "active" : ""} onClick={() => setPage("management")}>
           <Users size={16} />
           {t("app.management")}
         </button>
       </nav>
+
+      {page === "monitoring" ? (
+        <section className="managementJobsPage errorCenterPage">
+          <div className="resourceKpiBar">
+            {[
+              { label: "New Errors", value: errorKpis.newErrors, Icon: AlertTriangle },
+              { label: "Classified", value: errorKpis.classifiedErrors, Icon: ClipboardList },
+              { label: "Auto Recoverable", value: errorKpis.autoRecoverable, Icon: Rocket },
+              { label: "Resolved", value: errorKpis.resolved, Icon: Check },
+              { label: "Unresolved", value: errorKpis.unresolved, Icon: Archive }
+            ].map(({ label, value, Icon }) => (
+              <div className="resourceKpiCard" key={label}>
+                <Icon size={17} />
+                <span>{label}</span>
+                <strong>{value}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="jobsOpsToolbar">
+            <div className="resourceCreateGrid">
+              <label>Status<select value={errorCenterFilters.status} onChange={(event) => setErrorCenterFilters({ ...errorCenterFilters, status: event.target.value })}>
+                <option value="">All</option>
+                {["NEW", "REVIEWED", "CLASSIFIED", "AUTO_RECOVERABLE", "RESOLVED", "IGNORED"].map((statusOption) => <option key={statusOption} value={statusOption}>{statusOption}</option>)}
+              </select></label>
+              <label>Classification<select value={errorCenterFilters.classification} onChange={(event) => setErrorCenterFilters({ ...errorCenterFilters, classification: event.target.value })}>
+                <option value="">All</option>
+                {["CHATGPT_ERROR", "UPLOAD_ERROR", "DOWNLOAD_ERROR", "ANDROID_PICKER_ERROR", "PIXVERSE_ERROR", "CAPTCHA", "NETWORK", "UNKNOWN"].map((classification) => <option key={classification} value={classification}>{classification}</option>)}
+              </select></label>
+            </div>
+            <button className="secondaryButton" onClick={() => refreshQueue()} disabled={busy}><RefreshCcw size={15} /> Refresh</button>
+          </div>
+          <div className="jobsBoardLayout">
+            <div className="managementJobGrid">
+              {errorEvents
+                .filter((event) => (!errorCenterFilters.status || event.status === errorCenterFilters.status)
+                  && (!errorCenterFilters.classification || event.classification === errorCenterFilters.classification))
+                .map((event) => {
+                  const imageUrl = event.screenshotAsset?.thumbnailPublicUrl ?? event.screenshotAsset?.publicUrl ?? "";
+                  return (
+                    <article className={`managementJobCard ${selectedErrorEventId === event.id ? "selected" : ""}`} key={event.id} onClick={() => { setSelectedErrorEventId(event.id); setErrorDetailTab("overview"); }}>
+                      <header>
+                        <strong>{event.errorCode ?? "STEP_FAILED"}</strong>
+                        <span className={`statusPill ${event.status === "NEW" ? "danger" : event.status === "RESOLVED" ? "ready" : ""}`}>{event.status}</span>
+                      </header>
+                      {imageUrl ? <img className="errorThumb" src={mediaUrl(imageUrl)} alt="Error screenshot" /> : null}
+                      <p>{event.errorMessage ?? "No error message"}</p>
+                      <div className="resourceMetaGrid">
+                        <span>Script Run</span><strong>{displayShortId(event.scriptRunId)}</strong>
+                        <span>Step</span><strong>{event.stepNo ?? "-"}</strong>
+                        <span>Runtime</span><strong>{displayShortId(event.runtimeSessionId)}</strong>
+                        <span>Host</span><strong>{displayShortId(event.hostId)}</strong>
+                        <span>Instance</span><strong>{displayShortId(event.instanceId)}</strong>
+                        <span>Created</span><strong>{displayDateTime(event.createdAt ?? undefined)}</strong>
+                      </div>
+                      <div className="jobCardActions">
+                        <button onClick={(click) => { click.stopPropagation(); setSelectedErrorEventId(event.id); }}>Open</button>
+                        <button onClick={(click) => { click.stopPropagation(); createTemplateFromError(event); }}>Create Screen Template</button>
+                        <button onClick={(click) => { click.stopPropagation(); attachRecoveryScriptToError(event); }}>Attach Recovery Script</button>
+                        <button onClick={(click) => { click.stopPropagation(); updateErrorEvent(event.id, { status: "RESOLVED", resolutionType: "MANUAL" }); }}>Resolve</button>
+                      </div>
+                    </article>
+                  );
+                })}
+              {!errorEvents.length ? <p className="emptyDetail">No error events yet.</p> : null}
+            </div>
+            {(() => {
+              const event = errorEvents.find((item) => item.id === selectedErrorEventId) ?? errorEvents[0] ?? null;
+              const runtime = event?.runtimeSessionId ? runtimeSessions.find((session) => session.id === event.runtimeSessionId) : null;
+              const run = event?.scriptRunId ? scriptRuns.find((scriptRun) => scriptRun.id === event.scriptRunId) : null;
+              const imageUrl = event?.screenshotAsset?.publicUrl ?? event?.screenshotAsset?.thumbnailPublicUrl ?? "";
+              return (
+                <aside className="resourceDrawer panel">
+                  {event ? (
+                    <>
+                      <header>
+                        <div><strong>{event.errorCode}</strong><small>{event.classification} / {event.status}</small></div>
+                        <button className="iconButton" onClick={() => setSelectedErrorEventId("")}><Trash2 size={14} /></button>
+                      </header>
+                      <div className="drawerTabs">
+                        {(["overview", "screenshot", "runtime", "script", "recovery", "json"] as const).map((tab) => <button key={tab} className={errorDetailTab === tab ? "active" : ""} onClick={() => setErrorDetailTab(tab)}>{tab}</button>)}
+                      </div>
+                      {errorDetailTab === "overview" ? (
+                        <div className="resourceDrawerBody">
+                          <div className="resourceMetaGrid detail">
+                            <span>Error</span><strong>{event.errorCode}</strong>
+                            <span>Message</span><strong>{event.errorMessage ?? "-"}</strong>
+                            <span>Runtime</span><strong>{displayShortId(event.runtimeSessionId)}</strong>
+                            <span>Script Run</span><strong>{displayShortId(event.scriptRunId)}</strong>
+                            <span>Step</span><strong>{event.stepNo ?? "-"}</strong>
+                            <span>ADB</span><strong>{event.adbId ?? "-"}</strong>
+                          </div>
+                          <div className="resourceActions">
+                            {["CHATGPT_ERROR", "UPLOAD_ERROR", "DOWNLOAD_ERROR", "ANDROID_PICKER_ERROR", "PIXVERSE_ERROR", "CAPTCHA", "NETWORK", "UNKNOWN"].map((classification) => (
+                              <button key={classification} onClick={() => updateErrorEvent(event.id, { status: "CLASSIFIED", classification })}>{classification}</button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      {errorDetailTab === "screenshot" ? <div className="resourceDrawerBody">{imageUrl ? <img className="runtimeStepCardImage" src={mediaUrl(imageUrl)} alt="Error screenshot" /> : <p className="emptyDetail">No screenshot captured.</p>}</div> : null}
+                      {errorDetailTab === "runtime" ? <div className="resourceDrawerBody"><pre className="jsonBlock">{compactJson(runtime)}</pre></div> : null}
+                      {errorDetailTab === "script" ? <div className="resourceDrawerBody"><pre className="jsonBlock">{compactJson(run)}</pre></div> : null}
+                      {errorDetailTab === "recovery" ? (
+                        <div className="resourceDrawerBody">
+                          <div className="resourceActions">
+                            <button onClick={() => createTemplateFromError(event)}>Create Screen Template</button>
+                            <button onClick={() => attachRecoveryScriptToError(event)}>Attach Recovery Script</button>
+                            <button onClick={() => updateErrorEvent(event.id, { status: "IGNORED" })}>Ignore</button>
+                            <button onClick={() => updateErrorEvent(event.id, { status: "RESOLVED", resolutionType: "MANUAL" })}>Resolve</button>
+                          </div>
+                          <pre className="jsonBlock">{compactJson({ recoveryScriptId: event.recoveryScriptId, resolutionType: event.resolutionType })}</pre>
+                        </div>
+                      ) : null}
+                      {errorDetailTab === "json" ? <div className="resourceDrawerBody"><pre className="jsonBlock">{compactJson(event)}</pre></div> : null}
+                    </>
+                  ) : <p className="emptyDetail">Select an error event to inspect.</p>}
+                </aside>
+              );
+            })()}
+          </div>
+        </section>
+      ) : null}
 
       {page === "management" ? (
       <section className="managementPage">
@@ -7591,10 +7910,11 @@ export function App() {
                                               ))}
                                             </select>
                                           ) : (type === "check-screen" || type === "wait-screen") && field.key === "matchType" ? (
-                                            <select value={getString(config[field.key]) || "ocr"} onChange={(event) => updateScriptStepConfig(index, field.key, event.target.value)}>
-                                              <option value="ocr">ocr</option>
-                                              <option value="contains">contains</option>
-                                              <option value="image">image</option>
+                                            <select value={getString(config[field.key]) || "OCR_TEXT"} onChange={(event) => updateScriptStepConfig(index, field.key, event.target.value)}>
+                                              <option value="IMAGE">IMAGE</option>
+                                              <option value="OCR_TEXT">OCR_TEXT</option>
+                                              <option value="REGION_IMAGE">REGION_IMAGE</option>
+                                              <option value="MANUAL_FLAG">MANUAL_FLAG</option>
                                             </select>
                                           ) : type === "run-sub-script" && field.key === "scriptId" ? (
                                             <select value={String(config[field.key] ?? "")} onChange={(event) => updateScriptStepConfig(index, field.key, event.target.value)}>
@@ -7927,10 +8247,11 @@ export function App() {
                                           ))}
                                         </select>
                                       ) : (type === "check-screen" || type === "wait-screen") && field.key === "matchType" ? (
-                                        <select value={getString(config[field.key]) || "ocr"} onChange={(event) => updateScriptStepConfig(safeIndex, field.key, event.target.value)}>
-                                          <option value="ocr">ocr</option>
-                                          <option value="contains">contains</option>
-                                          <option value="image">image</option>
+                                        <select value={getString(config[field.key]) || "OCR_TEXT"} onChange={(event) => updateScriptStepConfig(safeIndex, field.key, event.target.value)}>
+                                          <option value="IMAGE">IMAGE</option>
+                                          <option value="OCR_TEXT">OCR_TEXT</option>
+                                          <option value="REGION_IMAGE">REGION_IMAGE</option>
+                                          <option value="MANUAL_FLAG">MANUAL_FLAG</option>
                                         </select>
                                       ) : type === "run-sub-script" && field.key === "scriptId" ? (
                                         <select value={String(config[field.key] ?? "")} onChange={(event) => updateScriptStepConfig(safeIndex, field.key, event.target.value)}>
@@ -7997,12 +8318,35 @@ export function App() {
           {managementSection === "screen-templates" ? (
             <div className="resourceManagerGrid">
               <aside className="resourceList">
+                <div className="resourceFiltersPanel compact">
+                  <label>Category<input value={screenTemplateFilters.category} onChange={(event) => setScreenTemplateFilters({ ...screenTemplateFilters, category: event.target.value })} /></label>
+                  <label>Match Type<select value={screenTemplateFilters.matchType} onChange={(event) => setScreenTemplateFilters({ ...screenTemplateFilters, matchType: event.target.value })}>
+                    <option value="">All</option>
+                    <option value="IMAGE">IMAGE</option>
+                    <option value="OCR_TEXT">OCR_TEXT</option>
+                    <option value="REGION_IMAGE">REGION_IMAGE</option>
+                    <option value="MANUAL_FLAG">MANUAL_FLAG</option>
+                  </select></label>
+                  <label>Status<select value={screenTemplateFilters.status} onChange={(event) => setScreenTemplateFilters({ ...screenTemplateFilters, status: event.target.value })}>
+                    <option value="">All</option>
+                    <option value="ACTIVE">ACTIVE</option>
+                    <option value="DRAFT">DRAFT</option>
+                    <option value="ARCHIVED">ARCHIVED</option>
+                  </select></label>
+                </div>
                 <button className="primaryButton" onClick={() => {
                   setSelectedScreenTemplateId("");
-                  setScreenTemplateForm({ name: "", category: "Utility", templateType: "OCR_TEXT", templateImageUrl: "", ocrText: "", threshold: "0.8", region: "{}", status: "active" });
+                  setScreenTemplateForm({ name: "", category: "SYSTEM", matchType: "OCR_TEXT", description: "", templateImageAssetId: "", templateImagePath: "", templateImageUrl: "", templateThumbnailUrl: "", ocrText: "", threshold: "0.8", region: "{}", metadata: "{}", status: "ACTIVE" });
                 }}>New Screen Template</button>
                 {screenTemplates
-                  .filter((template) => !adminSearch || `${template.name} ${template.category} ${template.templateType}`.toLowerCase().includes(adminSearch.toLowerCase()))
+                  .filter((template) => {
+                    const matchType = template.matchType || template.templateType;
+                    const haystack = `${template.name} ${template.category} ${matchType} ${template.status}`.toLowerCase();
+                    return (!adminSearch || haystack.includes(adminSearch.toLowerCase()))
+                      && (!screenTemplateFilters.category || template.category.toLowerCase().includes(screenTemplateFilters.category.toLowerCase()))
+                      && (!screenTemplateFilters.matchType || matchType === screenTemplateFilters.matchType)
+                      && (!screenTemplateFilters.status || template.status === screenTemplateFilters.status);
+                  })
                   .map((template) => (
                     <button
                       key={template.id}
@@ -8010,7 +8354,9 @@ export function App() {
                       onClick={() => selectScreenTemplate(template)}
                     >
                       <span>{template.name}</span>
-                      <small>{template.category} / {template.templateType}</small>
+                      <small>{template.category} / {template.matchType || template.templateType} / {template.status}</small>
+                      <small>threshold {template.threshold} / {displayDateTime(template.updatedAt ?? undefined)}</small>
+                      {template.templateThumbnailUrl || template.templateImageUrl ? <img className="templateThumb" src={mediaUrl(template.templateThumbnailUrl || template.templateImageUrl || "")} alt={template.name} /> : null}
                     </button>
                   ))}
                 {!screenTemplates.length ? <p className="emptyDetail">No screen templates yet.</p> : null}
@@ -8021,28 +8367,72 @@ export function App() {
                     <strong>{selectedScreenTemplateId ? "Edit Screen Template" : "Create Screen Template"}</strong>
                     <small>Used by check-screen and wait-screen steps.</small>
                   </div>
-                  <span className="resourceTypeBadge">{screenTemplateForm.templateType}</span>
+                  <span className="resourceTypeBadge">{screenTemplateForm.matchType}</span>
                 </div>
+                <div className="segmentedControl">
+                  {(["overview", "image", "region", "ocr", "test", "json"] as const).map((tab) => (
+                    <button key={tab} className={screenTemplateDrawerTab === tab ? "active" : ""} onClick={() => setScreenTemplateDrawerTab(tab)}>{tab}</button>
+                  ))}
+                </div>
+                {screenTemplateDrawerTab === "overview" ? (
                 <div className="resourceCreateGrid">
                   <label>Name<input value={screenTemplateForm.name} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, name: event.target.value })} /></label>
                   <label>Category<input value={screenTemplateForm.category} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, category: event.target.value })} /></label>
-                  <label>Template Type<select value={screenTemplateForm.templateType} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, templateType: event.target.value })}>
+                  <label>Match Type<select value={screenTemplateForm.matchType} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, matchType: event.target.value })}>
+                    <option value="IMAGE">IMAGE</option>
                     <option value="OCR_TEXT">OCR Text</option>
-                    <option value="IMAGE_MATCH">Image Match</option>
-                    <option value="REGION_MATCH">Region Match</option>
+                    <option value="REGION_IMAGE">REGION_IMAGE</option>
+                    <option value="MANUAL_FLAG">MANUAL_FLAG</option>
                   </select></label>
                   <label>Threshold<input type="number" min="0" max="1" step="0.05" value={screenTemplateForm.threshold} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, threshold: event.target.value })} /></label>
-                  <label>Status<input value={screenTemplateForm.status} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, status: event.target.value })} /></label>
-                  <label>Template Image URL<input value={screenTemplateForm.templateImageUrl} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, templateImageUrl: event.target.value })} /></label>
+                  <label>Status<select value={screenTemplateForm.status} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, status: event.target.value })}>
+                    <option value="ACTIVE">ACTIVE</option>
+                    <option value="DRAFT">DRAFT</option>
+                    <option value="ARCHIVED">ARCHIVED</option>
+                  </select></label>
+                  <label>Description<input value={screenTemplateForm.description} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, description: event.target.value })} /></label>
                 </div>
+                ) : null}
+                {screenTemplateDrawerTab === "image" ? (
+                  <div className="resourceCreateGrid">
+                    <label>Template Image Asset ID<input value={screenTemplateForm.templateImageAssetId} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, templateImageAssetId: event.target.value })} /></label>
+                    <label>Template Image Path<input value={screenTemplateForm.templateImagePath} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, templateImagePath: event.target.value })} /></label>
+                    <label>Template Image URL<input value={screenTemplateForm.templateImageUrl} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, templateImageUrl: event.target.value })} /></label>
+                    <label>Template Thumbnail URL<input value={screenTemplateForm.templateThumbnailUrl} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, templateThumbnailUrl: event.target.value })} /></label>
+                    {screenTemplateForm.templateImageUrl ? <img className="templatePreviewImage" src={mediaUrl(screenTemplateForm.templateImageUrl)} alt="Screen template" /> : null}
+                  </div>
+                ) : null}
+                {screenTemplateDrawerTab === "region" ? <label>Region JSON<textarea value={screenTemplateForm.region} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, region: event.target.value })} /></label> : null}
+                {screenTemplateDrawerTab === "ocr" ? (
+                  <>
                 <label>OCR Text<textarea value={screenTemplateForm.ocrText} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, ocrText: event.target.value })} /></label>
-                <label>Region JSON<textarea value={screenTemplateForm.region} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, region: event.target.value })} /></label>
+                    <p className="emptyDetail">OCR engine is planned; this sprint can match provided screenText or use IMAGE/MANUAL_FLAG templates.</p>
+                  </>
+                ) : null}
+                {screenTemplateDrawerTab === "test" ? (
+                  <div className="resourceCreatePanel">
+                    <div className="resourceCreateGrid">
+                      <label>Instance<select value={screenTemplateTestInstanceId} onChange={(event) => setScreenTemplateTestInstanceId(event.target.value)}>
+                        <option value="">Select instance...</option>
+                        {instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.id} / {instance.adbId ?? "ADB unknown"}</option>)}
+                      </select></label>
+                    </div>
+                    <button disabled={!selectedScreenTemplateId} onClick={testSelectedScreenTemplate}><Image size={15} /> Test Template</button>
+                    <pre className="jsonBlock">{compactJson(screenTemplateTestResult)}</pre>
+                  </div>
+                ) : null}
+                {screenTemplateDrawerTab === "json" ? (
+                  <>
+                    <label>Metadata JSON<textarea value={screenTemplateForm.metadata} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, metadata: event.target.value })} /></label>
+                    <pre className="jsonBlock">{compactJson(screenTemplates.find((template) => template.id === selectedScreenTemplateId) ?? screenTemplatePayload())}</pre>
+                  </>
+                ) : null}
                 <div className="resourceActions">
                   <button onClick={createScreenTemplate}><PackagePlus size={15} /> Create</button>
                   <button disabled={!selectedScreenTemplateId} onClick={updateScreenTemplate}><Check size={15} /> Update</button>
+                  <button disabled={!selectedScreenTemplateId} onClick={archiveScreenTemplate}><Archive size={15} /> Archive</button>
                   <button className="dangerButton" disabled={!selectedScreenTemplateId} onClick={deleteScreenTemplate}><Trash2 size={15} /> Delete</button>
                 </div>
-                {screenTemplateForm.templateImageUrl ? <img className="templatePreviewImage" src={mediaUrl(screenTemplateForm.templateImageUrl)} alt="Screen template" /> : null}
               </section>
             </div>
           ) : null}

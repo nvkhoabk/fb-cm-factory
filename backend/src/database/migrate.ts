@@ -633,18 +633,59 @@ export function migrate() {
     CREATE TABLE IF NOT EXISTS screen_templates (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      category TEXT DEFAULT 'Utility',
+      category TEXT DEFAULT 'SYSTEM',
+      match_type TEXT DEFAULT 'OCR_TEXT',
       template_type TEXT DEFAULT 'OCR_TEXT',
+      description TEXT,
+      template_image_asset_id TEXT,
+      template_image_path TEXT,
       template_image_url TEXT,
+      template_thumbnail_url TEXT,
       ocr_text TEXT,
       threshold REAL DEFAULT 0.8,
       region_json TEXT DEFAULT '{}',
-      status TEXT DEFAULT 'active',
+      metadata_json TEXT DEFAULT '{}',
+      status TEXT DEFAULT 'ACTIVE',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_screen_templates_category ON screen_templates(category, status);
+
+    CREATE TABLE IF NOT EXISTS error_events (
+      id TEXT PRIMARY KEY,
+      runtime_session_id TEXT,
+      script_run_id TEXT,
+      step_no INTEGER,
+      host_id TEXT,
+      instance_id TEXT,
+      adb_id TEXT,
+      error_code TEXT,
+      error_message TEXT,
+      screenshot_asset_id TEXT,
+      status TEXT DEFAULT 'NEW',
+      classification TEXT DEFAULT 'UNKNOWN',
+      resolution_type TEXT,
+      recovery_script_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_error_events_status ON error_events(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_error_events_runtime ON error_events(runtime_session_id, script_run_id);
+
+    CREATE TABLE IF NOT EXISTS recovery_rules (
+      id TEXT PRIMARY KEY,
+      screen_template_id TEXT NOT NULL,
+      recovery_script_id TEXT NOT NULL,
+      enabled INTEGER DEFAULT 1,
+      priority INTEGER DEFAULT 100,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_recovery_rules_template ON recovery_rules(screen_template_id, enabled, priority);
   `);
 
   addColumnIfMissing("instance_allocations", "created_at", "TEXT");
@@ -679,6 +720,15 @@ export function migrate() {
   addColumnIfMissing("workflows", "script_mapping_json", "TEXT DEFAULT '{}'");
   addColumnIfMissing("workflows", "prompt_mapping_json", "TEXT DEFAULT '{}'");
   addColumnIfMissing("workflow_runs", "capacity_config_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("screen_templates", "match_type", "TEXT DEFAULT 'OCR_TEXT'");
+  addColumnIfMissing("screen_templates", "description", "TEXT");
+  addColumnIfMissing("screen_templates", "template_image_asset_id", "TEXT");
+  addColumnIfMissing("screen_templates", "template_image_path", "TEXT");
+  addColumnIfMissing("screen_templates", "template_thumbnail_url", "TEXT");
+  addColumnIfMissing("screen_templates", "metadata_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("error_events", "classification", "TEXT DEFAULT 'UNKNOWN'");
+  addColumnIfMissing("error_events", "resolution_type", "TEXT");
+  addColumnIfMissing("error_events", "recovery_script_id", "TEXT");
 
   db.prepare(`
     UPDATE instances

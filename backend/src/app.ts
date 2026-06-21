@@ -29,6 +29,7 @@ import { assetsRouter } from "./modules/assets/assets.routes";
 import { assetCenterRouter } from "./modules/asset-center/asset-center.routes";
 import { productionControlRouter } from "./modules/production-control/production-control.routes";
 import { screenTemplatesRouter } from "./modules/screen-templates/screen-template.routes";
+import { errorCenterRouter } from "./modules/error-center/error-center.routes";
 
 export const app = express();
 
@@ -67,6 +68,7 @@ function mountRoutes(prefix = "") {
   app.use(`${prefix}/asset-center`, assetCenterRouter);
   app.use(`${prefix}/production-control`, productionControlRouter);
   app.use(`${prefix}/screen-templates`, screenTemplatesRouter);
+  app.use(`${prefix}/error-center`, errorCenterRouter);
 }
 
 mountRoutes();

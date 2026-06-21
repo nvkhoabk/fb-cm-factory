@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { sendError } from "../shared/resource";
-import { screenTemplateSchema, updateScreenTemplateSchema } from "./screen-template.schemas";
+import { screenDetectionService } from "./screen-detection.service";
+import { screenTemplateSchema, testScreenTemplateSchema, updateScreenTemplateSchema } from "./screen-template.schemas";
 import { screenTemplateService } from "./screen-template.service";
 
 export const screenTemplatesRouter = Router();
@@ -28,6 +29,23 @@ screenTemplatesRouter.post("/", (req, res) => {
 screenTemplatesRouter.patch("/:id", (req, res) => {
   try {
     res.json({ ok: true, data: screenTemplateService.update(req.params.id, updateScreenTemplateSchema.parse(req.body)) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+screenTemplatesRouter.post("/:id/test", async (req, res) => {
+  try {
+    const input = testScreenTemplateSchema.parse(req.body);
+    const result = await screenDetectionService.checkScreen({
+      templateId: req.params.id,
+      hostId: input.hostId,
+      instanceId: input.instanceId,
+      adbId: input.adbId,
+      screenshotUrl: input.screenshotUrl,
+      screenshotPath: input.screenshotPath
+    });
+    res.json({ ok: true, data: result });
   } catch (error) {
     sendError(res, error);
   }

@@ -5,7 +5,8 @@ import { instanceSchedulerRepository } from "../instance-scheduler/instance-sche
 import { productionBatchRepository } from "../production-batches/production-batch.repository";
 import { runtimeRecoveryService } from "../runtime-recovery/runtime-recovery.service";
 import { runtimeSessionsService } from "../runtime-sessions/runtime-sessions.service";
-import { screenTemplateService } from "../screen-templates/screen-template.service";
+import { screenDetectionService } from "../screen-templates/screen-detection.service";
+import { errorCenterService } from "../error-center/error-center.service";
 import { AppError, now } from "../shared/resource";
 import { scriptAssetResolver } from "./script-asset-resolver.service";
 import { scriptRuntimeRepository } from "./script-runtime.repository";
@@ -586,7 +587,8 @@ function contextText(_context: Record<string, unknown>) {
 
 function evaluateCondition(conditionInput: unknown, _context: Record<string, unknown>) {
   const condition = objectFrom(conditionInput);
-  const path = firstString(condition.path, condition.source, condition.left, "runtime.checkScreenResult.matched");
+  const rawPath = firstString(condition.path, condition.source, condition.left, "runtime.checkScreenResult.matched");
+  const path = rawPath.startsWith("context.") ? rawPath.slice("context.".length) : rawPath;
   const operator = firstString(condition.operator, condition.op, condition.type, "exists");
   const actual = getPathValue(_context, path);
   const expected = condition.value ?? condition.expected ?? condition.right;
@@ -913,8 +915,74 @@ export const scriptRuntimeService = {
         status: "FAILED",
         errorMessage: error instanceof Error ? error.message : "Step failed"
       });
+      await this.captureStepFailure(scriptRunId, session, step, input, context, error);
       throw error;
     }
+  },
+
+  async captureStepFailure(
+    scriptRunId: string,
+    session: ReturnType<typeof runtimeSessionsService.getSession>,
+    step: NormalizedScriptStep,
+    input: Record<string, unknown>,
+    context: Record<string, unknown>,
+    error: unknown
+  ) {
+    try {
+      let adbId: string | null = null;
+      try {
+        adbId = resolveAdbId(input, context);
+      } catch {
+        adbId = typeof session.checkpoint === "object" && session.checkpoint
+          ? String((session.checkpoint as Record<string, unknown>).adbId ?? "")
+          : "";
+      }
+      await errorCenterService.captureRuntimeStepError({
+        runtimeSessionId: String(session.id),
+        scriptRunId,
+        stepNo: Number(step.stepNo),
+        hostId: typeof session.hostId === "string" ? session.hostId : null,
+        instanceId: typeof session.instanceId === "string" ? session.instanceId : null,
+        adbId: adbId || null,
+        error,
+        context: mergeContext(context, { currentStepNo: step.stepNo, currentStepType: step.stepType })
+      });
+    } catch (captureError) {
+      console.warn("[script-runtime] failed to record error event", captureError);
+    }
+  },
+
+  async executeRecoveryForTemplate(
+    scriptRunId: string,
+    session: ReturnType<typeof runtimeSessionsService.getSession>,
+    templateId: unknown,
+    context: Record<string, unknown>
+  ) {
+    const screenTemplateId = firstString(templateId);
+    if (!screenTemplateId) return null;
+    const depth = numberValue(getPathValue(context, "runtime.autoRecoveryDepth"), 0);
+    if (depth >= 3) return null;
+    const rule = errorCenterService.findRecoveryRule(screenTemplateId);
+    if (!rule?.recoveryScriptId) return null;
+    const subRun = this.createScriptRun(String(session.id), {
+      scriptId: rule.recoveryScriptId,
+      context: mergeContext(context, {
+        runtime: mergeContext(objectFrom(context.runtime), {
+          autoRecoveryDepth: depth + 1,
+          parentScriptRunId: scriptRunId,
+          recoveryRuleId: rule.id,
+          recoveryScreenTemplateId: screenTemplateId
+        })
+      })
+    });
+    if (!subRun) throw new AppError("RECOVERY_SCRIPT_RUN_CREATE_FAILED", "Could not create recovery script run");
+    const completed = await this.executeScriptRun(String(subRun.id));
+    return {
+      recoveryRuleId: rule.id,
+      recoveryScriptId: rule.recoveryScriptId,
+      recoveryScriptRunId: subRun.id,
+      status: completed?.status
+    };
   },
 
   async executeNestedSteps(scriptRunId: string, steps: NormalizedScriptStep[], context: Record<string, unknown>) {
@@ -1008,37 +1076,33 @@ export const scriptRuntimeService = {
 
   async performCheckScreen(session: ReturnType<typeof runtimeSessionsService.getSession>, input: Record<string, unknown>, _context: Record<string, unknown>) {
     const templateId = firstString(input.templateId);
-    const template = templateId ? screenTemplateService.getRequired(templateId) : null;
-    const matchType = normalizeMatchType(input.matchType, template?.templateType);
-    const threshold = Math.max(0, Math.min(numberValue(input.threshold, template?.threshold ?? 0.8), 1));
-    const screenshot = await hostAgentService.takeScreenshot(session.hostId as string, {
+    if (!templateId) throw new AppError("SCREEN_TEMPLATE_REQUIRED", "check-screen requires templateId", 400);
+    const detection = await screenDetectionService.checkScreen({
+      templateId,
+      hostId: session.hostId as string,
       instanceId: session.instanceId as string,
-      adbId: resolveAdbId(input, _context)
+      adbId: resolveAdbId(input, _context),
+      screenshotUrl: firstString(input.screenshotUrl),
+      screenshotPath: firstString(input.screenshotPath),
+      threshold: numberValue(input.threshold, 0.8),
+      screenText: firstString(input.screenText, contextText(_context))
     });
-
-    let confidence = 0;
-    let matched = false;
-    const needle = firstString(input.ocrText, template?.ocrText);
-    const haystack = firstString(input.screenText, contextText(_context));
-    if (matchType === "contains" || matchType === "ocr") {
-      matched = Boolean(needle) && haystack.toLowerCase().includes(needle.toLowerCase());
-      confidence = matched ? 1 : 0;
-    } else {
-      const hasImageTemplate = Boolean(firstString(input.templateImageUrl, template?.templateImageUrl));
-      confidence = screenshot && hasImageTemplate ? 1 : screenshot ? 0.5 : 0;
-      matched = confidence >= threshold;
-    }
-
     const result = {
-      matched,
-      confidence,
-      threshold,
-      templateId: template?.id ?? (templateId || null),
-      templateName: template?.name ?? null,
-      matchType,
-      screenshot,
+      templateId,
+      matched: detection.matched,
+      confidence: detection.confidence,
+      stepNo: _context.currentStepNo,
+      threshold: input.threshold ?? detection.template.threshold,
+      templateName: detection.template.name,
+      matchType: detection.template.matchType,
+      screenshotUrl: detection.screenshotUrl,
+      details: detection.details,
+      debug: detection.debug,
       checkedAt: now()
     };
+    if (!result.matched && input.failIfNotMatched === true) {
+      throw new AppError("SCREEN_NOT_MATCHED", "check-screen did not match the selected template", 409, result);
+    }
 
     return {
       ...result,
@@ -1170,7 +1234,11 @@ export const scriptRuntimeService = {
     }
 
     if (stepType === "check-screen") {
-      return this.performCheckScreen(session, input, _context);
+      const result = await this.performCheckScreen(session, input, _context);
+      const recovery = result.matched === true
+        ? await this.executeRecoveryForTemplate(scriptRunId, session, result.templateId, mergeContext(_context, { checkScreenResult: result }))
+        : null;
+      return recovery ? { ...result, recovery } : result;
     }
 
     if (stepType === "download-result" || stepType === "download-latest") {
@@ -1268,13 +1336,15 @@ export const scriptRuntimeService = {
         lastResult = await this.performCheckScreen(session, input, _context);
         if (lastResult.matched === true) {
           const elapsedMs = Date.now() - startedAt;
+          const recovery = await this.executeRecoveryForTemplate(scriptRunId, session, lastResult.templateId, mergeContext(_context, { checkScreenResult: lastResult }));
           return {
             matched: true,
             attempts,
             elapsedMs,
             checkScreenResult: lastResult.checkScreenResult,
             runtime: { checkScreenResult: lastResult.checkScreenResult },
-            lastCheck: lastResult
+            lastCheck: lastResult,
+            ...(recovery ? { recovery } : {})
           };
         }
         await delay(pollIntervalMs);
@@ -1298,6 +1368,8 @@ export const scriptRuntimeService = {
         evaluated: true,
         matched,
         branch,
+        conditionResult: matched,
+        selectedBranch: branch,
         condition,
         branchSteps: branchSteps.length,
         branchOutputs: branchResult.outputs,
@@ -1315,32 +1387,53 @@ export const scriptRuntimeService = {
     if (stepType === "run-sub-script") {
       const subScriptId = typeof input.scriptId === "string" ? input.scriptId : "";
       if (!subScriptId) throw new AppError("SUB_SCRIPT_REQUIRED", "run-sub-script requires scriptId");
-      const subRun = this.createScriptRun(String(session.id), {
-        scriptId: subScriptId,
-        scriptVersionId: firstString(input.scriptVersionId, input.versionId) || undefined,
-        context: input.inheritContext === false ? objectFrom(input.context) : mergeContext(_context, objectFrom(input.context))
-      });
-      if (!subRun) throw new AppError("SCRIPT_RUN_CREATE_FAILED", "Could not create sub-script run");
-      const completed = await this.executeScriptRun(String(subRun.id));
-      const subScriptOutput = {
-        scriptId: subScriptId,
-        scriptVersionId: subRun.scriptVersionId,
-        scriptRunId: subRun.id,
-        status: completed?.status,
-        context: completed?.context
-      };
-      return {
-        subScriptRunId: subRun.id,
-        subScriptId,
-        subScriptVersionId: subRun.scriptVersionId,
-        status: completed?.status,
-        subScriptContext: completed?.context,
-        subScriptOutput,
-        runtime: {
-          lastSubScriptRunId: subRun.id,
-          lastSubScriptStatus: completed?.status
+      const depth = numberValue(getPathValue(_context, "runtime.subScriptDepth"), 0);
+      if (depth >= 3) {
+        throw new AppError("SUB_SCRIPT_NESTING_LIMIT", "run-sub-script nesting depth cannot exceed 3", 400, { depth, scriptId: subScriptId });
+      }
+      try {
+        const childContext = input.inheritContext === false
+          ? objectFrom(input.context)
+          : mergeContext(_context, objectFrom(input.context));
+        const subRun = this.createScriptRun(String(session.id), {
+          scriptId: subScriptId,
+          scriptVersionId: firstString(input.scriptVersionId, input.versionId) || undefined,
+          context: mergeContext(childContext, {
+            runtime: mergeContext(objectFrom(childContext.runtime), { subScriptDepth: depth + 1, parentScriptRunId: scriptRunId })
+          })
+        });
+        if (!subRun) throw new AppError("SCRIPT_RUN_CREATE_FAILED", "Could not create sub-script run");
+        const completed = await this.executeScriptRun(String(subRun.id));
+        const subScriptOutput = {
+          scriptId: subScriptId,
+          scriptVersionId: subRun.scriptVersionId,
+          scriptRunId: subRun.id,
+          status: completed?.status,
+          context: completed?.context
+        };
+        return {
+          subScriptRunId: subRun.id,
+          subScriptId,
+          subScriptVersionId: subRun.scriptVersionId,
+          status: completed?.status,
+          subScriptContext: completed?.context,
+          subScriptOutput,
+          runtime: {
+            lastSubScriptRunId: subRun.id,
+            lastSubScriptStatus: completed?.status
+          }
+        };
+      } catch (error) {
+        if (input.continueOnFailure === true) {
+          return {
+            subScriptId,
+            continuedAfterFailure: true,
+            errorCode: error instanceof AppError ? error.code : undefined,
+            errorMessage: error instanceof Error ? error.message : "Sub-script failed"
+          };
         }
-      };
+        throw error;
+      }
     }
 
     throw new AppError("UNSUPPORTED_STEP_TYPE", `Unsupported script step type ${stepType}`);

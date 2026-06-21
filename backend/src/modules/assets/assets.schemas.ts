@@ -5,7 +5,8 @@ export const assetCategorySchema = z.enum([
   "PROMPT_TEMPLATE",
   "MUSIC_TRACK",
   "VIDEO_TEMPLATE",
-  "POST_TEMPLATE"
+  "POST_TEMPLATE",
+  "PRODUCTION_RESOURCE"
 ]);
 
 export const createAssetSchema = z.object({

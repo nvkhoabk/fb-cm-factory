@@ -4167,6 +4167,30 @@ h2 {
   object-fit: contain;
 }
 
+.templateThumb {
+  border: 1px solid #d7dde8;
+  border-radius: 6px;
+  height: 54px;
+  object-fit: cover;
+  width: 86px;
+}
+
+.errorThumb {
+  border: 1px solid #d7dde8;
+  border-radius: 8px;
+  height: 130px;
+  object-fit: contain;
+  width: 100%;
+}
+
+.runtimeStepCardImage {
+  border: 1px solid #d7dde8;
+  border-radius: 8px;
+  max-height: 640px;
+  max-width: 100%;
+  object-fit: contain;
+}
+
 .scriptJsonEditor {
   font-family: Consolas, "Liberation Mono", monospace;
   min-height: 260px;
