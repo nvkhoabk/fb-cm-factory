@@ -79,6 +79,16 @@ scriptsRouter.post("/:id/test-run", async (req, res) => {
   }
 });
 
+scriptsRouter.get("/:id/test-run", (_req, res) => {
+  res.status(405).json({
+    ok: false,
+    error: {
+      code: "METHOD_NOT_ALLOWED",
+      message: "Use POST /scripts/:id/test-run to run a script test"
+    }
+  });
+});
+
 scriptVersionsRouter.get("/:id", (req, res) => {
   try {
     res.json({ ok: true, data: scriptRuntimeService.getScriptVersion(req.params.id) });

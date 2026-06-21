@@ -610,6 +610,13 @@ const jobBoardStatusOptions = ["PENDING", "ALLOCATED", "RUNNING", "COMPLETED", "
 const productionQueueStatusOptions = ["PENDING", "ALLOCATED", "RUNNING", "WAITING_RESOURCE", "WAITING_MUSIC", "FAILED_RECOVERABLE", "FAILED", "COMPLETED"];
 const productionPipelineStages = ["CHARACTER_GROUP", "IMAGE_EDIT", "VIDEO_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT"];
 const promptCategoryOptions = ["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT", "UTILITY"];
+const uploadAssetSourceOptions = ["IMAGE_EDIT_NEXT_SOURCE", "VIDEO_EDIT_NEXT_PAIR", "VIDEO_COMPOSE_ALL_VIDEOS", "MANUAL_ASSET"];
+const uploadAssetSourceHelp: Record<string, string> = {
+  IMAGE_EDIT_NEXT_SOURCE: "Uploads the next young/old original image from CHARACTER_GROUP runtime context.",
+  VIDEO_EDIT_NEXT_PAIR: "Uploads the next transition image pair from edited character assets.",
+  VIDEO_COMPOSE_ALL_VIDEOS: "Uploads all eligible video transition assets from the runtime context.",
+  MANUAL_ASSET: "Uses a selected assetId. Best for Test Run and utility scripts."
+};
 const scriptStepTemplates: Record<string, { label: string; fields: Array<{ key: string; label: string; type?: "number" | "json" | "text" | "boolean"; required?: boolean }> }> = {
   wait: { label: "wait", fields: [{ key: "ms", label: "ms", type: "number", required: true }] },
   screenshot: { label: "screenshot", fields: [{ key: "label", label: "label" }] },
@@ -621,7 +628,7 @@ const scriptStepTemplates: Record<string, { label: string; fields: Array<{ key: 
   "download-latest": { label: "download-latest", fields: [{ key: "sourceDir", label: "sourceDir" }, { key: "extensions", label: "extensions", type: "json" }, { key: "targetFolder", label: "targetFolder" }] },
   "check-screen": { label: "check-screen", fields: [{ key: "templateId", label: "templateId", required: true }, { key: "timeoutMs", label: "timeoutMs", type: "number" }, { key: "matchType", label: "matchType" }] },
   "wait-screen": { label: "wait-screen", fields: [{ key: "templateId", label: "templateId", required: true }, { key: "timeoutMs", label: "timeoutMs", type: "number" }, { key: "intervalMs", label: "intervalMs", type: "number" }] },
-  "upload-file": { label: "upload-file", fields: [{ key: "assetId", label: "assetId", required: true }, { key: "target", label: "target" }, { key: "openPicker", label: "openPicker", type: "boolean" }, { key: "cleanupAfterRun", label: "cleanupAfterRun", type: "boolean" }] },
+  "upload-file": { label: "upload-file", fields: [{ key: "assetSource", label: "Asset Source", required: true }, { key: "assetId", label: "Asset" }, { key: "target", label: "Target" }, { key: "openPicker", label: "openPicker", type: "boolean" }, { key: "cleanupAfterRun", label: "cleanupAfterRun", type: "boolean" }] },
   "cleanup-factory-temp": { label: "cleanup-factory-temp", fields: [{ key: "olderThanHours", label: "olderThanHours", type: "number" }, { key: "includeUploads", label: "includeUploads", type: "boolean" }, { key: "includeLiveScreenshots", label: "includeLiveScreenshots", type: "boolean" }, { key: "includeDebugScreenshots", label: "includeDebugScreenshots", type: "boolean" }] },
   retry: { label: "retry", fields: [{ key: "maxRetries", label: "maxRetries", type: "number", required: true }, { key: "retryDelayMs", label: "retryDelayMs", type: "number" }] },
   if: { label: "if", fields: [{ key: "condition", label: "condition", required: true }, { key: "thenSteps", label: "thenSteps", type: "json" }, { key: "elseSteps", label: "elseSteps", type: "json" }] },
@@ -724,7 +731,9 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   });
   const payload = (await response.json()) as ApiResponse<T>;
   if (!response.ok || payload.ok === false) {
-    throw new Error(payload.error?.message ?? `Request failed: ${path}`);
+    const code = payload.error?.code;
+    const message = payload.error?.message ?? `Request failed: ${path}`;
+    throw new Error(code ? `${code}: ${message}` : message);
   }
   return payload.data;
 }
@@ -1277,7 +1286,7 @@ function LiveInstanceView({
             {mode === "script-designer" ? (
               <>
                 <button onClick={() => onCaptureStep?.({ type: "screenshot", config: {} })}>Add Screenshot Step</button>
-                <button onClick={() => onCaptureStep?.({ type: "upload-file", config: { assetId: "{{asset.youngOriginalImage.id}}", target: "android-file-picker", openPicker: true, cleanupAfterRun: true } })}>Add Upload File Step</button>
+                <button onClick={() => onCaptureStep?.({ type: "upload-file", description: "Upload next original image from character group", config: { assetSource: "IMAGE_EDIT_NEXT_SOURCE", target: "android-file-picker", openPicker: true, cleanupAfterRun: true } })}>Add Upload File Step</button>
                 <button onClick={() => onCaptureStep?.({ type: "download-latest", config: {} })}>Add Download Latest Step</button>
               </>
             ) : null}
@@ -1461,10 +1470,12 @@ function workflowRulesForTemplate(templateType: string) {
 function normalizeScriptStep(step: Record<string, unknown>, index = 0) {
   const config = getRecord(step.config);
   const input = getRecord(step.input);
+  const description = getString(step.description) || getString(step.purpose);
   return {
     ...step,
     type: getString(step.type) || getString(step.stepType) || "wait",
     stepNo: Number(step.stepNo ?? index + 1),
+    ...(description ? { description } : {}),
     config: { ...input, ...config }
   };
 }
@@ -1478,12 +1489,14 @@ function scriptStepConfig(step: Record<string, unknown>) {
 }
 
 function scriptStepSummary(step: Record<string, unknown>) {
+  const description = getString(step.description) || getString(step.purpose);
   const config = scriptStepConfig(step);
   const entries = Object.entries(config)
     .filter(([, value]) => value !== undefined && value !== "")
     .slice(0, 3)
     .map(([key, value]) => `${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`);
-  return entries.join(" / ") || "No config";
+  const configSummary = entries.join(" / ") || "No config";
+  return description ? `${description} / ${configSummary}` : configSummary;
 }
 
 function scriptStepFlowLabel(step: Record<string, unknown>) {
@@ -1521,6 +1534,14 @@ function validateScriptSteps(steps: Array<Record<string, unknown>>) {
     }
     if (!template) {
       messages.push({ index, level: "warning", message: `Unknown step type: ${type}` });
+      return;
+    }
+    if (type === "upload-file") {
+      const assetSource = getString(config.assetSource) || (getString(config.assetId) ? "MANUAL_ASSET" : "");
+      if (!assetSource) messages.push({ index, level: "error", message: "upload-file needs assetSource" });
+      if (assetSource === "MANUAL_ASSET" && !getString(config.assetId)) {
+        messages.push({ index, level: "error", message: "MANUAL_ASSET needs assetId" });
+      }
       return;
     }
     for (const field of template.fields.filter((item) => item.required)) {
@@ -1873,6 +1894,8 @@ export function App() {
     asset: { publicUrl: "/storage/sample.png" },
     runtime: { instanceId: "", adbId: "" }
   }, null, 2));
+  const [scriptTestUploadStepIndex, setScriptTestUploadStepIndex] = useState("0");
+  const [scriptTestManualAssetId, setScriptTestManualAssetId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedPromptCategory, setSelectedPromptCategory] = useState("IMAGE_EDIT");
   const [promptStatusFilter, setPromptStatusFilter] = useState("");
@@ -4504,12 +4527,38 @@ export function App() {
     });
   }
 
+  function updateScriptStepDescription(index: number, value: string) {
+    const step = scriptDraft.steps[index];
+    if (!step) return;
+    updateScriptStep(index, {
+      ...step,
+      description: value
+    });
+  }
+
   function addScriptStep(type = "wait") {
     const template = scriptStepTemplates[type];
-    const config = Object.fromEntries((template?.fields ?? []).map((field) => [field.key, field.type === "number" ? 0 : field.type === "json" ? [] : field.type === "boolean" ? true : field.key === "target" && type === "upload-file" ? "android-file-picker" : ""]));
-    const next = [...scriptDraft.steps, normalizeScriptStep({ type, config }, scriptDraft.steps.length)];
-    setSelectedScriptStepIndex(next.length - 1);
-    setScriptDraftDefinition({ steps: next });
+    const config = Object.fromEntries((template?.fields ?? []).map((field) => [
+      field.key,
+      field.type === "number"
+        ? 0
+        : field.type === "json"
+          ? []
+          : field.type === "boolean"
+            ? true
+            : field.key === "target" && type === "upload-file"
+              ? "android-file-picker"
+              : field.key === "assetSource" && type === "upload-file"
+                ? "IMAGE_EDIT_NEXT_SOURCE"
+                : ""
+    ]));
+    const insertIndex = selectedScriptStepIndex >= 0 && selectedScriptStepIndex < scriptDraft.steps.length
+      ? selectedScriptStepIndex + 1
+      : scriptDraft.steps.length;
+    const next = [...scriptDraft.steps];
+    next.splice(insertIndex, 0, normalizeScriptStep({ type, description: "", config }, insertIndex));
+    setSelectedScriptStepIndex(insertIndex);
+    setScriptDraftDefinition({ steps: next.map((step, itemIndex) => normalizeScriptStep(step, itemIndex)) });
   }
 
   function appendScriptCaptureStep(step: Record<string, unknown>) {
@@ -4541,6 +4590,31 @@ export function App() {
     next.splice(index + 1, 0, normalizeScriptStep({ ...step, config: { ...scriptStepConfig(step) } }, index + 1));
     setSelectedScriptStepIndex(index + 1);
     setScriptDraftDefinition({ steps: next.map((item, itemIndex) => normalizeScriptStep(item, itemIndex)) });
+  }
+
+  function applyManualAssetToTestUploadStep() {
+    if (!scriptTestManualAssetId) {
+      setStatus("Select an asset for MANUAL_ASSET Test Run");
+      return;
+    }
+    const uploadSteps = scriptDraft.steps
+      .map((step, index) => ({ step, index }))
+      .filter(({ step }) => scriptStepType(step) === "upload-file");
+    const selectedUpload = uploadSteps[Number(scriptTestUploadStepIndex)] ?? uploadSteps[0];
+    if (!selectedUpload) {
+      setStatus("Add an upload-file step before selecting a MANUAL_ASSET");
+      return;
+    }
+    updateScriptStep(selectedUpload.index, {
+      ...selectedUpload.step,
+      config: {
+        ...scriptStepConfig(selectedUpload.step),
+        assetSource: "MANUAL_ASSET",
+        assetId: scriptTestManualAssetId
+      }
+    });
+    setSelectedScriptStepIndex(selectedUpload.index);
+    setStatus("Applied MANUAL_ASSET to the selected upload-file step. Save Draft if you want to keep it in this version.");
   }
 
   function insertScriptVariable(variable: string) {
@@ -4705,7 +4779,9 @@ export function App() {
     });
   }
 
-  async function testRunSelectedScript() {
+  async function testRunSelectedScript(event?: MouseEvent<HTMLButtonElement>) {
+    event?.preventDefault();
+    event?.stopPropagation();
     if (!selectedScriptId) return;
     const selectedInstance = instances.find((instance) => instance.id === selectedInstanceId)
       ?? instances.find((instance) => instance.id === hostInstanceId)
@@ -4718,6 +4794,26 @@ export function App() {
       return;
     }
     const context = parseJsonText(scriptTestContext, {});
+    const uploadSteps = scriptDraft.steps
+      .map((step, index) => ({ step, index }))
+      .filter(({ step }) => scriptStepType(step) === "upload-file");
+    const selectedUpload = uploadSteps[Number(scriptTestUploadStepIndex)] ?? uploadSteps[0];
+    const testRunUploadOverride = scriptTestManualAssetId
+      ? { assetSource: "MANUAL_ASSET", assetId: scriptTestManualAssetId, stepNo: selectedUpload ? Number(selectedUpload.step.stepNo ?? selectedUpload.index + 1) : undefined }
+      : undefined;
+    const hasProductionContext = Boolean(Object.keys(getRecord(context.sourceAssetsSnapshot)).length)
+      || Boolean(Object.keys(getRecord(getRecord(getRecord(context.batch).metadata).sourceAssetsSnapshot)).length)
+      || Boolean(Object.keys(getRecord(getRecord(getRecord(context.productionBatch).metadata).sourceAssetsSnapshot)).length)
+      || Boolean(Object.keys(getRecord(getRecord(getRecord(context.sourceBatch).metadata).sourceAssetsSnapshot)).length);
+    const contextDrivenUpload = scriptDraft.steps.find((step) => {
+      const config = scriptStepConfig(step);
+      const source = getString(config.assetSource) || (getString(config.assetId) ? "MANUAL_ASSET" : "");
+      return scriptStepType(step) === "upload-file" && source && source !== "MANUAL_ASSET";
+    });
+    if (contextDrivenUpload && !hasProductionContext && !testRunUploadOverride) {
+      setStatus("This assetSource requires IMAGE_EDIT runtime context. Use MANUAL_ASSET for Test Run.");
+      return;
+    }
     const runtimeContext = getRecord(context.runtime);
     return adminAction("Testing script", () => api(`/scripts/${selectedScriptId}/test-run`, {
       method: "POST",
@@ -4728,9 +4824,11 @@ export function App() {
         adbId,
         context: {
           ...context,
+          ...(testRunUploadOverride ? { testRunUploadOverride } : {}),
           runtime: {
             ...runtimeContext,
             instanceId,
+            localId: selectedInstance?.localId ?? getString(runtimeContext.localId),
             adbId
           }
         }
@@ -6973,8 +7071,14 @@ export function App() {
                                       <small>{scriptStepSummary(step)}</small>
                                     </header>
                                     <div className="scriptStepFields">
+                                      <label>Step Purpose / Description
+                                        <input
+                                          value={getString(step.description) || getString(getRecord(step).purpose)}
+                                          onChange={(event) => updateScriptStepDescription(index, event.target.value)}
+                                        />
+                                      </label>
                                       {(template?.fields ?? []).map((field) => (
-                                        <label key={field.key}>{field.label}
+                                        type === "upload-file" && field.key === "assetId" && getString(config.assetSource) !== "MANUAL_ASSET" ? null : <label key={field.key}>{field.label}
                                           {field.type === "json" ? (
                                             <textarea value={compactJson(config[field.key] ?? [])} onChange={(event) => updateScriptStepConfig(index, field.key, parseJsonText(event.target.value, [] as unknown as Record<string, unknown>))} />
                                           ) : field.type === "boolean" ? (
@@ -6983,11 +7087,13 @@ export function App() {
                                               checked={config[field.key] !== false}
                                               onChange={(event) => updateScriptStepConfig(index, field.key, event.target.checked)}
                                             />
+                                          ) : type === "upload-file" && field.key === "assetSource" ? (
+                                            <select value={getString(config.assetSource) || "IMAGE_EDIT_NEXT_SOURCE"} onChange={(event) => updateScriptStepConfig(index, field.key, event.target.value)}>
+                                              {uploadAssetSourceOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                                            </select>
                                           ) : type === "upload-file" && field.key === "assetId" ? (
                                             <select value={String(config[field.key] ?? "")} onChange={(event) => updateScriptStepConfig(index, field.key, event.target.value)}>
                                               <option value="">Select asset...</option>
-                                              <option value="{{asset.youngOriginalImage.id}}">Young Original from runtime context</option>
-                                              <option value="{{asset.oldOriginalImage.id}}">Old Original from runtime context</option>
                                               {assets.filter((asset) => asset.filePath || asset.publicUrl).slice(0, 200).map((asset) => (
                                                 <option key={asset.id} value={asset.id}>{asset.name || asset.id}</option>
                                               ))}
@@ -7001,6 +7107,7 @@ export function App() {
                                           )}
                                         </label>
                                       ))}
+                                      {type === "upload-file" ? <p className="emptyDetail">{uploadAssetSourceHelp[getString(config.assetSource) || "IMAGE_EDIT_NEXT_SOURCE"]}</p> : null}
                                     </div>
                                     <div className="resourceActions">
                                       <button onClick={(event) => { event.stopPropagation(); moveScriptStep(index, -1); }} title="Move up">↑</button>
@@ -7071,11 +7178,32 @@ export function App() {
                             }}><option value="">Select instance</option>{instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.id} / {instance.adbId ?? "no adb"}</option>)}</select></label>
                             <label>ADB ID<input value={hostAdbId} onChange={(event) => setHostAdbId(event.target.value)} /></label>
                             <label>Script Version<select value={selectedScriptVersionId} onChange={(event) => setSelectedScriptVersionId(event.target.value)}>{scriptVersions.map((version) => <option key={version.id} value={version.id}>v{version.versionNo} / {version.status}</option>)}</select></label>
+                            <div className="resourceCreatePanel">
+                              <strong>MANUAL_ASSET Test Upload</strong>
+                              <div className="resourceCreateGrid">
+                                <label>upload-file step<select value={scriptTestUploadStepIndex} onChange={(event) => setScriptTestUploadStepIndex(event.target.value)}>
+                                  {scriptDraft.steps
+                                    .map((step, index) => ({ step, index }))
+                                    .filter(({ step }) => scriptStepType(step) === "upload-file")
+                                    .map(({ step, index }, uploadIndex) => <option key={index} value={String(uploadIndex)}>#{index + 1} {getString(step.description) || scriptStepSummary(step)}</option>)}
+                                  {!scriptDraft.steps.some((step) => scriptStepType(step) === "upload-file") ? <option value="0">No upload-file step</option> : null}
+                                </select></label>
+                                <label>Asset Source<select value="MANUAL_ASSET" onChange={() => undefined}><option value="MANUAL_ASSET">MANUAL_ASSET</option></select></label>
+                                <label>Asset<select value={scriptTestManualAssetId} onChange={(event) => setScriptTestManualAssetId(event.target.value)}>
+                                  <option value="">Select asset...</option>
+                                  {assets.filter((asset) => asset.filePath || asset.publicUrl).slice(0, 300).map((asset) => (
+                                    <option key={asset.id} value={asset.id}>{asset.name || asset.id}</option>
+                                  ))}
+                                </select></label>
+                                <button type="button" onClick={applyManualAssetToTestUploadStep}>Apply to Draft Step</button>
+                              </div>
+                              <p className="emptyDetail">Run Test uses this asset as a MANUAL_ASSET override for upload-file. Apply to Draft Step if you also want the visible step config to change.</p>
+                            </div>
                             <label>Context JSON<textarea value={scriptTestContext} onChange={(event) => setScriptTestContext(event.target.value)} /></label>
                             <div className="resourceActions">
-                              <button disabled={!selectedScriptId} onClick={testRunSelectedScript}><Play size={15} /> Run Test</button>
-                              <button disabled={!hostAdbId} onClick={() => runHostAction("screenshot")}><Image size={15} /> Screenshot</button>
-                              <button disabled={!hostAdbId} onClick={() => runHostAction("send-text")}><Edit3 size={15} /> Send Text</button>
+                              <button type="button" disabled={!selectedScriptId} onClick={testRunSelectedScript}><Play size={15} /> Run Test</button>
+                              <button type="button" disabled={!hostAdbId} onClick={() => runHostAction("screenshot")}><Image size={15} /> Screenshot</button>
+                              <button type="button" disabled={!hostAdbId} onClick={() => runHostAction("send-text")}><Edit3 size={15} /> Send Text</button>
                             </div>
                             {findUrl(hostResult) ? (
                               <div className="liveCapturePreview">
@@ -7233,8 +7361,14 @@ export function App() {
                                   <span className="stepFlowBadge condition">{scriptStepFlowLabel(step)}</span>
                                 </div>
                                 <div className="scriptStepFields inspector">
+                                  <label>Step Purpose / Description
+                                    <input
+                                      value={getString(step.description) || getString(getRecord(step).purpose)}
+                                      onChange={(event) => updateScriptStepDescription(safeIndex, event.target.value)}
+                                    />
+                                  </label>
                                   {(template?.fields ?? []).map((field) => (
-                                    <label key={field.key}>{field.label}
+                                    type === "upload-file" && field.key === "assetId" && getString(config.assetSource) !== "MANUAL_ASSET" ? null : <label key={field.key}>{field.label}
                                       {field.type === "json" ? (
                                         <textarea value={compactJson(config[field.key] ?? [])} onChange={(event) => updateScriptStepConfig(safeIndex, field.key, parseJsonText(event.target.value, [] as unknown as Record<string, unknown>))} />
                                       ) : field.type === "boolean" ? (
@@ -7243,11 +7377,13 @@ export function App() {
                                           checked={config[field.key] !== false}
                                           onChange={(event) => updateScriptStepConfig(safeIndex, field.key, event.target.checked)}
                                         />
+                                      ) : type === "upload-file" && field.key === "assetSource" ? (
+                                        <select value={getString(config.assetSource) || "IMAGE_EDIT_NEXT_SOURCE"} onChange={(event) => updateScriptStepConfig(safeIndex, field.key, event.target.value)}>
+                                          {uploadAssetSourceOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                                        </select>
                                       ) : type === "upload-file" && field.key === "assetId" ? (
                                         <select value={String(config[field.key] ?? "")} onChange={(event) => updateScriptStepConfig(safeIndex, field.key, event.target.value)}>
                                           <option value="">Select asset...</option>
-                                          <option value="{{asset.youngOriginalImage.id}}">Young Original from runtime context</option>
-                                          <option value="{{asset.oldOriginalImage.id}}">Old Original from runtime context</option>
                                           {assets.filter((asset) => asset.filePath || asset.publicUrl).slice(0, 200).map((asset) => (
                                             <option key={asset.id} value={asset.id}>{asset.name || asset.id}</option>
                                           ))}
@@ -7262,6 +7398,7 @@ export function App() {
                                     </label>
                                   ))}
                                   {!template ? <p className="emptyDetail">Unknown step type. Use JSON editor fallback for custom config.</p> : null}
+                                  {type === "upload-file" ? <p className="emptyDetail">{uploadAssetSourceHelp[getString(config.assetSource) || "IMAGE_EDIT_NEXT_SOURCE"]}</p> : null}
                                   {type === "upload-file" ? <p className="emptyDetail">Upload staging uses /sdcard/fb-cm-factory/uploads/ with unique filenames and never uses /sdcard/Download.</p> : null}
                                 </div>
                               </>
@@ -7755,6 +7892,12 @@ export function App() {
                         <span className={`readinessBadge ${groupReadinessClass(selectedGroupDetail.readiness)}`}>{selectedGroupDetail.readiness.label}</span>
                         <small>{selectedGroupDetail.group.attributesSummary || "No attributes"}</small>
                         <small>Created {displayDateTime(selectedGroupDetail.group.createdAt ?? undefined)} / Updated {displayDateTime(selectedGroupDetail.group.updatedAt ?? undefined)}</small>
+                        <div className="resourceMetaGrid detail">
+                          <span>Source Assets Readiness</span><strong>{selectedGroupDetail.members.filter((member) => member.hasYoungOriginal && member.hasOldOriginal).length}/{selectedGroupDetail.members.length} members ready</strong>
+                          <span>Young originals</span><strong>{selectedGroupDetail.members.filter((member) => member.hasYoungOriginal).length}/{selectedGroupDetail.members.length}</strong>
+                          <span>Old originals</span><strong>{selectedGroupDetail.members.filter((member) => member.hasOldOriginal).length}/{selectedGroupDetail.members.length}</strong>
+                        </div>
+                        <p className="emptyDetail">sourceAssetsSnapshot is generated when creating a CHARACTER_GROUP production batch.</p>
                         <div className="controlActions"><button onClick={saveSelectedGroup}>Save</button><button onClick={() => createBatchForGroup(selectedGroupDetail.group.id, selectedGroupDetail.readiness)}>Create Production Batch</button><button className="dangerButton" onClick={() => deleteCharacterGroup(selectedGroupDetail.group)}>Delete Group</button></div>
                       </section>
                     ) : null}
@@ -8043,6 +8186,9 @@ export function App() {
                     const group = getProductionResourceGroup(batch);
                     const post = postContentMetadata(batch);
                     const music = musicTrackMetadata(batch);
+                    const batchMetadata = getRecord(batch.metadata);
+                    const batchSourceAssetsSnapshot = getRecord(batchMetadata.sourceAssetsSnapshot);
+                    const batchSnapshotCharacters = Array.isArray(batchSourceAssetsSnapshot.characters) ? batchSourceAssetsSnapshot.characters.map((item) => getRecord(item)) : [];
                     return (
                       <>
                         <div className="drawerHeader">
@@ -8076,6 +8222,17 @@ export function App() {
                             </div>
                             {batch.batchType === "POST_CONTENT" ? <div className="postPreview"><strong>{post.title || "Post content"}</strong><p>{post.caption || post.postText}</p><small>{post.hashtags.join(" ")} {post.cta ? `/ ${post.cta}` : ""}</small></div> : null}
                             {batch.batchType === "MUSIC_TRACK" ? <div className="postPreview"><strong>{[music.mood, music.tempo, music.style].filter(Boolean).join(" / ") || "Music track"}</strong><p>{[music.scene, music.emotion].filter(Boolean).join(" / ")}</p><small>{music.tags.join(", ")}</small></div> : null}
+                            {batch.batchType === "CHARACTER_GROUP" ? (
+                              <>
+                                <div className="resourceMetaGrid detail">
+                                  <span>sourceAssetsSnapshot</span><strong>{Object.keys(batchSourceAssetsSnapshot).length ? "Present" : "Missing"}</strong>
+                                  <span>Characters</span><strong>{batchSnapshotCharacters.length}</strong>
+                                  <span>Young originals</span><strong>{batchSnapshotCharacters.filter((item) => Boolean(item.youngOriginalImage)).length}/{batchSnapshotCharacters.length}</strong>
+                                  <span>Old originals</span><strong>{batchSnapshotCharacters.filter((item) => Boolean(item.oldOriginalImage)).length}/{batchSnapshotCharacters.length}</strong>
+                                </div>
+                                <details className="resourceCreatePanel"><summary>sourceAssetsSnapshot</summary><pre className="jsonBlock">{compactJson(batchSourceAssetsSnapshot)}</pre></details>
+                              </>
+                            ) : null}
                             <div className="resourceActions">
                               <button className="dangerButton" onClick={() => deleteProductionResource(batch)}><Trash2 size={15} /> {productionResourceIsCharacterGroup(batch) ? "Delete Character Group" : "Delete Resource"}</button>
                             </div>

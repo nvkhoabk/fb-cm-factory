@@ -32,6 +32,8 @@ export const scriptStepDefinitionSchema = z.object({
   stepNo: z.number().int().positive().optional(),
   stepType: z.string().min(1).optional(),
   type: z.string().min(1).optional(),
+  description: z.string().optional(),
+  purpose: z.string().optional(),
   input: z.record(z.string(), z.unknown()).default({}),
   config: z.record(z.string(), z.unknown()).default({})
 }).refine((step) => Boolean(step.stepType || step.type), {

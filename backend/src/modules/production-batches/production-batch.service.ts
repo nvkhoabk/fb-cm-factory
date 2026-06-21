@@ -37,6 +37,7 @@ export const productionBatchService = {
         ...metadata,
         groupId: input.sourceGroupId,
         characterIds: sourceAssets.characterIds,
+        attributesSnapshot: sourceAssets.attributesSnapshot,
         sourceAssetsSnapshot: sourceAssets,
         characterGroupBatch: {
           groupId: input.sourceGroupId,

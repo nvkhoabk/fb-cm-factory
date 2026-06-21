@@ -67,6 +67,14 @@ function sourceAssetsSnapshotFromMetadata(metadata: Record<string, unknown>) {
   return nested && typeof nested === "object" ? nested as Record<string, unknown> : {};
 }
 
+function imageEditSourceAssetCount(sourceAssetsSnapshot: Record<string, unknown>) {
+  const characters = Array.isArray(sourceAssetsSnapshot.characters) ? sourceAssetsSnapshot.characters : [];
+  return characters.reduce((total, item) => {
+    const character = objectValue(item);
+    return total + (character.youngOriginalImage ? 1 : 0) + (character.oldOriginalImage ? 1 : 0);
+  }, 0);
+}
+
 export const jobExecutorService = {
   async executeMockJob(jobId: string) {
     let job = orchestratorRepository.getJob(jobId);
@@ -251,13 +259,23 @@ export const jobExecutorService = {
     }
 
     orchestratorService.startJob(jobId);
-    const scriptRun = scriptRuntimeService.createScriptRun(String(runtimeSession.id), {
-      scriptId: script,
-      context
-    });
-    if (!scriptRun) throw new AppError("SCRIPT_RUN_CREATE_FAILED", "Could not create script run");
-
-    const completedRun = await scriptRuntimeService.executeScriptRun(String(scriptRun.id));
+    const sourceAssetCount = Math.max(1, imageEditSourceAssetCount(sourceAssetsSnapshot));
+    const completedRuns = [];
+    for (let sourceIndex = 0; sourceIndex < sourceAssetCount; sourceIndex += 1) {
+      const runContext = {
+        ...context,
+        resolverState: {
+          imageEditUploadCursor: sourceIndex
+        }
+      };
+      const scriptRun = scriptRuntimeService.createScriptRun(String(runtimeSession.id), {
+        scriptId: script,
+        context: runContext
+      });
+      if (!scriptRun) throw new AppError("SCRIPT_RUN_CREATE_FAILED", "Could not create script run");
+      completedRuns.push(await scriptRuntimeService.executeScriptRun(String(scriptRun.id)));
+    }
+    const completedRun = completedRuns[completedRuns.length - 1];
 
     const outputBatch = productionBatchRepository.create({
       batchType: "IMAGE_BATCH",
@@ -282,7 +300,9 @@ export const jobExecutorService = {
       outputBatchId: outputBatch?.id ?? null,
       outputBatchType: "IMAGE_BATCH",
       runtimeSessionId: runtimeSession.id,
-      scriptRunId: completedRun?.id ?? scriptRun.id,
+      scriptRunId: completedRun?.id ?? null,
+      scriptRunIds: completedRuns.map((run) => run?.id).filter(Boolean),
+      sourceAssetCount,
       prompt: renderedPrompt.prompt
     };
 

@@ -3,6 +3,7 @@ import { instanceSchedulerRepository } from "../instance-scheduler/instance-sche
 import { runtimeRecoveryService } from "../runtime-recovery/runtime-recovery.service";
 import { runtimeSessionsService } from "../runtime-sessions/runtime-sessions.service";
 import { AppError, now } from "../shared/resource";
+import { scriptAssetResolver } from "./script-asset-resolver.service";
 import { scriptRuntimeRepository } from "./script-runtime.repository";
 import type {
   CreateScriptInput,
@@ -107,6 +108,19 @@ function resolveAdbId(input: Record<string, unknown>, context: Record<string, un
   }
 
   throw new AppError("ADB_ID_REQUIRED", "adbId is required", 400);
+}
+
+function resolveLocalId(input: Record<string, unknown>, context: Record<string, unknown>) {
+  const direct = input.localId;
+  if ((typeof direct === "string" || typeof direct === "number") && String(direct)) return direct;
+
+  const contextLocalId = context.localId ?? getPathValue(context, "runtime.localId");
+  if ((typeof contextLocalId === "string" || typeof contextLocalId === "number") && String(contextLocalId)) return contextLocalId;
+
+  const allocationLocalId = getPathValue(context, "allocation.localId");
+  if ((typeof allocationLocalId === "string" || typeof allocationLocalId === "number") && String(allocationLocalId)) return allocationLocalId;
+
+  return undefined;
 }
 
 function orderedSteps(definition: unknown): NormalizedScriptStep[] {
@@ -303,6 +317,7 @@ export const scriptRuntimeService = {
         const outputRecord = output && typeof output === "object" ? output as Record<string, unknown> : {};
         context = mergeContext(context, {
           uploadedFiles: Array.isArray(outputRecord.uploadedFiles) ? outputRecord.uploadedFiles : context.uploadedFiles,
+          resolverState: outputRecord.resolverState && typeof outputRecord.resolverState === "object" ? outputRecord.resolverState : context.resolverState,
           lastStepNo: step.stepNo,
           lastStepType: step.stepType,
           lastStepOutput: output
@@ -375,7 +390,7 @@ export const scriptRuntimeService = {
     });
 
     try {
-      const output = await this.dispatchStep(session, step.stepType, input, effectiveContext);
+      const output = await this.dispatchStep(session, step.stepType, input, mergeContext(effectiveContext, { currentStepNo: step.stepNo }));
       const outputRecord = output && typeof output === "object"
         ? output as Record<string, unknown>
         : { value: output };
@@ -508,26 +523,33 @@ export const scriptRuntimeService = {
     }
 
     if (stepType === "upload-file") {
-      const assetId = typeof input.assetId === "string" && input.assetId
-        ? input.assetId
-        : typeof input.fileAssetId === "string" && input.fileAssetId
-          ? input.fileAssetId
-          : "";
-      if (!assetId) throw new AppError("ASSET_ID_REQUIRED", "upload-file requires assetId");
-      const result = await hostAgentService.pushUploadFile(session.hostId, {
-        instanceId: session.instanceId,
-        adbId: resolveAdbId(input, _context),
-        runtimeSessionId: String(session.id),
-        jobId: typeof session.jobId === "string" ? session.jobId : undefined,
-        assetId
-      });
-      const uploadedFile = (result as Record<string, unknown>).result ?? result;
+      const resolved = scriptAssetResolver.resolveUploadAsset(input, _context);
+      const adbId = resolveAdbId(input, _context);
+      const uploadedFilesThisStep = [];
+      for (const asset of resolved.assetsToUpload) {
+        const result = await hostAgentService.pushUploadFile(session.hostId, {
+          instanceId: session.instanceId,
+          localId: resolveLocalId(input, _context),
+          adbId,
+          runtimeSessionId: String(session.id),
+          jobId: typeof session.jobId === "string" ? session.jobId : undefined,
+          assetId: asset.assetId
+        });
+        uploadedFilesThisStep.push({
+          ...asset,
+          upload: (result as Record<string, unknown>).result ?? result
+        });
+      }
       const existingUploads = Array.isArray(_context.uploadedFiles) ? _context.uploadedFiles : [];
-      const uploadedFiles = [...existingUploads, uploadedFile];
+      const uploadedFiles = [...existingUploads, ...uploadedFilesThisStep];
       _context.uploadedFiles = uploadedFiles;
+      _context.resolverState = resolved.resolverState;
       return {
-        uploadedFile,
+        uploadedFile: uploadedFilesThisStep[0] ?? null,
+        uploadedAssets: resolved.assetsToUpload,
         uploadedFiles,
+        resolverState: resolved.resolverState,
+        assetSource: input.assetSource ?? (input.assetId ? "MANUAL_ASSET" : "IMAGE_EDIT_NEXT_SOURCE"),
         target: input.target ?? "android-file-picker",
         openPicker: input.openPicker !== false
       };
