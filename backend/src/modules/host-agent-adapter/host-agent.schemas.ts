@@ -30,6 +30,24 @@ export const swipeCommandSchema = instanceCommandSchema.extend({
   durationMs: z.number().optional()
 });
 
+export const longPressCommandSchema = instanceCommandSchema.extend({
+  x: z.number(),
+  y: z.number(),
+  durationMs: z.number().optional()
+});
+
+export const scrollToEndCommandSchema = instanceCommandSchema.extend({
+  localId: z.union([z.string(), z.number()]).optional(),
+  direction: z.enum(["down", "up"]).optional(),
+  iterations: z.number().int().min(1).max(30).optional(),
+  durationMs: z.number().int().min(100).max(2000).optional(),
+  pauseMs: z.number().int().min(0).max(2000).optional(),
+  startX: z.number().optional(),
+  startY: z.number().optional(),
+  endX: z.number().optional(),
+  endY: z.number().optional()
+});
+
 export const sendTextCommandSchema = instanceCommandSchema.extend({
   text: z.string()
 });
@@ -39,9 +57,17 @@ export const sendKeyCommandSchema = instanceCommandSchema.extend({
 });
 
 export const downloadLatestCommandSchema = instanceCommandSchema.extend({
+  localId: z.union([z.string(), z.number()]).optional(),
   sourceDir: z.string().optional(),
   extensions: z.array(z.string()).optional(),
-  targetFolder: z.string().optional()
+  targetFolder: z.string().optional(),
+  deleteAfterPull: z.boolean().optional()
+});
+
+export const clearDownloadCommandSchema = instanceCommandSchema.extend({
+  localId: z.union([z.string(), z.number()]).optional(),
+  sourceDir: z.string().optional(),
+  extensions: z.array(z.string()).optional()
 });
 
 export const pushUploadFileCommandSchema = instanceCommandSchema.extend({
@@ -72,9 +98,12 @@ export type InstanceCommandInput = z.infer<typeof instanceCommandSchema>;
 export type LiveScreenshotCommandInput = z.infer<typeof liveScreenshotCommandSchema>;
 export type TapCommandInput = z.infer<typeof tapCommandSchema>;
 export type SwipeCommandInput = z.infer<typeof swipeCommandSchema>;
+export type LongPressCommandInput = z.infer<typeof longPressCommandSchema>;
+export type ScrollToEndCommandInput = z.infer<typeof scrollToEndCommandSchema>;
 export type SendTextCommandInput = z.infer<typeof sendTextCommandSchema>;
 export type SendKeyCommandInput = z.infer<typeof sendKeyCommandSchema>;
 export type DownloadLatestCommandInput = z.infer<typeof downloadLatestCommandSchema>;
+export type ClearDownloadCommandInput = z.infer<typeof clearDownloadCommandSchema>;
 export type PushUploadFileCommandInput = z.infer<typeof pushUploadFileCommandSchema>;
 export type OpenFileCommandInput = z.infer<typeof openFileCommandSchema>;
 export type CleanupUploadSessionCommandInput = z.infer<typeof cleanupUploadSessionCommandSchema>;

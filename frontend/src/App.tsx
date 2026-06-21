@@ -625,7 +625,10 @@ const scriptStepTemplates: Record<string, { label: string; fields: Array<{ key: 
   "send-text": { label: "send-text", fields: [{ key: "text", label: "text", required: true }] },
   "send-text-submit": { label: "send-text-submit", fields: [{ key: "text", label: "text", required: true }, { key: "submitKey", label: "submitKey" }] },
   "send-key": { label: "send-key", fields: [{ key: "key", label: "key", required: true }] },
-  "download-latest": { label: "download-latest", fields: [{ key: "sourceDir", label: "sourceDir" }, { key: "extensions", label: "extensions", type: "json" }, { key: "targetFolder", label: "targetFolder" }] },
+  "long-press": { label: "Long Press", fields: [{ key: "x", label: "x", type: "number", required: true }, { key: "y", label: "y", type: "number", required: true }, { key: "durationMs", label: "durationMs", type: "number" }] },
+  "scroll-to-end": { label: "Scroll To End", fields: [{ key: "direction", label: "direction" }, { key: "iterations", label: "iterations", type: "number" }, { key: "durationMs", label: "durationMs", type: "number" }, { key: "pauseMs", label: "pauseMs", type: "number" }] },
+  "clear-download": { label: "clear-download", fields: [{ key: "sourceDir", label: "sourceDir" }, { key: "extensions", label: "extensions", type: "json" }] },
+  "download-latest": { label: "download-latest", fields: [{ key: "sourceDir", label: "sourceDir" }, { key: "extensions", label: "extensions", type: "json" }, { key: "targetFolder", label: "targetFolder" }, { key: "outputRole", label: "outputRole" }, { key: "bindTo", label: "bindTo", type: "json" }, { key: "createAsset", label: "createAsset", type: "boolean" }, { key: "createOrUpdateBatch", label: "createOrUpdateBatch", type: "boolean" }] },
   "check-screen": { label: "check-screen", fields: [{ key: "templateId", label: "templateId", required: true }, { key: "timeoutMs", label: "timeoutMs", type: "number" }, { key: "matchType", label: "matchType" }] },
   "wait-screen": { label: "wait-screen", fields: [{ key: "templateId", label: "templateId", required: true }, { key: "timeoutMs", label: "timeoutMs", type: "number" }, { key: "intervalMs", label: "intervalMs", type: "number" }] },
   "upload-file": { label: "upload-file", fields: [{ key: "assetSource", label: "Asset Source", required: true }, { key: "assetId", label: "Asset" }, { key: "target", label: "Target" }, { key: "openPicker", label: "openPicker", type: "boolean" }, { key: "cleanupAfterRun", label: "cleanupAfterRun", type: "boolean" }] },
@@ -1073,11 +1076,22 @@ function LiveInstanceView({
   const [error, setError] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [intervalMs, setIntervalMs] = useState(defaultIntervalMs);
-  const [interactionMode, setInteractionMode] = useState<"tap" | "swipe" | "copy">("tap");
+  const [interactionMode, setInteractionMode] = useState<"tap" | "swipe" | "long-press" | "copy">("tap");
   const [coordinate, setCoordinate] = useState<{ x: number; y: number } | null>(null);
   const [swipeStart, setSwipeStart] = useState<{ x: number; y: number } | null>(null);
   const [lastTap, setLastTap] = useState<{ x: number; y: number } | null>(null);
+  const [lastLongPress, setLastLongPress] = useState<{ x: number; y: number } | null>(null);
   const [lastSwipe, setLastSwipe] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const [longPressDurationMs, setLongPressDurationMs] = useState(1000);
+  const [pendingLongPress, setPendingLongPress] = useState<{ x: number; y: number } | null>(null);
+  const [showScrollStepModal, setShowScrollStepModal] = useState(false);
+  const [scrollStepDraft, setScrollStepDraft] = useState({
+    direction: "down" as "down" | "up",
+    iterations: 8,
+    durationMs: 350,
+    pauseMs: 250,
+    description: "Scroll page to bottom"
+  });
   const [text, setText] = useState("");
   const [panelWidth, setPanelWidth] = useState(720);
 
@@ -1151,6 +1165,29 @@ function LiveInstanceView({
     onStatus?.(`Swiped ${swipe.x1},${swipe.y1} to ${swipe.x2},${swipe.y2}`);
   }
 
+  async function runLongPress(point = lastLongPress, durationMs = longPressDurationMs) {
+    if (!canRun || !point) return;
+    await api(`/hosts/${hostId}/instances/${encodeURIComponent(instanceId)}/long-press`, {
+      method: "POST",
+      body: JSON.stringify({ localId, adbId, x: point.x, y: point.y, durationMs })
+    });
+    onStatus?.(`Long Press: ${point.x},${point.y} / Duration: ${durationMs}ms`);
+  }
+
+  async function runScrollToEnd(input: { direction?: "down" | "up"; iterations?: number; durationMs?: number; pauseMs?: number } = {}) {
+    if (!canRun) return;
+    const direction = input.direction ?? "down";
+    const iterations = input.iterations ?? 8;
+    const durationMs = input.durationMs ?? 350;
+    const pauseMs = input.pauseMs ?? 250;
+    onStatus?.("Scrolling to end...");
+    await api(`/hosts/${hostId}/instances/${encodeURIComponent(instanceId)}/scroll-to-end`, {
+      method: "POST",
+      body: JSON.stringify({ localId, adbId, direction, iterations, durationMs, pauseMs })
+    });
+    onStatus?.(`Scroll ${direction}: ${iterations} iteration${iterations === 1 ? "" : "s"}`);
+  }
+
   async function runSendText() {
     if (!canRun || !text) return;
     if (mode === "script-designer") {
@@ -1208,6 +1245,14 @@ function LiveInstanceView({
       }
       runTap(point);
     }
+    if (interactionMode === "long-press") {
+      setLastLongPress(point);
+      if (mode === "script-designer") {
+        setPendingLongPress(point);
+      } else {
+        runLongPress(point);
+      }
+    }
     if (interactionMode === "copy") {
       copyCoordinate(point);
     }
@@ -1252,13 +1297,31 @@ function LiveInstanceView({
         <button onClick={() => panelRef.current?.requestFullscreen?.()}><Eye size={15} /> Fullscreen</button>
       </div>
       <div className="liveModeToolbar">
-        {(["tap", "swipe", "copy"] as const).map((item) => (
-          <button key={item} className={interactionMode === item ? "active" : ""} onClick={() => setInteractionMode(item)}>{item === "tap" ? "Tap Mode" : item === "swipe" ? "Swipe Mode" : "Copy Coordinates"}</button>
+        {(["tap", "swipe", "long-press", "copy"] as const).map((item) => (
+          <button key={item} className={interactionMode === item ? "active" : ""} onClick={() => setInteractionMode(item)}>
+            {item === "tap" ? "Tap Mode" : item === "swipe" ? "Swipe Mode" : item === "long-press" ? "Long Press Mode" : "Copy Coordinates"}
+          </button>
         ))}
+        <label>Duration
+          <select value={longPressDurationMs} onChange={(event) => setLongPressDurationMs(Number(event.target.value) || 1000)}>
+            <option value={500}>500ms</option>
+            <option value={1000}>1000ms</option>
+            <option value={1500}>1500ms</option>
+            <option value={2000}>2000ms</option>
+          </select>
+        </label>
         <span>{coordinate ? `x ${coordinate.x} / y ${coordinate.y}` : "Move over screenshot to read coordinates"}</span>
+        {lastLongPress ? <span>Long Press: {lastLongPress.x},{lastLongPress.y} / {longPressDurationMs}ms</span> : null}
         {error ? <span className="jobErrorBadge">{error}</span> : null}
       </div>
-      <div className="liveCapturePreview liveResizablePreview" style={{ width: `${panelWidth}px` }} ref={panelRef}>
+      <div className="liveModeToolbar compactToolbar">
+        <button disabled={!canRun} onClick={() => runScrollToEnd({ direction: "down", iterations: 1 })}>Scroll Down Once</button>
+        <button disabled={!canRun} onClick={() => runScrollToEnd({ direction: "up", iterations: 1 })}>Scroll Up Once</button>
+        <button disabled={!canRun} onClick={() => runScrollToEnd({ direction: "down", iterations: 4 })}>Quick Scroll</button>
+        <button disabled={!canRun} onClick={() => runScrollToEnd({ direction: "down", iterations: 8 })}>Scroll To End</button>
+        <button disabled={!canRun} onClick={() => runScrollToEnd({ direction: "down", iterations: 15 })}>Deep Scroll</button>
+      </div>
+      <div className={`liveCapturePreview liveResizablePreview ${interactionMode === "long-press" ? "longPressMode" : ""}`} style={{ width: `${panelWidth}px` }} ref={panelRef}>
         {screenshotUrl ? (
           <img
             ref={imageRef}
@@ -1275,7 +1338,88 @@ function LiveInstanceView({
         ) : (
           <div className="resourcePreviewPlaceholder"><Image size={26} /> Live screenshot pending</div>
         )}
+        {lastLongPress && interactionMode === "long-press" ? (
+          <span
+            className="longPressRipple"
+            style={{
+              left: imageRef.current?.naturalWidth ? `${lastLongPress.x / imageRef.current.naturalWidth * 100}%` : "50%",
+              top: imageRef.current?.naturalHeight ? `${lastLongPress.y / imageRef.current.naturalHeight * 100}%` : "50%"
+            }}
+          />
+        ) : null}
       </div>
+      {pendingLongPress ? (
+        <div className="inlineModal">
+          <div className="inlineModalPanel">
+            <strong>Create Long Press Step?</strong>
+            <div className="resourceMetaGrid detail">
+              <span>x</span><strong>{pendingLongPress.x}</strong>
+              <span>y</span><strong>{pendingLongPress.y}</strong>
+              <span>duration</span><strong>{longPressDurationMs}ms</strong>
+            </div>
+            <label>Duration
+              <select value={longPressDurationMs} onChange={(event) => setLongPressDurationMs(Number(event.target.value) || 1000)}>
+                <option value={500}>500ms</option>
+                <option value={1000}>1000ms</option>
+                <option value={1500}>1500ms</option>
+                <option value={2000}>2000ms</option>
+              </select>
+            </label>
+            <div className="resourceActions">
+              <button onClick={() => {
+                onCaptureStep?.({
+                  type: "long-press",
+                  description: "Open context menu",
+                  config: { x: pendingLongPress.x, y: pendingLongPress.y, durationMs: longPressDurationMs }
+                });
+                setPendingLongPress(null);
+              }}>Add Step</button>
+              <button onClick={() => setPendingLongPress(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showScrollStepModal ? (
+        <div className="inlineModal">
+          <div className="inlineModalPanel">
+            <strong>Add Scroll To End Step</strong>
+            <label>Direction
+              <select value={scrollStepDraft.direction} onChange={(event) => setScrollStepDraft({ ...scrollStepDraft, direction: event.target.value === "up" ? "up" : "down" })}>
+                <option value="down">down</option>
+                <option value="up">up</option>
+              </select>
+            </label>
+            <label>Iterations
+              <input type="number" min={1} max={30} value={scrollStepDraft.iterations} onChange={(event) => setScrollStepDraft({ ...scrollStepDraft, iterations: Math.max(1, Math.min(30, Number(event.target.value) || 8)) })} />
+            </label>
+            <label>Duration
+              <input type="number" min={100} max={2000} value={scrollStepDraft.durationMs} onChange={(event) => setScrollStepDraft({ ...scrollStepDraft, durationMs: Math.max(100, Math.min(2000, Number(event.target.value) || 350)) })} />
+            </label>
+            <label>Pause
+              <input type="number" min={0} max={2000} value={scrollStepDraft.pauseMs} onChange={(event) => setScrollStepDraft({ ...scrollStepDraft, pauseMs: Math.max(0, Math.min(2000, Number(event.target.value) || 250)) })} />
+            </label>
+            <label>Description
+              <input value={scrollStepDraft.description} onChange={(event) => setScrollStepDraft({ ...scrollStepDraft, description: event.target.value })} />
+            </label>
+            <div className="resourceActions">
+              <button onClick={() => {
+                onCaptureStep?.({
+                  type: "scroll-to-end",
+                  description: scrollStepDraft.description || "Scroll page to bottom",
+                  config: {
+                    direction: scrollStepDraft.direction,
+                    iterations: scrollStepDraft.iterations,
+                    durationMs: scrollStepDraft.durationMs,
+                    pauseMs: scrollStepDraft.pauseMs
+                  }
+                });
+                setShowScrollStepModal(false);
+              }}>Add Step</button>
+              <button onClick={() => setShowScrollStepModal(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {enableActions ? (
         <div className="liveActionPanel">
           <label>Text<input value={text} onChange={(event) => setText(event.target.value)} placeholder="Send text through ADB Keyboard" /></label>
@@ -1286,8 +1430,10 @@ function LiveInstanceView({
             {mode === "script-designer" ? (
               <>
                 <button onClick={() => onCaptureStep?.({ type: "screenshot", config: {} })}>Add Screenshot Step</button>
+                <button onClick={() => setShowScrollStepModal(true)}>Add Scroll To End Step</button>
+                <button onClick={() => onCaptureStep?.({ type: "clear-download", description: "Clear Android Download folder", config: { sourceDir: "/sdcard/Download", extensions: ["png", "jpg", "jpeg", "webp", "mp4"] } })}>Add Clear Download Step</button>
                 <button onClick={() => onCaptureStep?.({ type: "upload-file", description: "Upload next original image from character group", config: { assetSource: "IMAGE_EDIT_NEXT_SOURCE", target: "android-file-picker", openPicker: true, cleanupAfterRun: true } })}>Add Upload File Step</button>
-                <button onClick={() => onCaptureStep?.({ type: "download-latest", config: {} })}>Add Download Latest Step</button>
+                <button onClick={() => onCaptureStep?.({ type: "download-latest", description: "Capture downloaded output", config: { sourceDir: "/sdcard/Download", extensions: ["png", "jpg", "jpeg", "webp", "mp4"], outputRole: "IMAGE_EDIT_RESULT", bindTo: { type: "SOURCE_ASSET", cursor: "CURRENT_IMAGE_EDIT_SOURCE" }, createAsset: true, createOrUpdateBatch: true } })}>Add Download Latest Step</button>
               </>
             ) : null}
           </div>
@@ -1491,6 +1637,17 @@ function scriptStepConfig(step: Record<string, unknown>) {
 function scriptStepSummary(step: Record<string, unknown>) {
   const description = getString(step.description) || getString(step.purpose);
   const config = scriptStepConfig(step);
+  if (scriptStepType(step) === "long-press") {
+    const point = `(${Number(config.x ?? 0)},${Number(config.y ?? 0)})`;
+    const duration = `${Number(config.durationMs ?? 1000)}ms`;
+    return description ? `${description} / Long Press ${point} / ${duration}` : `Long Press ${point} / ${duration}`;
+  }
+  if (scriptStepType(step) === "scroll-to-end") {
+    const direction = getString(config.direction) || "down";
+    const iterations = Number(config.iterations ?? 8);
+    const summary = `Scroll To End / ${direction} / ${iterations} iterations`;
+    return description ? `${description} / ${summary}` : summary;
+  }
   const entries = Object.entries(config)
     .filter(([, value]) => value !== undefined && value !== "")
     .slice(0, 3)
@@ -1506,8 +1663,10 @@ function scriptStepFlowLabel(step: Record<string, unknown>) {
   if (type === "retry") return `RETRY ${config.attempts ?? config.maxAttempts ?? ""}`.trim();
   if (type === "wait" || type === "wait-screen") return "WAIT";
   if (type === "check-screen") return "CHECK";
+  if (type === "long-press") return "HOLD";
+  if (type === "scroll-to-end") return "SCROLL";
   if (["tap", "swipe", "send-text", "send-text-submit", "send-key"].includes(type)) return "ACTION";
-  if (["upload-file", "download-latest", "screenshot"].includes(type)) return "IO";
+  if (["upload-file", "download-latest", "clear-download", "screenshot"].includes(type)) return "IO";
   if (type === "run-sub-script") return "SUB-SCRIPT";
   return "STEP";
 }
@@ -4819,8 +4978,10 @@ export function App() {
       method: "POST",
       body: JSON.stringify({
         scriptVersionId: selectedScriptVersionId || undefined,
-        hostId: host.id,
+        hostId: host.hostId,
+        hostDbId: host.id,
         instanceId,
+        localId: selectedInstance?.localId,
         adbId,
         context: {
           ...context,
@@ -4834,6 +4995,32 @@ export function App() {
         }
       })
     }));
+  }
+
+  async function testScreenshotForScriptRunSelection(event?: MouseEvent<HTMLButtonElement>) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const selectedInstance = instances.find((instance) => instance.id === selectedInstanceId)
+      ?? instances.find((instance) => instance.id === hostInstanceId)
+      ?? null;
+    const host = selectedInstance ? hostForInstance(selectedInstance) : selectedHost;
+    const instanceId = selectedInstance?.id || hostInstanceId;
+    const adbId = selectedInstance?.adbId || hostAdbId;
+    if (!host || !instanceId || !adbId) {
+      setStatus("Select host, instance, and adbId");
+      return;
+    }
+    return adminAction("Testing screenshot", async () => {
+      const result = await api(`/hosts/${host.id}/instances/${encodeURIComponent(instanceId)}/live-screenshot`, {
+        method: "POST",
+        body: JSON.stringify({
+          localId: selectedInstance?.localId,
+          adbId
+        })
+      });
+      setHostResult(result);
+      return result;
+    });
   }
 
   async function saveWorkflowCapacity(scope: "workflow" | "run") {
@@ -7175,9 +7362,24 @@ export function App() {
                               setSelectedInstanceId(event.target.value);
                               setHostInstanceId(event.target.value);
                               setHostAdbId(instance?.adbId ?? "");
+                              const host = instance ? hostForInstance(instance) : null;
+                              if (host) setSelectedHostId(host.hostId);
                             }}><option value="">Select instance</option>{instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.id} / {instance.adbId ?? "no adb"}</option>)}</select></label>
                             <label>ADB ID<input value={hostAdbId} onChange={(event) => setHostAdbId(event.target.value)} /></label>
                             <label>Script Version<select value={selectedScriptVersionId} onChange={(event) => setSelectedScriptVersionId(event.target.value)}>{scriptVersions.map((version) => <option key={version.id} value={version.id}>v{version.versionNo} / {version.status}</option>)}</select></label>
+                            {(() => {
+                              const instance = instances.find((item) => item.id === selectedInstanceId) ?? instances.find((item) => item.id === hostInstanceId) ?? null;
+                              const host = instance ? hostForInstance(instance) : selectedHost;
+                              return (
+                                <div className="resourceMetaGrid detail">
+                                  <span>Host</span><strong>{host?.hostId ?? "-"}</strong>
+                                  <span>Host DB</span><strong>{host?.id ? displayShortId(host.id) : "-"}</strong>
+                                  <span>Instance</span><strong>{instance?.id ?? (hostInstanceId || "-")}</strong>
+                                  <span>Local ID</span><strong>{instance?.localId ?? "-"}</strong>
+                                  <span>ADB</span><strong>{instance?.adbId ?? (hostAdbId || "-")}</strong>
+                                </div>
+                              );
+                            })()}
                             <div className="resourceCreatePanel">
                               <strong>MANUAL_ASSET Test Upload</strong>
                               <div className="resourceCreateGrid">
@@ -7202,6 +7404,7 @@ export function App() {
                             <label>Context JSON<textarea value={scriptTestContext} onChange={(event) => setScriptTestContext(event.target.value)} /></label>
                             <div className="resourceActions">
                               <button type="button" disabled={!selectedScriptId} onClick={testRunSelectedScript}><Play size={15} /> Run Test</button>
+                              <button type="button" disabled={!hostAdbId} onClick={testScreenshotForScriptRunSelection}><Image size={15} /> Test Screenshot</button>
                               <button type="button" disabled={!hostAdbId} onClick={() => runHostAction("screenshot")}><Image size={15} /> Screenshot</button>
                               <button type="button" disabled={!hostAdbId} onClick={() => runHostAction("send-text")}><Edit3 size={15} /> Send Text</button>
                             </div>
@@ -7323,7 +7526,7 @@ export function App() {
                                     <strong>{type}</strong>
                                     <small>{scriptStepSummary(step)}</small>
                                   </div>
-                                  <em className={`stepFlowBadge ${flowLabel === "ACTION" ? "action" : flowLabel.startsWith("IF") ? "condition" : ""}`}>{flowLabel}</em>
+                                  <em className={`stepFlowBadge ${flowLabel === "ACTION" ? "action" : flowLabel === "HOLD" ? "hold" : flowLabel === "SCROLL" ? "scroll" : flowLabel.startsWith("IF") ? "condition" : ""}`}>{flowLabel}</em>
                                 </button>
                               );
                             })}
@@ -7358,7 +7561,7 @@ export function App() {
                                       {Object.keys(scriptStepTemplates).map((option) => <option key={option} value={option}>{option}</option>)}
                                     </select>
                                   </label>
-                                  <span className="stepFlowBadge condition">{scriptStepFlowLabel(step)}</span>
+                                  <span className={`stepFlowBadge ${scriptStepFlowLabel(step) === "ACTION" ? "action" : scriptStepFlowLabel(step) === "HOLD" ? "hold" : scriptStepFlowLabel(step) === "SCROLL" ? "scroll" : scriptStepFlowLabel(step).startsWith("IF") ? "condition" : ""}`}>{scriptStepFlowLabel(step)}</span>
                                 </div>
                                 <div className="scriptStepFields inspector">
                                   <label>Step Purpose / Description
@@ -8751,12 +8954,17 @@ export function App() {
                           <div className="runtimeTimelineStrip">{(scriptRun?.steps ?? selectedRuntime.steps ?? []).map((step) => <span className={step.status.toLowerCase()} key={step.id}>{step.stepType} {step.status === "COMPLETED" ? "✓" : step.status === "FAILED" ? "✗" : ""}</span>)}</div>
                           {(scriptRun?.steps ?? selectedRuntime.steps ?? []).map((step) => {
                             const url = findUrl(step.output);
+                            const output = getRecord(step.output);
+                            const resultLabel = getString(output.label) || (step.stepType === "download-latest" ? "Downloaded Output" : "");
+                            const warning = getString(output.warning) || getString(getRecord(output.pulledFile).warning);
                             return (
                               <article className="runtimeStepCard" key={step.id}>
                                 <header><strong>{step.stepNo}. {step.stepType}</strong><span className="statusPill">{step.status}</span></header>
                                 <small>{displayDateTime(step.startedAt ?? undefined)} → {displayDateTime(step.finishedAt ?? undefined)} / {displayDuration(step.startedAt, step.finishedAt)}</small>
                                 <p>Input: {scriptStepSummary({ config: step.input ?? {} })}</p>
                                 <p>Output: {scriptStepSummary({ config: step.output ?? {} })}</p>
+                                {resultLabel && url ? <a href={mediaUrl(url)} target="_blank" rel="noreferrer">{resultLabel}</a> : null}
+                                {warning ? <span className="jobWarningBadge">{warning}</span> : null}
                                 {step.errorMessage ? <span className="jobErrorBadge">{step.errorMessage}</span> : null}
                                 {url ? <img src={mediaUrl(url)} alt={`${step.stepType} output`} /> : null}
                               </article>

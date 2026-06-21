@@ -11,11 +11,13 @@ export type QueryMap = Record<string, unknown>;
 export class AppError extends Error {
   statusCode: number;
   code: string;
+  detail?: unknown;
 
-  constructor(code: string, message: string, statusCode = 400) {
+  constructor(code: string, message: string, statusCode = 400, detail?: unknown) {
     super(message);
     this.code = code;
     this.statusCode = statusCode;
+    this.detail = detail;
   }
 }
 
@@ -77,7 +79,8 @@ export function sendError(res: Response, error: unknown) {
       ok: false,
       error: {
         code: error.code,
-        message: error.message
+        message: error.message,
+        ...(error.detail === undefined ? {} : { detail: error.detail })
       }
     });
   }

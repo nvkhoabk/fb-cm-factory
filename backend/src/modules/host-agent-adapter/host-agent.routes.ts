@@ -3,13 +3,16 @@ import { ZodError, type z } from "zod";
 import { sendError } from "../shared/resource";
 import {
   createHostSchema,
+  clearDownloadCommandSchema,
   cleanupOldTempCommandSchema,
   cleanupUploadSessionCommandSchema,
   downloadLatestCommandSchema,
   instanceCommandSchema,
   liveScreenshotCommandSchema,
+  longPressCommandSchema,
   openFileCommandSchema,
   pushUploadFileCommandSchema,
+  scrollToEndCommandSchema,
   sendKeyCommandSchema,
   sendTextCommandSchema,
   swipeCommandSchema,
@@ -154,6 +157,32 @@ hostAgentRouter.post("/:id/swipe", async (req, res) => {
   }
 });
 
+hostAgentRouter.post("/:id/instances/:instanceId/long-press", async (req, res) => {
+  try {
+    const input = parseCommand(longPressCommandSchema.extend({
+      localId: liveScreenshotCommandSchema.shape.localId
+    }), {
+      ...(req.body ?? {}),
+      instanceId: req.params.instanceId
+    });
+    res.json({ ok: true, data: await hostAgentService.longPress(req.params.id, input) });
+  } catch (error) {
+    sendHostAgentError(res, error);
+  }
+});
+
+hostAgentRouter.post("/:id/instances/:instanceId/scroll-to-end", async (req, res) => {
+  try {
+    const input = parseCommand(scrollToEndCommandSchema, {
+      ...(req.body ?? {}),
+      instanceId: req.params.instanceId
+    });
+    res.json({ ok: true, data: await hostAgentService.scrollToEnd(req.params.id, input) });
+  } catch (error) {
+    sendHostAgentError(res, error);
+  }
+});
+
 hostAgentRouter.post("/:id/send-text", async (req, res) => {
   try {
     const input = parseCommand(sendTextCommandSchema, req.body);
@@ -176,6 +205,30 @@ hostAgentRouter.post("/:id/download-latest", async (req, res) => {
   try {
     const input = parseCommand(downloadLatestCommandSchema, req.body);
     res.json({ ok: true, data: await hostAgentService.downloadLatest(req.params.id, input) });
+  } catch (error) {
+    sendHostAgentError(res, error);
+  }
+});
+
+hostAgentRouter.post("/:id/instances/:instanceId/download-latest", async (req, res) => {
+  try {
+    const input = parseCommand(downloadLatestCommandSchema, {
+      ...(req.body ?? {}),
+      instanceId: req.params.instanceId
+    });
+    res.json({ ok: true, data: await hostAgentService.downloadLatest(req.params.id, input) });
+  } catch (error) {
+    sendHostAgentError(res, error);
+  }
+});
+
+hostAgentRouter.post("/:id/instances/:instanceId/clear-download", async (req, res) => {
+  try {
+    const input = parseCommand(clearDownloadCommandSchema, {
+      ...(req.body ?? {}),
+      instanceId: req.params.instanceId
+    });
+    res.json({ ok: true, data: await hostAgentService.clearDownload(req.params.id, input) });
   } catch (error) {
     sendHostAgentError(res, error);
   }

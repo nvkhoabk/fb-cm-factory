@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { adbClient } from "../adb/adb.client";
 import { config } from "../config";
-import { downloadLatestService, type DownloadLatestInput } from "../storage/download-latest.service";
+import { downloadLatestService, type ClearDownloadInput, type DownloadLatestInput } from "../storage/download-latest.service";
 import { storageService } from "../storage/storage.service";
 
 export type PointInput = {
@@ -18,6 +18,25 @@ export type SwipeInput = {
   x2: number;
   y2: number;
   durationMs?: number;
+};
+
+export type LongPressInput = {
+  adbId: string;
+  x: number;
+  y: number;
+  durationMs?: number;
+};
+
+export type ScrollToEndInput = {
+  adbId: string;
+  direction?: "down" | "up";
+  iterations?: number;
+  durationMs?: number;
+  pauseMs?: number;
+  startX?: number;
+  startY?: number;
+  endX?: number;
+  endY?: number;
 };
 
 export type TextInput = {
@@ -184,6 +203,61 @@ function normalizeKeyCode(keyCode: string | number) {
   } as Record<string, number>)[normalized] ?? keyCode;
 }
 
+function rangeNumber(value: unknown, fallback: number, min: number, max: number, key: string) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  const rounded = Math.floor(parsed);
+  if (rounded < min || rounded > max) {
+    throw commandError("INVALID_SCROLL_INPUT", `${key} must be between ${min} and ${max}`);
+  }
+  return rounded;
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function getScreenSize(adbId: string) {
+  if (config.mockMode) return { width: 1080, height: 1920 };
+  try {
+    const result = await adbClient.runAdb(["-s", adbId, "shell", "wm", "size"]);
+    const match = `${result.stdout}\n${result.stderr}`.match(/(\d+)\s*x\s*(\d+)/i);
+    if (!match) return null;
+    return {
+      width: Number(match[1]),
+      height: Number(match[2])
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function scrollCoordinates(input: ScrollToEndInput) {
+  const size = await getScreenSize(input.adbId);
+  const width = size?.width ?? 1080;
+  const height = size?.height ?? 1920;
+  const direction = input.direction === "up" ? "up" : "down";
+  const down = {
+    startX: Math.round(width / 2),
+    startY: Math.round(height * 0.82),
+    endX: Math.round(width / 2),
+    endY: Math.round(height * 0.22)
+  };
+  const up = {
+    startX: down.endX,
+    startY: down.endY,
+    endX: down.startX,
+    endY: down.startY
+  };
+  const defaults = direction === "up" ? up : down;
+  return {
+    startX: Number.isFinite(input.startX) ? Number(input.startX) : defaults.startX,
+    startY: Number.isFinite(input.startY) ? Number(input.startY) : defaults.startY,
+    endX: Number.isFinite(input.endX) ? Number(input.endX) : defaults.endX,
+    endY: Number.isFinite(input.endY) ? Number(input.endY) : defaults.endY
+  };
+}
+
 export const instanceCommands = {
   async liveScreenshot(instanceId: string, adbId: string) {
     requireAdbId(adbId);
@@ -246,6 +320,67 @@ export const instanceCommands = {
     ]);
   },
 
+  async longPress(input: LongPressInput) {
+    const adbId = requireAdbId(input.adbId);
+    const durationMs = input.durationMs ?? 1000;
+    debugInteraction("long-press", { adbId, x: input.x, y: input.y, durationMs });
+    if (!config.mockMode) {
+      await adbClient.runAdb([
+        "-s",
+        adbId,
+        "shell",
+        "input",
+        "swipe",
+        String(input.x),
+        String(input.y),
+        String(input.x),
+        String(input.y),
+        String(durationMs)
+      ]);
+    }
+    return {
+      adbId,
+      x: input.x,
+      y: input.y,
+      durationMs
+    };
+  },
+
+  async scrollToEnd(input: ScrollToEndInput) {
+    const adbId = requireAdbId(input.adbId);
+    const direction = input.direction === "up" ? "up" : "down";
+    const iterations = rangeNumber(input.iterations, 8, 1, 30, "iterations");
+    const durationMs = rangeNumber(input.durationMs, 350, 100, 2000, "durationMs");
+    const pauseMs = rangeNumber(input.pauseMs, 250, 0, 2000, "pauseMs");
+    const coords = await scrollCoordinates({ ...input, adbId, direction });
+    debugInteraction("scroll-to-end", { adbId, direction, iterations, durationMs, pauseMs, ...coords });
+    if (!config.mockMode) {
+      for (let index = 0; index < iterations; index += 1) {
+        await adbClient.runAdb([
+          "-s",
+          adbId,
+          "shell",
+          "input",
+          "swipe",
+          String(coords.startX),
+          String(coords.startY),
+          String(coords.endX),
+          String(coords.endY),
+          String(durationMs)
+        ]);
+        if (pauseMs > 0 && index < iterations - 1) await wait(pauseMs);
+      }
+    }
+    return {
+      adbId,
+      direction,
+      iterations,
+      durationMs,
+      pauseMs,
+      ...coords
+    };
+  },
+
   async sendText(input: TextInput) {
     const adbId = requireAdbId(input.adbId);
     const text = requireText(input.text);
@@ -303,6 +438,11 @@ export const instanceCommands = {
   async downloadLatest(input: DownloadLatestInput) {
     requireAdbId(input.adbId);
     return downloadLatestService.downloadLatest(input);
+  },
+
+  async clearDownload(input: ClearDownloadInput) {
+    requireAdbId(input.adbId);
+    return downloadLatestService.clearDownload(input);
   },
 
   async pushUploadFile(input: PushUploadFileInput) {

@@ -133,6 +133,62 @@ export const hostAgentClient = {
     });
   },
 
+  longPress(target: HostAgentTarget, input: {
+    instanceId: string;
+    localId?: string | number;
+    adbId: string;
+    x: number;
+    y: number;
+    durationMs?: number;
+  }) {
+    const localId = input.localId === undefined || input.localId === null || input.localId === ""
+      ? input.instanceId
+      : String(input.localId);
+    return requestAgent(target, `/instances/${encodeURIComponent(localId)}/long-press`, {
+      method: "POST",
+      body: body({
+        instanceId: input.instanceId,
+        adbId: input.adbId,
+        x: input.x,
+        y: input.y,
+        durationMs: input.durationMs
+      })
+    });
+  },
+
+  scrollToEnd(target: HostAgentTarget, input: {
+    instanceId: string;
+    localId?: string | number;
+    adbId: string;
+    direction?: "down" | "up";
+    iterations?: number;
+    durationMs?: number;
+    pauseMs?: number;
+    startX?: number;
+    startY?: number;
+    endX?: number;
+    endY?: number;
+  }) {
+    const localId = input.localId === undefined || input.localId === null || input.localId === ""
+      ? input.instanceId
+      : String(input.localId);
+    return requestAgent(target, `/instances/${encodeURIComponent(localId)}/scroll-to-end`, {
+      method: "POST",
+      body: body({
+        instanceId: input.instanceId,
+        adbId: input.adbId,
+        direction: input.direction,
+        iterations: input.iterations,
+        durationMs: input.durationMs,
+        pauseMs: input.pauseMs,
+        startX: input.startX,
+        startY: input.startY,
+        endX: input.endX,
+        endY: input.endY
+      })
+    });
+  },
+
   sendText(target: HostAgentTarget, instanceId: string, adbId: string, text: string) {
     return requestAgent(target, `/instances/${encodeURIComponent(instanceId)}/send-text`, {
       method: "POST",
@@ -149,19 +205,46 @@ export const hostAgentClient = {
 
   downloadLatest(target: HostAgentTarget, input: {
     instanceId: string;
+    localId?: string | number;
     adbId: string;
     sourceDir?: string;
     extensions?: string[];
     targetFolder?: string;
+    deleteAfterPull?: boolean;
   }) {
-    return requestAgent(target, `/instances/${encodeURIComponent(input.instanceId)}/download-latest`, {
+    const localId = input.localId === undefined || input.localId === null || input.localId === ""
+      ? input.instanceId
+      : String(input.localId);
+    return requestAgent(target, `/instances/${encodeURIComponent(localId)}/download-latest`, {
       method: "POST",
       body: body({
         instanceId: input.instanceId,
         adbId: input.adbId,
         sourceDir: input.sourceDir,
         extensions: input.extensions,
-        targetFolder: input.targetFolder
+        targetFolder: input.targetFolder,
+        deleteAfterPull: input.deleteAfterPull
+      })
+    });
+  },
+
+  clearDownload(target: HostAgentTarget, input: {
+    instanceId: string;
+    localId?: string | number;
+    adbId: string;
+    sourceDir?: string;
+    extensions?: string[];
+  }) {
+    const localId = input.localId === undefined || input.localId === null || input.localId === ""
+      ? input.instanceId
+      : String(input.localId);
+    return requestAgent(target, `/instances/${encodeURIComponent(localId)}/clear-download`, {
+      method: "POST",
+      body: body({
+        instanceId: input.instanceId,
+        adbId: input.adbId,
+        sourceDir: input.sourceDir,
+        extensions: input.extensions
       })
     });
   },

@@ -14,10 +14,13 @@ export const supportedScriptStepTypeSchema = z.enum([
   "screenshot",
   "tap",
   "swipe",
+  "long-press",
+  "scroll-to-end",
   "send-text",
   "send-text-submit",
   "send-key",
   "upload-file",
+  "clear-download",
   "cleanup-factory-temp",
   "download-latest",
   "check-screen",
@@ -84,7 +87,9 @@ export const runScriptSchema = z.object({
 export const testRunScriptSchema = z.object({
   scriptVersionId: z.string().min(1).optional(),
   hostId: z.string().min(1),
+  hostDbId: z.string().min(1).optional(),
   instanceId: z.string().min(1),
+  localId: z.union([z.string(), z.number()]).optional(),
   adbId: z.string().min(1),
   context: z.record(z.string(), z.unknown()).default({})
 });

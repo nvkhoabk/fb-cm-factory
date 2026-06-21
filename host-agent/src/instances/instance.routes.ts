@@ -16,12 +16,15 @@ function sendError(res: import("express").Response, error: unknown) {
     "RUNTIME_CONTEXT_REQUIRED",
     "ASSET_ID_REQUIRED",
     "UPLOAD_FILE_NOT_FOUND",
-    "INVALID_REMOTE_PATH"
+    "INVALID_REMOTE_PATH",
+    "INVALID_SCROLL_INPUT",
+    "DOWNLOAD_OUTPUT_NOT_FOUND",
+    "CLEAR_DOWNLOAD_FAILED"
   ]);
   const code = knownCodes.has(errorName)
     ? errorName
     : message.includes("adbId") ? "ADB_ID_REQUIRED" : "INSTANCE_COMMAND_ERROR";
-  res.status(code === "ADB_ID_REQUIRED" || code === "TEXT_REQUIRED" || code === "NO_MATCHING_FILE_FOUND" || code === "RUNTIME_CONTEXT_REQUIRED" || code === "ASSET_ID_REQUIRED" || code === "UPLOAD_FILE_NOT_FOUND" || code === "INVALID_REMOTE_PATH" ? 400 : 500)
+  res.status(code === "ADB_ID_REQUIRED" || code === "TEXT_REQUIRED" || code === "NO_MATCHING_FILE_FOUND" || code === "RUNTIME_CONTEXT_REQUIRED" || code === "ASSET_ID_REQUIRED" || code === "UPLOAD_FILE_NOT_FOUND" || code === "INVALID_REMOTE_PATH" || code === "INVALID_SCROLL_INPUT" || code === "DOWNLOAD_OUTPUT_NOT_FOUND" ? 400 : code === "CLEAR_DOWNLOAD_FAILED" ? 502 : 500)
     .json({ ok: false, error: { code, message } });
 }
 
@@ -94,6 +97,43 @@ instanceRouter.post("/:localId/swipe", requireAgentApiKey, async (req, res) => {
   }
 });
 
+instanceRouter.post("/:localId/long-press", requireAgentApiKey, async (req, res) => {
+  try {
+    res.json({
+      ok: true,
+      data: await instanceCommands.longPress({
+        adbId: String(req.body?.adbId ?? ""),
+        x: numberBody(req.body?.x, "x"),
+        y: numberBody(req.body?.y, "y"),
+        durationMs: req.body?.durationMs === undefined ? undefined : numberBody(req.body.durationMs, "durationMs")
+      })
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+instanceRouter.post("/:localId/scroll-to-end", requireAgentApiKey, async (req, res) => {
+  try {
+    res.json({
+      ok: true,
+      data: await instanceCommands.scrollToEnd({
+        adbId: String(req.body?.adbId ?? ""),
+        direction: req.body?.direction === "up" ? "up" : "down",
+        iterations: req.body?.iterations === undefined ? undefined : numberBody(req.body.iterations, "iterations"),
+        durationMs: req.body?.durationMs === undefined ? undefined : numberBody(req.body.durationMs, "durationMs"),
+        pauseMs: req.body?.pauseMs === undefined ? undefined : numberBody(req.body.pauseMs, "pauseMs"),
+        startX: req.body?.startX === undefined ? undefined : numberBody(req.body.startX, "startX"),
+        startY: req.body?.startY === undefined ? undefined : numberBody(req.body.startY, "startY"),
+        endX: req.body?.endX === undefined ? undefined : numberBody(req.body.endX, "endX"),
+        endY: req.body?.endY === undefined ? undefined : numberBody(req.body.endY, "endY")
+      })
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 instanceRouter.post("/:localId/send-text", requireAgentApiKey, async (req, res) => {
   try {
     res.json({
@@ -130,7 +170,23 @@ instanceRouter.post("/:localId/download-latest", requireAgentApiKey, async (req,
         adbId: String(req.body?.adbId ?? ""),
         sourceDir: typeof req.body?.sourceDir === "string" ? req.body.sourceDir : undefined,
         extensions: Array.isArray(req.body?.extensions) ? req.body.extensions.map(String) : undefined,
-        targetFolder: typeof req.body?.targetFolder === "string" ? req.body.targetFolder : undefined
+        targetFolder: typeof req.body?.targetFolder === "string" ? req.body.targetFolder : undefined,
+        deleteAfterPull: req.body?.deleteAfterPull === true
+      })
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+instanceRouter.post("/:localId/clear-download", requireAgentApiKey, async (req, res) => {
+  try {
+    res.json({
+      ok: true,
+      data: await instanceCommands.clearDownload({
+        adbId: String(req.body?.adbId ?? ""),
+        sourceDir: typeof req.body?.sourceDir === "string" ? req.body.sourceDir : undefined,
+        extensions: Array.isArray(req.body?.extensions) ? req.body.extensions.map(String) : undefined
       })
     });
   } catch (error) {

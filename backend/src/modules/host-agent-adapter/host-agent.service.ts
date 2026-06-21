@@ -9,13 +9,16 @@ import { AppError, createId, now } from "../shared/resource";
 import { hostAgentClient } from "./host-agent.client";
 import type {
   CreateHostInput,
+  ClearDownloadCommandInput,
   DownloadLatestCommandInput,
   InstanceCommandInput,
   LiveScreenshotCommandInput,
   CleanupOldTempCommandInput,
   CleanupUploadSessionCommandInput,
+  LongPressCommandInput,
   OpenFileCommandInput,
   PushUploadFileCommandInput,
+  ScrollToEndCommandInput,
   SendKeyCommandInput,
   SendTextCommandInput,
   SwipeCommandInput,
@@ -334,6 +337,22 @@ export const hostAgentService = {
     };
   },
 
+  async longPress(hostId: string, input: LongPressCommandInput & { localId?: string | number }) {
+    const { host, target } = this.targetForHost(hostId);
+    return {
+      host: publicHost(host),
+      result: await hostAgentClient.longPress(target, input)
+    };
+  },
+
+  async scrollToEnd(hostId: string, input: ScrollToEndCommandInput) {
+    const { host, target } = this.targetForHost(hostId);
+    return {
+      host: publicHost(host),
+      result: await hostAgentClient.scrollToEnd(target, input)
+    };
+  },
+
   async sendText(hostId: string, input: SendTextCommandInput) {
     const { host, target } = this.targetForHost(hostId);
     return {
@@ -355,6 +374,14 @@ export const hostAgentService = {
     return {
       host: publicHost(host),
       result: await hostAgentClient.downloadLatest(target, input)
+    };
+  },
+
+  async clearDownload(hostId: string, input: ClearDownloadCommandInput) {
+    const { host, target } = this.targetForHost(hostId);
+    return {
+      host: publicHost(host),
+      result: await hostAgentClient.clearDownload(target, input)
     };
   },
 

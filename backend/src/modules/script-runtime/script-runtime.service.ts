@@ -1,5 +1,8 @@
+import { assetsService } from "../assets/assets.service";
 import { hostAgentService } from "../host-agent-adapter/host-agent.service";
+import { instancesRepository } from "../instances/instances.repository";
 import { instanceSchedulerRepository } from "../instance-scheduler/instance-scheduler.repository";
+import { productionBatchRepository } from "../production-batches/production-batch.repository";
 import { runtimeRecoveryService } from "../runtime-recovery/runtime-recovery.service";
 import { runtimeSessionsService } from "../runtime-sessions/runtime-sessions.service";
 import { AppError, now } from "../shared/resource";
@@ -32,12 +35,32 @@ function mergeContext(...values: unknown[]) {
   ) as Record<string, unknown>;
 }
 
-function runtimeContext(input: TestRunScriptInput) {
+function objectFrom(value: unknown) {
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+type ResolvedTestRunHost = {
+  requestedHostId: string;
+  requestedHostDbId?: string;
+  resolvedHostId: string;
+  resolvedHostDbId: string;
+  instanceId: string;
+  instanceHostId?: string | null;
+  localId?: string | number;
+  hostConflict?: boolean;
+};
+
+function runtimeContext(input: TestRunScriptInput, resolvedHost: ResolvedTestRunHost) {
   return mergeContext(input.context, {
     adbId: input.adbId,
+    localId: input.localId ?? resolvedHost.localId,
     runtime: {
       instanceId: input.instanceId,
-      hostId: input.hostId,
+      localId: input.localId ?? resolvedHost.localId,
+      hostId: resolvedHost.resolvedHostId,
+      hostDbId: resolvedHost.resolvedHostDbId,
+      requestedHostId: input.hostId,
+      requestedHostDbId: input.hostDbId,
       adbId: input.adbId
     }
   });
@@ -95,11 +118,17 @@ function resolveAdbId(input: Record<string, unknown>, context: Record<string, un
   const contextAdbId = context.adbId;
   if (typeof contextAdbId === "string" && contextAdbId) return contextAdbId;
 
+  const runtimeAdbId = getPathValue(context, "runtime.adbId");
+  if (typeof runtimeAdbId === "string" && runtimeAdbId) return runtimeAdbId;
+
   const allocation = context.allocation;
   if (allocation && typeof allocation === "object") {
     const allocationAdbId = (allocation as Record<string, unknown>).adbId;
     if (typeof allocationAdbId === "string" && allocationAdbId) return allocationAdbId;
   }
+
+  const jobPayloadAdbId = getPathValue(context, "job.payload.adbId") ?? getPathValue(context, "payload.adbId");
+  if (typeof jobPayloadAdbId === "string" && jobPayloadAdbId) return jobPayloadAdbId;
 
   const checkpoint = context.checkpoint;
   if (checkpoint && typeof checkpoint === "object") {
@@ -120,16 +149,31 @@ function resolveLocalId(input: Record<string, unknown>, context: Record<string, 
   const allocationLocalId = getPathValue(context, "allocation.localId");
   if ((typeof allocationLocalId === "string" || typeof allocationLocalId === "number") && String(allocationLocalId)) return allocationLocalId;
 
+  const jobPayloadLocalId = getPathValue(context, "job.payload.localId") ?? getPathValue(context, "payload.localId");
+  if ((typeof jobPayloadLocalId === "string" || typeof jobPayloadLocalId === "number") && String(jobPayloadLocalId)) return jobPayloadLocalId;
+
   return undefined;
 }
 
 function normalizeAdbDevices(value: unknown) {
   const record = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const nested = record.result && typeof record.result === "object" ? record.result as Record<string, unknown> : {};
+  const devicesRecord = record.devices && typeof record.devices === "object" && !Array.isArray(record.devices)
+    ? record.devices as Record<string, unknown>
+    : {};
+  const dataRecord = record.data && typeof record.data === "object" ? record.data as Record<string, unknown> : {};
   const devices = Array.isArray(record.devices)
     ? record.devices
     : Array.isArray(record.adbDevices)
       ? record.adbDevices
+      : Array.isArray(devicesRecord.devices)
+        ? devicesRecord.devices
+        : Array.isArray(devicesRecord.adbDevices)
+          ? devicesRecord.adbDevices
+          : Array.isArray(dataRecord.devices)
+            ? dataRecord.devices
+            : Array.isArray(dataRecord.adbDevices)
+              ? dataRecord.adbDevices
       : Array.isArray(nested.devices)
         ? nested.devices
         : Array.isArray(nested.adbDevices)
@@ -138,18 +182,266 @@ function normalizeAdbDevices(value: unknown) {
   return devices.map((device) => device && typeof device === "object" ? device as Record<string, unknown> : {});
 }
 
-async function assertAdbDeviceReady(hostId: string, adbId: string) {
-  const response = await hostAgentService.listAdbDevices(hostId);
+function deviceIdentifier(device: Record<string, unknown>) {
+  return String(device.adbId ?? device.id ?? device.serial ?? "").trim();
+}
+
+function deviceState(device: Record<string, unknown>) {
+  return String(device.state ?? device.status ?? device.adbStatus ?? "").trim().toLowerCase();
+}
+
+function hostDebugInfo(resolvedHost: ResolvedTestRunHost, adbId: string, devices: Record<string, unknown>[], validationEndpoint: string) {
+  return {
+    requestedHostId: resolvedHost.requestedHostId,
+    requestedHostDbId: resolvedHost.requestedHostDbId,
+    resolvedHostId: resolvedHost.resolvedHostId,
+    resolvedHostDbId: resolvedHost.resolvedHostDbId,
+    instanceId: resolvedHost.instanceId,
+    instanceHostId: resolvedHost.instanceHostId,
+    adbId,
+    reportedDevices: devices.map((device) => ({
+      adbId: deviceIdentifier(device),
+      state: deviceState(device),
+      raw: device
+    })),
+    validationEndpoint
+  };
+}
+
+async function assertAdbDeviceReady(resolvedHost: ResolvedTestRunHost, adbId: string) {
+  const response = await hostAgentService.listAdbDevices(resolvedHost.resolvedHostDbId);
   const devices = normalizeAdbDevices(response);
-  const device = devices.find((item) => String(item.adbId ?? item.id ?? item.serial ?? "") === adbId);
+  const host = hostAgentService.getHostRequired(resolvedHost.resolvedHostDbId);
+  const validationEndpoint = `${String(host.baseUrl).replace(/\/+$/, "")}/adb/devices`;
+  const requestedAdbId = adbId.trim();
+  const detail = hostDebugInfo(resolvedHost, requestedAdbId, devices, validationEndpoint);
+  const device = devices.find((item) => deviceIdentifier(item) === requestedAdbId);
   if (!device) {
-    throw new AppError("ADB_DEVICE_NOT_FOUND", `ADB device ${adbId} was not reported by the selected Host Agent`, 409);
+    throw new AppError("ADB_DEVICE_NOT_FOUND", `ADB device ${requestedAdbId} was not reported by the resolved Host Agent`, 409, detail);
   }
 
-  const state = String(device.state ?? device.status ?? device.adbStatus ?? "").toLowerCase();
+  const state = deviceState(device);
   if (!["device", "online"].includes(state)) {
-    throw new AppError("ADB_DEVICE_NOT_READY", `ADB device ${adbId} is ${state || "not ready"}. Refresh/sync the host or restart the emulator before Test Run.`, 409);
+    throw new AppError("ADB_DEVICE_NOT_READY", `ADB device ${requestedAdbId} is ${state || "not ready"}. Refresh/sync the host or restart the emulator before Test Run.`, 409, detail);
   }
+}
+
+function resolveTestRunHost(input: TestRunScriptInput): ResolvedTestRunHost {
+  const instance = instancesRepository.get(input.instanceId);
+  const requestedHost = hostAgentService.getHost(input.hostId) ?? (input.hostDbId ? hostAgentService.getHost(input.hostDbId) : null);
+  const hostFromInstance = instance?.hostId ? hostAgentService.getHost(String(instance.hostId)) : null;
+  const resolvedHost = hostFromInstance ?? requestedHost;
+  if (!resolvedHost) {
+    throw new AppError("HOST_NOT_FOUND", "Could not resolve Host Agent host for Test Run", 404, {
+      requestedHostId: input.hostId,
+      requestedHostDbId: input.hostDbId,
+      instanceId: input.instanceId,
+      instanceHostId: instance?.hostId ?? null
+    });
+  }
+
+  const hostConflict = Boolean(instance?.hostId && requestedHost && String(instance.hostId) !== String(requestedHost.hostId) && String(instance.hostId) !== String(requestedHost.id));
+  if (hostConflict) {
+    console.warn("[script-test-run] frontend hostId conflicts with instance host; using instance host", {
+      requestedHostId: input.hostId,
+      requestedHostDbId: input.hostDbId,
+      requestedResolvedHostId: requestedHost?.hostId,
+      instanceId: input.instanceId,
+      instanceHostId: instance?.hostId,
+      resolvedHostId: resolvedHost.hostId
+    });
+  }
+
+  return {
+    requestedHostId: input.hostId,
+    requestedHostDbId: input.hostDbId,
+    resolvedHostId: String(resolvedHost.hostId),
+    resolvedHostDbId: String(resolvedHost.id),
+    instanceId: input.instanceId,
+    instanceHostId: instance?.hostId ?? null,
+    localId: input.localId ?? instance?.localId,
+    hostConflict
+  };
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function boolValue(value: unknown, fallback: boolean) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function outputBatchTypeForRole(outputRole: string) {
+  if (outputRole === "VIDEO_TRANSITION_RESULT") return "VIDEO_BATCH";
+  if (outputRole === "VIDEO_COMPOSE_RESULT") return "FINAL_VIDEO";
+  if (outputRole === "IMAGE_EDIT_RESULT") return "IMAGE_BATCH";
+  return null;
+}
+
+function mediaTypeFromMime(value: unknown) {
+  const mimeType = String(value ?? "").toLowerCase();
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType.startsWith("audio/")) return "audio";
+  return "unknown";
+}
+
+function assetSubtypeForOutput(outputRole: string) {
+  if (outputRole === "IMAGE_EDIT_RESULT") return "EDITED_IMAGE";
+  if (outputRole === "VIDEO_TRANSITION_RESULT") return "VIDEO_TRANSITION";
+  if (outputRole === "VIDEO_COMPOSE_RESULT") return "COMPOSED_VIDEO";
+  return "TEST_RUN_RESULT";
+}
+
+function productionContextInfo(context: Record<string, unknown>) {
+  return {
+    jobId: stringValue(getPathValue(context, "job.id")) ?? stringValue(context.jobId),
+    workflowId: stringValue(getPathValue(context, "sourceBatch.workflowId")) ?? stringValue(getPathValue(context, "batch.workflowId")),
+    workflowRunId: stringValue(getPathValue(context, "sourceBatch.workflowRunId")) ?? stringValue(getPathValue(context, "batch.workflowRunId")),
+    sourceBatchId: stringValue(getPathValue(context, "sourceBatch.id")) ?? stringValue(getPathValue(context, "batch.id")) ?? stringValue(context.sourceBatchId),
+    sourceGroupId: stringValue(getPathValue(context, "sourceBatch.sourceGroupId")) ?? stringValue(getPathValue(context, "batch.sourceGroupId")),
+    runtimeSessionId: stringValue(context.runtimeSessionId)
+  };
+}
+
+async function captureDownloadedOutput(params: {
+  scriptRunId: string;
+  session: ReturnType<typeof runtimeSessionsService.getSession>;
+  input: Record<string, unknown>;
+  context: Record<string, unknown>;
+  agentOutput: unknown;
+}) {
+  const pulled = (params.agentOutput && typeof params.agentOutput === "object" && "result" in params.agentOutput)
+    ? (params.agentOutput as Record<string, unknown>).result
+    : params.agentOutput;
+  const file = pulled && typeof pulled === "object" ? pulled as Record<string, unknown> : {};
+  const outputRole = stringValue(params.input.outputRole) ?? "TEST_RUN_RESULT";
+  const production = productionContextInfo(params.context);
+  const currentUpload = objectFrom(params.context.currentUpload);
+  const sourceAssetId = stringValue(currentUpload.assetId) ?? stringValue(params.input.sourceAssetId);
+  const characterId = stringValue(currentUpload.characterId) ?? stringValue(params.input.characterId);
+  const sourceImageRole = stringValue(currentUpload.sourceImageRole) ?? stringValue(currentUpload.role);
+  const hasProductionContext = Boolean(production.jobId || production.sourceBatchId || production.workflowId);
+  const createAsset = boolValue(params.input.createAsset, true) && hasProductionContext;
+  const createOrUpdateBatch = boolValue(params.input.createOrUpdateBatch, true) && hasProductionContext;
+  const outputBatchType = outputBatchTypeForRole(outputRole);
+  const capturedMetadata = {
+    outputRole,
+    sourceAssetId,
+    sourceImageRole,
+    characterId,
+    jobId: production.jobId,
+    runtimeSessionId: params.session.id,
+    scriptRunId: params.scriptRunId,
+    sourceBatchId: production.sourceBatchId,
+    workflowId: production.workflowId,
+    workflowRunId: production.workflowRunId,
+    remotePath: file.remotePath,
+    warning: file.warning
+  };
+
+  if (!createAsset) {
+    return {
+      label: "Test Run Result",
+      outputRole,
+      pulledFile: file,
+      productionContext: hasProductionContext,
+      asset: null,
+      outputBatch: null
+    };
+  }
+
+  const asset = await assetsService.create({
+    characterId: characterId ?? undefined,
+    assetCategory: mediaTypeFromMime(file.mimeType) === "video" ? "VIDEO_TEMPLATE" : "CHARACTER_IMAGE",
+    assetSubType: assetSubtypeForOutput(outputRole),
+    mediaType: mediaTypeFromMime(file.mimeType),
+    versionNo: 1,
+    isBestVersion: false,
+    name: stringValue(file.fileName) ?? `download-output-${Date.now()}`,
+    storageProvider: "host-agent",
+    storageKey: stringValue(file.hostFilePath) ?? undefined,
+    filePath: stringValue(file.hostFilePath) ?? undefined,
+    publicUrl: stringValue(file.publicUrl) ?? undefined,
+    previewUrl: stringValue(file.publicUrl) ?? undefined,
+    mimeType: stringValue(file.mimeType) ?? undefined,
+    fileSize: typeof file.fileSize === "number" ? file.fileSize : 0,
+    sourceAssetId: sourceAssetId ?? undefined,
+    status: "available",
+    usageStatus: "available",
+    usagePolicy: "reusable",
+    qualityStatus: "draft",
+    tags: [outputRole, "download-latest"],
+    attributes: {
+      outputRole,
+      sourceImageRole
+    },
+    metadata: capturedMetadata
+  });
+
+  if (sourceAssetId && asset?.id) {
+    assetsService.createRelation({
+      sourceAssetId,
+      targetAssetId: String(asset.id),
+      relationType: "GENERATED_OUTPUT",
+      workflowRunId: production.workflowRunId ?? undefined,
+      taskRunId: params.scriptRunId,
+      metadata: capturedMetadata
+    });
+  }
+
+  let outputBatch = null;
+  if (createOrUpdateBatch && outputBatchType && asset?.id) {
+    const existing = productionBatchRepository.list().find((batch) => {
+      const metadata = objectFrom(batch.metadata);
+      return String(batch.batchType) === outputBatchType
+        && stringValue(metadata.sourceJobId) === production.jobId
+        && stringValue(metadata.outputRole) === outputRole;
+    });
+    outputBatch = existing
+      ? productionBatchRepository.getDetail(String(existing.id))
+      : productionBatchRepository.create({
+        batchType: outputBatchType,
+        sourceGroupId: production.sourceGroupId ?? undefined,
+        workflowId: production.workflowId ?? undefined,
+        workflowRunId: production.workflowRunId ?? undefined,
+        status: "READY",
+        usageStatus: "AVAILABLE",
+        attributes: {},
+        metadata: {
+          sourceJobId: production.jobId,
+          sourceBatchId: production.sourceBatchId,
+          outputRole,
+          runtimeSessionId: params.session.id,
+          scriptRunId: params.scriptRunId
+        }
+      });
+    if (outputBatch?.id) {
+      productionBatchRepository.addItem(String(outputBatch.id), {
+        itemType: "ASSET",
+        itemId: String(asset.id),
+        role: outputRole,
+        sortOrder: Number(currentUpload.orderNo ?? 0),
+        metadata: capturedMetadata
+      });
+      outputBatch = productionBatchRepository.setStatus(String(outputBatch.id), "READY", "AVAILABLE");
+    }
+  }
+
+  const capturedOutput = {
+    outputRole,
+    pulledFile: file,
+    asset,
+    outputBatch,
+    currentUpload,
+    warning: file.warning
+  };
+  const previous = Array.isArray(params.context.capturedOutputs) ? params.context.capturedOutputs : [];
+  return {
+    ...capturedOutput,
+    capturedOutputs: [...previous, capturedOutput]
+  };
 }
 
 function orderedSteps(definition: unknown): NormalizedScriptStep[] {
@@ -254,10 +546,11 @@ export const scriptRuntimeService = {
       throw new AppError("SCRIPT_VERSION_NOT_FOUND", "Script version not found", 404);
     }
 
-    const context = runtimeContext(input);
-    await assertAdbDeviceReady(input.hostId, input.adbId);
+    const resolvedHost = resolveTestRunHost(input);
+    const context = runtimeContext(input, resolvedHost);
+    await assertAdbDeviceReady(resolvedHost, input.adbId);
     const session = runtimeSessionsService.createRuntimeSession({
-      hostId: input.hostId,
+      hostId: resolvedHost.resolvedHostDbId,
       instanceId: input.instanceId,
       scriptId,
       status: "PENDING",
@@ -267,7 +560,9 @@ export const scriptRuntimeService = {
         currentStepNo: 0,
         context,
         instanceId: input.instanceId,
-        hostId: input.hostId,
+        hostId: resolvedHost.resolvedHostDbId,
+        logicalHostId: resolvedHost.resolvedHostId,
+        localId: resolvedHost.localId,
         adbId: input.adbId
       }
     });
@@ -348,6 +643,8 @@ export const scriptRuntimeService = {
         context = mergeContext(context, {
           uploadedFiles: Array.isArray(outputRecord.uploadedFiles) ? outputRecord.uploadedFiles : context.uploadedFiles,
           resolverState: outputRecord.resolverState && typeof outputRecord.resolverState === "object" ? outputRecord.resolverState : context.resolverState,
+          currentUpload: outputRecord.currentUpload && typeof outputRecord.currentUpload === "object" ? outputRecord.currentUpload : context.currentUpload,
+          capturedOutputs: Array.isArray(outputRecord.capturedOutputs) ? outputRecord.capturedOutputs : context.capturedOutputs,
           lastStepNo: step.stepNo,
           lastStepType: step.stepType,
           lastStepOutput: output
@@ -420,7 +717,7 @@ export const scriptRuntimeService = {
     });
 
     try {
-      const output = await this.dispatchStep(session, step.stepType, input, mergeContext(effectiveContext, { currentStepNo: step.stepNo }));
+      const output = await this.dispatchStep(scriptRunId, session, step.stepType, input, mergeContext(effectiveContext, { currentStepNo: step.stepNo }));
       const outputRecord = output && typeof output === "object"
         ? output as Record<string, unknown>
         : { value: output };
@@ -439,6 +736,7 @@ export const scriptRuntimeService = {
   },
 
   async dispatchStep(
+    scriptRunId: string,
     session: ReturnType<typeof runtimeSessionsService.getSession>,
     stepType: string,
     input: Record<string, unknown>,
@@ -497,6 +795,34 @@ export const scriptRuntimeService = {
       });
     }
 
+    if (stepType === "long-press") {
+      return hostAgentService.longPress(session.hostId, {
+        instanceId: session.instanceId,
+        localId: resolveLocalId(input, _context),
+        adbId: resolveAdbId(input, _context),
+        x: Number(input.x),
+        y: Number(input.y),
+        durationMs: typeof input.durationMs === "number" ? input.durationMs : 1000
+      });
+    }
+
+    if (stepType === "scroll-to-end") {
+      const direction = input.direction === "up" ? "up" : "down";
+      return hostAgentService.scrollToEnd(session.hostId, {
+        instanceId: session.instanceId,
+        localId: resolveLocalId(input, _context),
+        adbId: resolveAdbId(input, _context),
+        direction,
+        iterations: typeof input.iterations === "number" ? input.iterations : undefined,
+        durationMs: typeof input.durationMs === "number" ? input.durationMs : undefined,
+        pauseMs: typeof input.pauseMs === "number" ? input.pauseMs : undefined,
+        startX: typeof input.startX === "number" ? input.startX : undefined,
+        startY: typeof input.startY === "number" ? input.startY : undefined,
+        endX: typeof input.endX === "number" ? input.endX : undefined,
+        endY: typeof input.endY === "number" ? input.endY : undefined
+      });
+    }
+
     if (stepType === "send-text") {
       return hostAgentService.sendText(session.hostId, {
         instanceId: session.instanceId,
@@ -543,12 +869,31 @@ export const scriptRuntimeService = {
     }
 
     if (stepType === "download-result" || stepType === "download-latest") {
-      return hostAgentService.downloadLatest(session.hostId, {
+      const agentOutput = await hostAgentService.downloadLatest(session.hostId, {
         instanceId: session.instanceId,
+        localId: resolveLocalId(input, _context),
         adbId: resolveAdbId(input, _context),
         sourceDir: typeof input.sourceDir === "string" ? input.sourceDir : undefined,
         extensions: Array.isArray(input.extensions) ? input.extensions.map(String) : undefined,
-        targetFolder: typeof input.targetFolder === "string" ? input.targetFolder : undefined
+        targetFolder: typeof input.targetFolder === "string" ? input.targetFolder : "task-outputs",
+        deleteAfterPull: typeof input.deleteAfterPull === "boolean" ? input.deleteAfterPull : undefined
+      });
+      return captureDownloadedOutput({
+        scriptRunId,
+        session,
+        input,
+        context: _context,
+        agentOutput
+      });
+    }
+
+    if (stepType === "clear-download") {
+      return hostAgentService.clearDownload(session.hostId, {
+        instanceId: session.instanceId,
+        localId: resolveLocalId(input, _context),
+        adbId: resolveAdbId(input, _context),
+        sourceDir: typeof input.sourceDir === "string" ? input.sourceDir : undefined,
+        extensions: Array.isArray(input.extensions) ? input.extensions.map(String) : undefined
       });
     }
 
@@ -574,11 +919,21 @@ export const scriptRuntimeService = {
       const uploadedFiles = [...existingUploads, ...uploadedFilesThisStep];
       _context.uploadedFiles = uploadedFiles;
       _context.resolverState = resolved.resolverState;
+      _context.currentUpload = resolved.assetsToUpload[0]
+        ? {
+          assetId: resolved.assetsToUpload[0].assetId,
+          characterId: resolved.assetsToUpload[0].characterId,
+          sourceImageRole: resolved.assetsToUpload[0].role,
+          role: resolved.assetsToUpload[0].role,
+          orderNo: resolved.assetsToUpload[0].orderNo
+        }
+        : _context.currentUpload;
       return {
         uploadedFile: uploadedFilesThisStep[0] ?? null,
         uploadedAssets: resolved.assetsToUpload,
         uploadedFiles,
         resolverState: resolved.resolverState,
+        currentUpload: _context.currentUpload,
         assetSource: input.assetSource ?? (input.assetId ? "MANUAL_ASSET" : "IMAGE_EDIT_NEXT_SOURCE"),
         target: input.target ?? "android-file-picker",
         openPicker: input.openPicker !== false

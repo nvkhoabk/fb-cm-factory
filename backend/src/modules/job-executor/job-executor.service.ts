@@ -7,6 +7,7 @@ import { promptRenderService } from "../prompt-builder/prompt-render.service";
 import { scriptRuntimeRepository } from "../script-runtime/script-runtime.repository";
 import { scriptRuntimeService } from "../script-runtime/script-runtime.service";
 import { runtimeSessionsService } from "../runtime-sessions/runtime-sessions.service";
+import { instanceSchedulerRepository } from "../instance-scheduler/instance-scheduler.repository";
 import { AppError } from "../shared/resource";
 import type { BatchType, BatchUsageStatus } from "../production-batches/production-batch.schemas";
 
@@ -195,6 +196,9 @@ export const jobExecutorService = {
     if (!sourceBatch) throw new AppError("SOURCE_BATCH_NOT_FOUND", "Source production batch not found", 404);
 
     const payload = objectValue(job.payload);
+    const allocation = stringValue(payload.allocationId)
+      ? instanceSchedulerRepository.getAllocation(String(payload.allocationId))
+      : instanceSchedulerRepository.getActiveAllocationByJob(jobId);
     const metadata = objectValue(sourceBatch.metadata);
     const promptTemplates = objectValue(metadata.promptTemplates);
     const host = stringValue(payload.hostId)
@@ -204,6 +208,8 @@ export const jobExecutorService = {
 
     const instanceId = stringValue(payload.instanceId);
     if (!instanceId) throw new AppError("JOB_ALLOCATION_NOT_FOUND", "Allocated job payload is missing instanceId");
+    const localId = payload.localId ?? allocation?.localId ?? null;
+    const adbId = stringValue(payload.adbId) ?? (typeof allocation?.adbId === "string" ? allocation.adbId : null);
 
     const script = stringValue(payload.scriptId)
       ?? stringValue(metadata.scriptId)
@@ -232,6 +238,20 @@ export const jobExecutorService = {
       prompt: {
         image: renderedPrompt.prompt
       },
+      runtime: {
+        instanceId,
+        localId,
+        hostId: host,
+        adbId
+      },
+      allocation: {
+        allocationId: payload.allocationId ?? allocation?.id ?? null,
+        poolId: payload.poolId ?? allocation?.poolId ?? null,
+        instanceId,
+        localId,
+        hostId: host,
+        adbId
+      },
       sourceBatch,
       job
     };
@@ -248,7 +268,9 @@ export const jobExecutorService = {
         jobId,
         allocationId: payload.allocationId ?? null,
         instanceId,
+        localId,
         hostId: host,
+        adbId,
         currentStepNo: 0,
         context
       }
