@@ -24,6 +24,7 @@ function mapBatch(row: Record<string, unknown>) {
   return {
     id: String(row.id),
     batchType: String(row.batch_type),
+    sourceGroupId: row.source_group_id ?? null,
     workflowId: row.workflow_id ?? null,
     workflowRunId: row.workflow_run_id ?? null,
     status: String(row.status),
@@ -243,6 +244,32 @@ export const orchestratorRepository = {
       SELECT * FROM orchestrator_jobs
       WHERE source_batch_id = ? AND target_stage_type = ?
     `).get(sourceBatchId, targetStageType);
+
+    return row ? mapJob(row as Record<string, unknown>) : null;
+  },
+
+  getJobBySourceStageAndAsset(sourceBatchId: string, targetStageType: string, sourceAssetId: string) {
+    const row = db.prepare(`
+      SELECT * FROM orchestrator_jobs
+      WHERE source_batch_id = ?
+        AND target_stage_type = ?
+        AND json_extract(payload_json, '$.sourceAssetId') = ?
+        AND status IN ('PENDING', 'ALLOCATED', 'RUNNING', 'COMPLETED', 'FAILED_RECOVERABLE')
+      LIMIT 1
+    `).get(sourceBatchId, targetStageType, sourceAssetId);
+
+    return row ? mapJob(row as Record<string, unknown>) : null;
+  },
+
+  getJobBySourceStageAndTransition(sourceBatchId: string, targetStageType: string, transitionKey: string) {
+    const row = db.prepare(`
+      SELECT * FROM orchestrator_jobs
+      WHERE source_batch_id = ?
+        AND target_stage_type = ?
+        AND json_extract(payload_json, '$.transitionKey') = ?
+        AND status IN ('PENDING', 'ALLOCATED', 'RUNNING', 'COMPLETED', 'FAILED_RECOVERABLE')
+      LIMIT 1
+    `).get(sourceBatchId, targetStageType, transitionKey);
 
     return row ? mapJob(row as Record<string, unknown>) : null;
   },

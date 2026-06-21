@@ -15,6 +15,7 @@ import {
   Rocket,
   RefreshCcw,
   Archive,
+  AlertTriangle,
   Search,
   Shuffle,
   Sparkles,
@@ -361,6 +362,20 @@ type ScriptVersionRecord = {
   updatedAt?: string;
 };
 
+type ScreenTemplateRecord = {
+  id: string;
+  name: string;
+  category: string;
+  templateType: "OCR_TEXT" | "IMAGE_MATCH" | "REGION_MATCH" | string;
+  templateImageUrl?: string | null;
+  ocrText?: string | null;
+  threshold: number;
+  region?: Record<string, unknown>;
+  status: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
 type OrchestratorRule = {
   id: string;
   name: string;
@@ -556,6 +571,7 @@ type ManagementSection =
   | "instances"
   | "instance-pools"
   | "scripts"
+  | "screen-templates"
   | "prompt-templates"
   | "characters"
   | "character-groups"
@@ -568,6 +584,42 @@ type AppPage = "control-center" | "studio" | "asset-center" | "production-jobs" 
 type CapacityPoolsTab = "operational" | "capabilities" | "workflow" | "legacy";
 type CapacityDrawerTab = "overview" | "capabilities" | "allocation" | "history" | "host" | "json";
 type ProductionControlView = "group" | "job";
+
+type ProductionGroupRunSourceImage = {
+  characterId?: string | null;
+  characterName?: string | null;
+  sourceAssetId: string;
+  sourceImageRole: string;
+  orderNo?: number;
+  sourceThumbnailUrl?: string | null;
+  sourcePublicUrl?: string | null;
+  job?: OrchestratorJob | null;
+  runtime?: RuntimeSession | null;
+  outputAsset?: AssetRecord | null;
+  outputThumbnailUrl?: string | null;
+  assignedInstanceId?: string | null;
+  error?: string | null;
+};
+
+type ProductionGroupRun = {
+  characterGroupBatch: ProductionBatch;
+  group?: CharacterGroup | null;
+  workflow?: WorkflowRecord | null;
+  imageBatch?: ProductionBatch | null;
+  imageEditProgress: {
+    expectedCount: number;
+    completedCount: number;
+    missingCount: number;
+    failedCount: number;
+    runningCount: number;
+    pendingCount: number;
+    status: string;
+    imageBatchStatus?: string | null;
+    imageBatchUsageStatus?: string | null;
+  };
+  sourceImages: ProductionGroupRunSourceImage[];
+  recommendations: string[];
+};
 
 type PromptPreviews = Record<PromptKind, string>;
 type PromptSelections = Record<PromptKind, string>;
@@ -629,13 +681,13 @@ const scriptStepTemplates: Record<string, { label: string; fields: Array<{ key: 
   "scroll-to-end": { label: "Scroll To End", fields: [{ key: "direction", label: "direction" }, { key: "iterations", label: "iterations", type: "number" }, { key: "durationMs", label: "durationMs", type: "number" }, { key: "pauseMs", label: "pauseMs", type: "number" }] },
   "clear-download": { label: "clear-download", fields: [{ key: "sourceDir", label: "sourceDir" }, { key: "extensions", label: "extensions", type: "json" }] },
   "download-latest": { label: "download-latest", fields: [{ key: "sourceDir", label: "sourceDir" }, { key: "extensions", label: "extensions", type: "json" }, { key: "targetFolder", label: "targetFolder" }, { key: "outputRole", label: "outputRole" }, { key: "bindTo", label: "bindTo", type: "json" }, { key: "createAsset", label: "createAsset", type: "boolean" }, { key: "createOrUpdateBatch", label: "createOrUpdateBatch", type: "boolean" }] },
-  "check-screen": { label: "check-screen", fields: [{ key: "templateId", label: "templateId", required: true }, { key: "timeoutMs", label: "timeoutMs", type: "number" }, { key: "matchType", label: "matchType" }] },
-  "wait-screen": { label: "wait-screen", fields: [{ key: "templateId", label: "templateId", required: true }, { key: "timeoutMs", label: "timeoutMs", type: "number" }, { key: "intervalMs", label: "intervalMs", type: "number" }] },
+  "check-screen": { label: "check-screen", fields: [{ key: "templateId", label: "Screen Template", required: true }, { key: "matchType", label: "Match Type" }, { key: "threshold", label: "threshold", type: "number" }, { key: "timeoutMs", label: "timeoutMs", type: "number" }] },
+  "wait-screen": { label: "wait-screen", fields: [{ key: "templateId", label: "Screen Template", required: true }, { key: "matchType", label: "Match Type" }, { key: "timeoutMs", label: "timeoutMs", type: "number" }, { key: "pollIntervalMs", label: "pollIntervalMs", type: "number" }, { key: "threshold", label: "threshold", type: "number" }] },
   "upload-file": { label: "upload-file", fields: [{ key: "assetSource", label: "Asset Source", required: true }, { key: "assetId", label: "Asset" }, { key: "target", label: "Target" }, { key: "openPicker", label: "openPicker", type: "boolean" }, { key: "cleanupAfterRun", label: "cleanupAfterRun", type: "boolean" }] },
   "cleanup-factory-temp": { label: "cleanup-factory-temp", fields: [{ key: "olderThanHours", label: "olderThanHours", type: "number" }, { key: "includeUploads", label: "includeUploads", type: "boolean" }, { key: "includeLiveScreenshots", label: "includeLiveScreenshots", type: "boolean" }, { key: "includeDebugScreenshots", label: "includeDebugScreenshots", type: "boolean" }] },
-  retry: { label: "retry", fields: [{ key: "maxRetries", label: "maxRetries", type: "number", required: true }, { key: "retryDelayMs", label: "retryDelayMs", type: "number" }] },
-  if: { label: "if", fields: [{ key: "condition", label: "condition", required: true }, { key: "thenSteps", label: "thenSteps", type: "json" }, { key: "elseSteps", label: "elseSteps", type: "json" }] },
-  "run-sub-script": { label: "run-sub-script", fields: [{ key: "scriptId", label: "scriptId", required: true }, { key: "versionId", label: "versionId" }] }
+  retry: { label: "retry", fields: [{ key: "targetStepNo", label: "targetStepNo", type: "number", required: true }, { key: "maxRetries", label: "maxRetries", type: "number", required: true }, { key: "retryDelayMs", label: "retryDelayMs", type: "number" }] },
+  if: { label: "if", fields: [{ key: "condition", label: "condition", type: "json", required: true }, { key: "thenSteps", label: "thenSteps", type: "json" }, { key: "elseSteps", label: "elseSteps", type: "json" }] },
+  "run-sub-script": { label: "run-sub-script", fields: [{ key: "scriptId", label: "scriptId", required: true }, { key: "versionId", label: "versionId" }, { key: "inheritContext", label: "inheritContext", type: "boolean" }] }
 };
 const scriptRuntimeVariables = ["{{prompt.image}}", "{{prompt.video}}", "{{prompt.music}}", "{{prompt.post}}", "{{group.name}}", "{{group.size}}", "{{batch.id}}", "{{asset.publicUrl}}", "{{asset.youngOriginalImage.id}}", "{{asset.oldOriginalImage.id}}", "{{runtime.instanceId}}", "{{runtime.adbId}}"];
 const standardGroupAttributeKeys = ["background", "outfit", "emotion", "scene"];
@@ -655,7 +707,7 @@ const promptVariableHelpers = [
 ];
 const musicPolicyModes = ["RANDOM_LIBRARY", "REQUIRE_MATCHED", "CREATE_DEDICATED"];
 const musicMatchAttributeOptions = ["mood", "tempo", "style", "scene", "emotion", "tags"];
-const scriptCategoryOptions = ["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT", "UTILITY"];
+const scriptCategoryOptions = ["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT", "UTILITY", "UPLOAD", "DOWNLOAD", "CHROME", "CHATGPT", "PIXVERSE", "CAPCUT"];
 
 const translations: Record<LanguageCode, Record<string, string>> = {
   en: {
@@ -673,6 +725,7 @@ const translations: Record<LanguageCode, Record<string, string>> = {
     "management.promptTemplates": "Prompt Templates",
     "management.productionResources": "Production Resources",
     "management.scripts": "Scripts",
+    "management.screenTemplates": "Screen Templates",
     "management.jobs": "Jobs",
     "management.workflows": "Workflows",
     "management.runtimeSessions": "Runtime Sessions",
@@ -697,6 +750,7 @@ const translations: Record<LanguageCode, Record<string, string>> = {
     "management.promptTemplates": "Mẫu Prompt",
     "management.productionResources": "Tài Nguyên Sản Xuất",
     "management.scripts": "Scripts",
+    "management.screenTemplates": "Screen Templates",
     "management.jobs": "Jobs",
     "management.workflows": "Workflows",
     "management.runtimeSessions": "Phiên Runtime",
@@ -715,6 +769,7 @@ const managementMenuItems: Array<{ id: ManagementSection; labelKey: string }> = 
   { id: "prompt-templates", labelKey: "management.promptTemplates" },
   { id: "production-resources", labelKey: "management.productionResources" },
   { id: "scripts", labelKey: "management.scripts" },
+  { id: "screen-templates", labelKey: "management.screenTemplates" },
   { id: "jobs", labelKey: "management.jobs" },
   { id: "workflows", labelKey: "management.workflows" },
   { id: "runtime-sessions", labelKey: "management.runtimeSessions" },
@@ -1621,6 +1676,7 @@ function normalizeScriptStep(step: Record<string, unknown>, index = 0) {
     ...step,
     type: getString(step.type) || getString(step.stepType) || "wait",
     stepNo: Number(step.stepNo ?? index + 1),
+    enabled: step.enabled !== false,
     ...(description ? { description } : {}),
     config: { ...input, ...config }
   };
@@ -1648,6 +1704,28 @@ function scriptStepSummary(step: Record<string, unknown>) {
     const summary = `Scroll To End / ${direction} / ${iterations} iterations`;
     return description ? `${description} / ${summary}` : summary;
   }
+  if (scriptStepType(step) === "check-screen" || scriptStepType(step) === "wait-screen") {
+    const templateId = getString(config.templateId) || "template";
+    const matchType = getString(config.matchType) || "ocr";
+    const threshold = config.threshold === undefined || config.threshold === "" ? "" : ` / ${config.threshold}`;
+    const summary = `${scriptStepType(step)} / ${templateId} / ${matchType}${threshold}`;
+    return description ? `${description} / ${summary}` : summary;
+  }
+  if (scriptStepType(step) === "if") {
+    const condition = config.condition && typeof config.condition === "object" ? compactJson(config.condition) : getString(config.condition) || "runtime.checkScreenResult.matched";
+    const thenCount = Array.isArray(config.thenSteps) ? config.thenSteps.length : 0;
+    const elseCount = Array.isArray(config.elseSteps) ? config.elseSteps.length : 0;
+    const summary = `IF ${condition} / then ${thenCount} / else ${elseCount}`;
+    return description ? `${description} / ${summary}` : summary;
+  }
+  if (scriptStepType(step) === "retry") {
+    const summary = `Retry #${config.targetStepNo ?? "?"} / ${config.maxRetries ?? 1} attempts`;
+    return description ? `${description} / ${summary}` : summary;
+  }
+  if (scriptStepType(step) === "run-sub-script") {
+    const summary = `Sub-script ${displayShortId(getString(config.scriptId))} / ${displayShortId(getString(config.versionId) || getString(config.scriptVersionId))}`;
+    return description ? `${description} / ${summary}` : summary;
+  }
   const entries = Object.entries(config)
     .filter(([, value]) => value !== undefined && value !== "")
     .slice(0, 3)
@@ -1660,7 +1738,7 @@ function scriptStepFlowLabel(step: Record<string, unknown>) {
   const type = scriptStepType(step);
   const config = scriptStepConfig(step);
   if (type === "if") return `IF ${getString(config.condition) || "condition"}`;
-  if (type === "retry") return `RETRY ${config.attempts ?? config.maxAttempts ?? ""}`.trim();
+  if (type === "retry") return `RETRY ${config.targetStepNo ?? ""}`.trim();
   if (type === "wait" || type === "wait-screen") return "WAIT";
   if (type === "check-screen") return "CHECK";
   if (type === "long-press") return "HOLD";
@@ -1868,11 +1946,15 @@ export function App() {
   const [assetCenterTotal, setAssetCenterTotal] = useState(0);
   const [assetCategories, setAssetCategories] = useState<AssetCategory[]>([]);
   const [jobs, setJobs] = useState<OrchestratorJob[]>([]);
+  const [productionGroupRuns, setProductionGroupRuns] = useState<ProductionGroupRun[]>([]);
   const [runtimeSessions, setRuntimeSessions] = useState<RuntimeSession[]>([]);
   const [scriptRuns, setScriptRuns] = useState<ScriptRun[]>([]);
+  const [screenTemplates, setScreenTemplates] = useState<ScreenTemplateRecord[]>([]);
   const [scriptVersions, setScriptVersions] = useState<ScriptVersionRecord[]>([]);
   const [scriptVersionIndex, setScriptVersionIndex] = useState<Record<string, ScriptVersionRecord[]>>({});
   const [launchedJobs, setLaunchedJobs] = useState<OrchestratorJob[]>([]);
+  const [launchGroupRun, setLaunchGroupRun] = useState<ProductionGroupRun | null>(null);
+  const [selectedGroupRunBatchId, setSelectedGroupRunBatchId] = useState("");
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [attributeValues, setAttributeValues] = useState<Record<string, string>>({
     scene: "street",
@@ -1960,6 +2042,17 @@ export function App() {
   const [instanceScreenshotPreviews, setInstanceScreenshotPreviews] = useState<Record<string, InstanceScreenshotPreview>>({});
   const [managementSection, setManagementSection] = useState<ManagementSection>("characters");
   const [scripts, setScripts] = useState<ScriptRecord[]>([]);
+  const [selectedScreenTemplateId, setSelectedScreenTemplateId] = useState("");
+  const [screenTemplateForm, setScreenTemplateForm] = useState({
+    name: "",
+    category: "Utility",
+    templateType: "OCR_TEXT",
+    templateImageUrl: "",
+    ocrText: "",
+    threshold: "0.8",
+    region: "{}",
+    status: "active"
+  });
   const [orchestratorRules, setOrchestratorRules] = useState<OrchestratorRule[]>([]);
   const [selectedRuleId, setSelectedRuleId] = useState("");
   const [selectedPoolId, setSelectedPoolId] = useState("");
@@ -2309,6 +2402,25 @@ export function App() {
     }
     return [...map.entries()].map(([groupId, value]) => ({ groupId, ...value })).filter((entry) => entry.jobs.length || entry.batches.length);
   }, [batches, groups, managementFilteredJobs]);
+  const filteredProductionGroupRuns = useMemo(() => {
+    const search = adminSearch.toLowerCase();
+    return productionGroupRuns.filter((run) => {
+      const workflowId = run.workflow?.id ?? run.characterGroupBatch.workflowId ?? "";
+      const groupId = run.group?.id ?? batchGroupId(run.characterGroupBatch) ?? "";
+      const haystack = `${run.characterGroupBatch.id} ${run.group?.name ?? ""} ${run.workflow?.name ?? ""} ${run.imageEditProgress.status}`.toLowerCase();
+      return (!adminSearch || haystack.includes(search))
+        && (!jobsWorkflowFilter || workflowId === jobsWorkflowFilter)
+        && (!jobsGroupFilter || groupId === jobsGroupFilter)
+        && (!statusFilter || run.imageEditProgress.status === statusFilter || run.characterGroupBatch.status === statusFilter)
+        && (!jobsFailedOnly || run.imageEditProgress.failedCount > 0);
+    });
+  }, [adminSearch, jobsFailedOnly, jobsGroupFilter, jobsWorkflowFilter, productionGroupRuns, statusFilter]);
+  const selectedGroupRun = useMemo(
+    () => filteredProductionGroupRuns.find((run) => run.characterGroupBatch.id === selectedGroupRunBatchId)
+      ?? filteredProductionGroupRuns[0]
+      ?? null,
+    [filteredProductionGroupRuns, selectedGroupRunBatchId]
+  );
   const productionRecoveryJobs = useMemo(() => (
     jobs.filter((job) => runtimeSessions.some((session) => session.jobId === job.id && session.status === "FAILED_RECOVERABLE"))
   ), [jobs, runtimeSessions]);
@@ -2324,12 +2436,15 @@ export function App() {
   }), [instances, jobs]);
   const productionRecommendations = useMemo(() => {
     const recommendations = [];
+    for (const run of productionGroupRuns.slice(0, 3)) {
+      for (const recommendation of run.recommendations ?? []) recommendations.push(recommendation);
+    }
     if (managementJobKpis.waitingInstance) recommendations.push(`${managementJobKpis.waitingInstance} IMAGE/production jobs waiting for capacity.`);
     if (managementJobKpis.waitingMusic) recommendations.push(`${managementJobKpis.waitingMusic} VIDEO_COMPOSE jobs waiting for matching music.`);
     if (managementJobKpis.waitingResource) recommendations.push(`${managementJobKpis.waitingResource} jobs waiting for source resources.`);
     for (const row of productionCapacityRows.filter((item) => item.shortage > 0)) recommendations.push(`${row.stageType} shortage: need ${row.required}, allocated ${row.allocated}, standby ${row.available}.`);
     return recommendations.length ? recommendations : ["Production queue is healthy. No immediate recommendations."];
-  }, [managementJobKpis.waitingInstance, managementJobKpis.waitingMusic, managementJobKpis.waitingResource, productionCapacityRows]);
+  }, [managementJobKpis.waitingInstance, managementJobKpis.waitingMusic, managementJobKpis.waitingResource, productionCapacityRows, productionGroupRuns]);
   const allocationModeOptions = useMemo(() => {
     const fromJobs = jobs.map((job) => displayJobAllocationMode(job)).filter((value) => value && value !== "-");
     const fromAllocations = allocations.map((allocation) => allocation.allocationMode ?? "").filter(Boolean);
@@ -3080,9 +3195,11 @@ export function App() {
       assetCategoryData,
       jobData,
       allocationData,
+      groupRunData,
       sessionData,
       scriptRunData,
       scriptData,
+      screenTemplateData,
       ruleData
     ] = await Promise.all([
       api<CharacterRecord[]>("/characters"),
@@ -3099,9 +3216,11 @@ export function App() {
       api<AssetCategory[]>("/assets/categories"),
       api<OrchestratorJob[]>("/orchestrator/jobs"),
       api<InstanceAllocationRecord[]>("/instance-allocations"),
+      api<ProductionGroupRun[]>("/production-control/group-runs"),
       api<RuntimeSession[]>("/runtime-sessions"),
       api<ScriptRun[]>("/script-runs"),
       api<ScriptRecord[]>("/scripts"),
+      api<ScreenTemplateRecord[]>("/screen-templates"),
       api<OrchestratorRule[]>("/orchestrator/rules")
     ]);
 
@@ -3123,9 +3242,11 @@ export function App() {
     setAssetCategories(assetCategoryData);
     setJobs(jobData);
     setAllocations(allocationData);
+    setProductionGroupRuns(groupRunData);
     setRuntimeSessions(sessionData);
     setScriptRuns(scriptRunData);
     setScripts(scriptData);
+    setScreenTemplates(screenTemplateData);
     await loadScriptVersionIndex(scriptData);
     setOrchestratorRules(ruleData);
     setSelectedGroups((current) => current.length ? current : groupData[0] ? [groupData[0].id] : []);
@@ -3135,6 +3256,7 @@ export function App() {
     setSelectedInstanceId((current) => current || instanceData[0]?.id || "");
     setSelectedPoolId((current) => current || poolDetails[0]?.id || "");
     setSelectedScriptId((current) => current || scriptData[0]?.id || "");
+    setSelectedScreenTemplateId((current) => current || screenTemplateData[0]?.id || "");
     setSelectedTemplateId((current) => current || templateData[0]?.id || "");
     setSelectedGroupId((current) => current || groupData[0]?.id || "");
     setSelectedAssetId((current) => current || assetData[0]?.id || "");
@@ -3390,9 +3512,22 @@ export function App() {
   }), [instances, selectedWorkflow]);
   const studioSourceAssetsSnapshot = useMemo(() => selectedStudioMembers.map((member) => ({
     characterId: member.character.id,
+    characterName: member.character.name,
     youngOriginalImage: member.youngOriginalImage ?? member.character.sourceImages?.youngOriginalImage ?? null,
     oldOriginalImage: member.oldOriginalImage ?? member.character.sourceImages?.oldOriginalImage ?? null
   })), [selectedStudioMembers]);
+  const studioSourceImages = useMemo(() => studioSourceAssetsSnapshot.flatMap((item, index) => [
+    { characterId: item.characterId, characterName: item.characterName, sourceImageRole: "young", asset: item.youngOriginalImage, orderNo: index * 2 + 1 },
+    { characterId: item.characterId, characterName: item.characterName, sourceImageRole: "old", asset: item.oldOriginalImage, orderNo: index * 2 + 2 }
+  ].filter((entry) => Boolean(entry.asset))), [studioSourceAssetsSnapshot]);
+  const studioImageEditRow = useMemo(() => studioPromptScriptRows.find((row) => row.jobType === "IMAGE_EDIT") ?? null, [studioPromptScriptRows]);
+  const studioEstimatedTransitionJobs = useMemo(() => {
+    const characterCount = selectedStudioMembers.length;
+    if (!characterCount) return 0;
+    const sameCharacterTransitions = characterCount;
+    const betweenCharacterTransitions = Math.max(0, characterCount - 1);
+    return sameCharacterTransitions + betweenCharacterTransitions;
+  }, [selectedStudioMembers.length]);
   const studioReadinessWarnings = useMemo(() => {
     const warnings: string[] = [];
     if (!selectedStudioGroup) warnings.push("Select a Character Group.");
@@ -3402,10 +3537,13 @@ export function App() {
       if (["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "POST_CONTENT"].includes(row.jobType) && !row.prompt) warnings.push(`${row.jobType} is missing prompt template.`);
       if (!row.script) warnings.push(`${row.jobType} is missing script mapping.`);
     }
+    if (studioImageEditRow?.script && !compactJson(studioImageEditRow.script).includes("IMAGE_EDIT_NEXT_SOURCE")) {
+      warnings.push("IMAGE_EDIT script should support upload-file with IMAGE_EDIT_NEXT_SOURCE or currentSourceImage.");
+    }
     for (const row of studioCapacityRows.filter((item) => item.shortage > 0)) warnings.push(`${row.stageType} has no enough eligible STANDBY capacity.`);
     if (musicPolicyMode === "REQUIRE_MATCHED" && !batches.some((batch) => batch.batchType === "MUSIC_TRACK" && batch.status === "READY" && ["AVAILABLE", "REUSABLE"].includes(batch.usageStatus))) warnings.push("No matching READY reusable MUSIC_TRACK is visible.");
     return warnings;
-  }, [batches, musicPolicyMode, selectedStudioGroup, studioCapacityRows, studioPromptScriptRows, studioSourceAssetsSnapshot]);
+  }, [batches, musicPolicyMode, selectedStudioGroup, studioCapacityRows, studioImageEditRow, studioPromptScriptRows, studioSourceAssetsSnapshot]);
   const studioExpectedOutputs = useMemo(() => [
     "IMAGE_BATCH",
     "VIDEO_BATCH",
@@ -4134,7 +4272,7 @@ export function App() {
   }
 
   async function refreshQueue() {
-    const [latestCharacters, latestGroups, latestHosts, latestWorkflows, latestWorkflowRuns, latestInstances, latestPools, latestBatches, latestAssets, latestJobs, latestAllocations, latestSessions, latestScriptRuns, latestScripts, latestRules] = await Promise.all([
+    const [latestCharacters, latestGroups, latestHosts, latestWorkflows, latestWorkflowRuns, latestInstances, latestPools, latestBatches, latestAssets, latestJobs, latestAllocations, latestGroupRuns, latestSessions, latestScriptRuns, latestScripts, latestScreenTemplates, latestRules] = await Promise.all([
       api<CharacterRecord[]>("/characters"),
       api<CharacterGroup[]>("/character-groups"),
       api<HostRecord[]>("/hosts"),
@@ -4146,9 +4284,11 @@ export function App() {
       api<AssetRecord[]>("/assets"),
       api<OrchestratorJob[]>("/orchestrator/jobs"),
       api<InstanceAllocationRecord[]>("/instance-allocations"),
+      api<ProductionGroupRun[]>("/production-control/group-runs"),
       api<RuntimeSession[]>("/runtime-sessions"),
       api<ScriptRun[]>("/script-runs"),
       api<ScriptRecord[]>("/scripts"),
+      api<ScreenTemplateRecord[]>("/screen-templates"),
       api<OrchestratorRule[]>("/orchestrator/rules")
     ]);
     setCharacters(latestCharacters);
@@ -4166,9 +4306,11 @@ export function App() {
     setAssets(latestAssets);
     setJobs(latestJobs);
     setAllocations(latestAllocations);
+    setProductionGroupRuns(latestGroupRuns);
     setRuntimeSessions(latestSessions);
     setScriptRuns(latestScriptRuns);
     setScripts(latestScripts);
+    setScreenTemplates(latestScreenTemplates);
     await loadScriptVersionIndex(latestScripts);
     setOrchestratorRules(latestRules);
     setLastJobsRefreshAt(new Date().toISOString());
@@ -4178,6 +4320,7 @@ export function App() {
       assets: latestAssets,
       jobs: latestJobs,
       allocations: latestAllocations,
+      groupRuns: latestGroupRuns,
       groups: latestGroups,
       hosts: latestHosts,
       workflows: latestWorkflows,
@@ -4362,8 +4505,14 @@ export function App() {
       const result = await api<{ createdJobs: OrchestratorJob[] }>(`/production-batches/${batch.id}/launch`, { method: "POST" });
       setOutputBatch(batch);
       setLaunchedJobs(result.createdJobs ?? []);
+      const launchedRun = await api<ProductionGroupRun>(`/production-control/group-runs/${batch.id}`).catch(() => null);
+      setLaunchGroupRun(launchedRun);
+      if (launchedRun?.characterGroupBatch?.id) setSelectedGroupRunBatchId(launchedRun.characterGroupBatch.id);
       await refreshQueue();
-      setStatus(result.createdJobs?.length ? "Production launched and jobs created" : "Production batch created; no matching rule created a job");
+      const imageProgress = launchedRun?.imageEditProgress;
+      setStatus(result.createdJobs?.length
+        ? `Production launched: ${result.createdJobs.length} jobs${imageProgress ? ` / IMAGE_BATCH ${imageProgress.completedCount}/${imageProgress.expectedCount}` : ""}`
+        : "Production batch created; no matching rule created a job");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not launch production");
     } finally {
@@ -4373,7 +4522,7 @@ export function App() {
 
   async function runJobAction(
     job: OrchestratorJob,
-    action: "allocate" | "execute-mock" | "execute-image-edit" | "start" | "complete" | "fail"
+    action: "allocate" | "execute-mock" | "execute-image-edit" | "start" | "complete" | "fail" | "retry"
   ) {
     setBusy(true);
     setStatus(`${action} ${job.targetStageType}`);
@@ -4394,6 +4543,44 @@ export function App() {
       setStatus("Queue updated");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Job action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runGroupImageAction(run: ProductionGroupRun, action: "allocate-pending" | "execute-allocated" | "retry-failed" | "cancel-pending") {
+    const jobsForAction = run.sourceImages
+      .map((item) => item.job)
+      .filter((job): job is OrchestratorJob => Boolean(job?.id))
+      .filter((job) => (
+        action === "allocate-pending" ? job.status === "PENDING"
+          : action === "execute-allocated" ? job.status === "ALLOCATED"
+            : action === "retry-failed" ? job.status === "FAILED"
+              : job.status === "PENDING"
+      ));
+    if (!jobsForAction.length) {
+      setStatus("No matching IMAGE_EDIT jobs for this action");
+      return;
+    }
+    const label = action.replace(/-/g, " ");
+    if (!window.confirm(`Confirm ${label} for ${jobsForAction.length} IMAGE_EDIT jobs?`)) return;
+    setBusy(true);
+    setStatus(`${label}: ${jobsForAction.length} jobs`);
+    try {
+      for (const job of jobsForAction) {
+        if (action === "cancel-pending") {
+          await api(`/orchestrator/jobs/${job.id}`, { method: "DELETE" });
+        } else {
+          const path = action === "execute-allocated"
+            ? `/job-executor/jobs/${job.id}/execute-image-edit`
+            : `/orchestrator/jobs/${job.id}/${action === "retry-failed" ? "retry" : "allocate"}`;
+          await api(path, { method: "POST" });
+        }
+      }
+      await refreshQueue();
+      setStatus(`${label} completed`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Group action failed");
     } finally {
       setBusy(false);
     }
@@ -4587,6 +4774,76 @@ export function App() {
     setScriptVersionIndex((current) => ({ ...current, [scriptId]: versions }));
     setSelectedScriptVersionId((current) => current || versions[0]?.id || "");
     return versions;
+  }
+
+  function selectScreenTemplate(template: ScreenTemplateRecord) {
+    setSelectedScreenTemplateId(template.id);
+    setScreenTemplateForm({
+      name: template.name,
+      category: template.category,
+      templateType: template.templateType || "OCR_TEXT",
+      templateImageUrl: template.templateImageUrl ?? "",
+      ocrText: template.ocrText ?? "",
+      threshold: String(template.threshold ?? 0.8),
+      region: compactJson(template.region ?? {}),
+      status: template.status || "active"
+    });
+  }
+
+  function screenTemplatePayload() {
+    return {
+      name: screenTemplateForm.name || "New Screen Template",
+      category: screenTemplateForm.category || "Utility",
+      templateType: screenTemplateForm.templateType || "OCR_TEXT",
+      templateImageUrl: screenTemplateForm.templateImageUrl || null,
+      ocrText: screenTemplateForm.ocrText || null,
+      threshold: Number(screenTemplateForm.threshold || 0.8),
+      region: parseJsonText(screenTemplateForm.region, {}),
+      status: screenTemplateForm.status || "active"
+    };
+  }
+
+  async function refreshScreenTemplates() {
+    const latest = await api<ScreenTemplateRecord[]>("/screen-templates");
+    setScreenTemplates(latest);
+    setSelectedScreenTemplateId((current) => current || latest[0]?.id || "");
+    return latest;
+  }
+
+  async function createScreenTemplate() {
+    return adminAction("Creating screen template", async () => {
+      const created = await api<ScreenTemplateRecord>("/screen-templates", {
+        method: "POST",
+        body: JSON.stringify(screenTemplatePayload())
+      });
+      await refreshScreenTemplates();
+      selectScreenTemplate(created);
+      return created;
+    });
+  }
+
+  async function updateScreenTemplate() {
+    if (!selectedScreenTemplateId) return;
+    return adminAction("Updating screen template", async () => {
+      const updated = await api<ScreenTemplateRecord>(`/screen-templates/${selectedScreenTemplateId}`, {
+        method: "PATCH",
+        body: JSON.stringify(screenTemplatePayload())
+      });
+      await refreshScreenTemplates();
+      selectScreenTemplate(updated);
+      return updated;
+    });
+  }
+
+  async function deleteScreenTemplate() {
+    if (!selectedScreenTemplateId) return;
+    return adminAction("Deleting screen template", async () => {
+      const deleted = await api(`/screen-templates/${selectedScreenTemplateId}`, { method: "DELETE" });
+      const latest = await refreshScreenTemplates();
+      if (latest[0]) selectScreenTemplate(latest[0]);
+      else setSelectedScreenTemplateId("");
+      return deleted;
+    });
   }
 
   async function openScript(script: ScriptRecord, tab: typeof scriptDrawerTab = "overview") {
@@ -5754,6 +6011,21 @@ export function App() {
     );
   }
 
+  function imageEditBatchProgress(batch: ProductionBatch) {
+    const metadata = getRecord(batch.metadata);
+    const items = Array.isArray(metadata.items) ? metadata.items.map(getRecord) : [];
+    const expectedCount = Number(metadata.expectedCount ?? items.length);
+    const completedCount = Number(metadata.completedCount ?? items.filter((item) => getString(item.editedAssetId)).length);
+    const failedCount = Number(metadata.failedCount ?? 0);
+    return { items, expectedCount, completedCount, failedCount };
+  }
+
+  function imageEditProgressText(batch: ProductionBatch) {
+    const progress = imageEditBatchProgress(batch);
+    if (!progress.expectedCount) return "";
+    return `${progress.completedCount} / ${progress.expectedCount} images completed${progress.failedCount ? ` / ${progress.failedCount} failed` : ""}`;
+  }
+
   function renderProductionResourceCard(batch: ProductionBatch) {
     const group = getProductionResourceGroup(batch);
     const post = postContentMetadata(batch);
@@ -5779,6 +6051,7 @@ export function App() {
           <span className={`statusPill ${batch.status === "READY" ? "ready" : batch.status === "FAILED" ? "danger" : ""}`}>{batch.status}</span>
           <span className="statusPill">{batch.usageStatus}</span>
         </div>
+        {batch.batchType === "IMAGE_BATCH" && imageEditProgressText(batch) ? <small className="warningText">{imageEditProgressText(batch)}</small> : null}
         <div className="resourceMetaGrid">
           <span>Workflow</span><strong>{batch.workflowId ? displayShortId(batch.workflowId) : "-"}</strong>
           <span>Group</span><strong>{group?.name ?? "-"}</strong>
@@ -5864,7 +6137,7 @@ export function App() {
         <>
           <button onClick={(event) => { event.stopPropagation(); loadJobDetail(job); setJobDrawerTab("overview"); }}>View Error</button>
           <button disabled={busy || runtime?.status !== "FAILED_RECOVERABLE"} onClick={(event) => { event.stopPropagation(); if (runtime) runtimeAction("recover", runtime); }}>Recover</button>
-          <button disabled title="Retry endpoint is not available yet">Retry</button>
+          <button disabled={busy} onClick={(event) => { event.stopPropagation(); runJobAction(job, "retry"); }}>Retry</button>
           <button disabled={busy || runtime?.status !== "FAILED_RECOVERABLE"} onClick={(event) => { event.stopPropagation(); if (runtime) runtimeAction("mark-unrecoverable", runtime); }}>Mark Unrecoverable</button>
         </>
       );
@@ -5882,6 +6155,16 @@ export function App() {
 
   function renderManagementJobCard(job: OrchestratorJob) {
     const { sourceBatch, group, workflow, allocation, runtime } = jobRelationship(job);
+    const payload = getRecord(job.payload);
+    const sourceAsset = getRecord(payload.sourceAsset);
+    const sourceAssetId = getString(payload.sourceAssetId);
+    const sourceImageRole = getString(payload.sourceImageRole);
+    const imageOutputBatch = batches.find((batch) => {
+      const metadata = getRecord(batch.metadata);
+      return batch.batchType === "IMAGE_BATCH" && getString(metadata.sourceBatchId) === job.sourceBatchId && getString(metadata.outputRole) === "IMAGE_EDIT_RESULT";
+    });
+    const outputItem = imageOutputBatch ? imageEditBatchProgress(imageOutputBatch).items.find((item) => getString(item.sourceAssetId) === sourceAssetId) : undefined;
+    const outputAsset = outputItem ? assets.find((asset) => asset.id === getString(outputItem.editedAssetId)) ?? null : null;
     const hasError = job.status === "FAILED" || Boolean(findJobError(job, runtime, scriptRuns.find((run) => run.runtimeSessionId === runtime?.id) ?? null));
     return (
       <article className={`managementJobCard ${selectedJobId === job.id ? "selected" : ""}`} key={job.id} onClick={() => loadJobDetail(job)}>
@@ -5900,7 +6183,15 @@ export function App() {
           <span>Created</span><strong>{displayDateTime(job.createdAt)}</strong>
           <span>Instance</span><strong>{displayShortId(displayJobInstance(job) !== "-" ? displayJobInstance(job) : allocation?.instanceId)}</strong>
           <span>Allocation</span><strong>{displayJobAllocationMode(job) !== "-" ? displayJobAllocationMode(job) : allocation?.allocationMode ?? "-"}</strong>
+          {job.targetStageType === "IMAGE_EDIT" ? <><span>Source Image</span><strong>{sourceImageRole || "-"} #{String(payload.orderNo ?? "-")}</strong></> : null}
         </div>
+        {job.targetStageType === "IMAGE_EDIT" ? (
+          <div className="resourceThumbGrid compactThumbGrid">
+            {getString(sourceAsset.publicUrl) ? <img src={mediaUrl(getString(sourceAsset.publicUrl))} alt="Source image" /> : null}
+            {outputAsset ? <img src={listImageUrl(outputAsset)} alt="Edited output" /> : null}
+            {!getString(sourceAsset.publicUrl) && !outputAsset ? <span className="resourcePreviewPlaceholder"><Image size={18} /> Output pending</span> : null}
+          </div>
+        ) : null}
         {hasError ? <span className="jobErrorBadge">{findJobError(job, runtime, scriptRuns.find((run) => run.runtimeSessionId === runtime?.id) ?? null) || "Failed"}</span> : null}
         {job.status === "PENDING" && !instances.some((instance) => (instance.currentPoolType ?? "") === "STANDBY" && instanceCapabilityLabels(instance).includes(job.targetStageType)) ? <small className="warningText">Reason: No eligible STANDBY instance with required capability.</small> : null}
         <div className="jobCardActions">{renderJobStatusActions(job)}</div>
@@ -7264,6 +7555,13 @@ export function App() {
                                           onChange={(event) => updateScriptStepDescription(index, event.target.value)}
                                         />
                                       </label>
+                                      <label>Enabled
+                                        <input
+                                          type="checkbox"
+                                          checked={step.enabled !== false}
+                                          onChange={(event) => updateScriptStep(index, { ...step, enabled: event.target.checked })}
+                                        />
+                                      </label>
                                       {(template?.fields ?? []).map((field) => (
                                         type === "upload-file" && field.key === "assetId" && getString(config.assetSource) !== "MANUAL_ASSET" ? null : <label key={field.key}>{field.label}
                                           {field.type === "json" ? (
@@ -7284,6 +7582,29 @@ export function App() {
                                               {assets.filter((asset) => asset.filePath || asset.publicUrl).slice(0, 200).map((asset) => (
                                                 <option key={asset.id} value={asset.id}>{asset.name || asset.id}</option>
                                               ))}
+                                            </select>
+                                          ) : (type === "check-screen" || type === "wait-screen") && field.key === "templateId" ? (
+                                            <select value={String(config[field.key] ?? "")} onChange={(event) => updateScriptStepConfig(index, field.key, event.target.value)}>
+                                              <option value="">Select template...</option>
+                                              {screenTemplates.map((templateItem) => (
+                                                <option key={templateItem.id} value={templateItem.id}>{templateItem.category} / {templateItem.name}</option>
+                                              ))}
+                                            </select>
+                                          ) : (type === "check-screen" || type === "wait-screen") && field.key === "matchType" ? (
+                                            <select value={getString(config[field.key]) || "ocr"} onChange={(event) => updateScriptStepConfig(index, field.key, event.target.value)}>
+                                              <option value="ocr">ocr</option>
+                                              <option value="contains">contains</option>
+                                              <option value="image">image</option>
+                                            </select>
+                                          ) : type === "run-sub-script" && field.key === "scriptId" ? (
+                                            <select value={String(config[field.key] ?? "")} onChange={(event) => updateScriptStepConfig(index, field.key, event.target.value)}>
+                                              <option value="">Select script...</option>
+                                              {scripts.map((script) => <option key={script.id} value={script.id}>{script.name}</option>)}
+                                            </select>
+                                          ) : type === "run-sub-script" && field.key === "versionId" ? (
+                                            <select value={String(config[field.key] ?? "")} onChange={(event) => updateScriptStepConfig(index, field.key, event.target.value)}>
+                                              <option value="">Latest active</option>
+                                              {(scriptVersionIndex[getString(config.scriptId)] ?? []).map((version) => <option key={version.id} value={version.id}>v{version.versionNo} / {version.status}</option>)}
                                             </select>
                                           ) : (
                                             <input
@@ -7570,6 +7891,13 @@ export function App() {
                                       onChange={(event) => updateScriptStepDescription(safeIndex, event.target.value)}
                                     />
                                   </label>
+                                  <label>Enabled
+                                    <input
+                                      type="checkbox"
+                                      checked={step.enabled !== false}
+                                      onChange={(event) => updateScriptStep(safeIndex, { ...step, enabled: event.target.checked })}
+                                    />
+                                  </label>
                                   {(template?.fields ?? []).map((field) => (
                                     type === "upload-file" && field.key === "assetId" && getString(config.assetSource) !== "MANUAL_ASSET" ? null : <label key={field.key}>{field.label}
                                       {field.type === "json" ? (
@@ -7591,6 +7919,29 @@ export function App() {
                                             <option key={asset.id} value={asset.id}>{asset.name || asset.id}</option>
                                           ))}
                                         </select>
+                                      ) : (type === "check-screen" || type === "wait-screen") && field.key === "templateId" ? (
+                                        <select value={String(config[field.key] ?? "")} onChange={(event) => updateScriptStepConfig(safeIndex, field.key, event.target.value)}>
+                                          <option value="">Select template...</option>
+                                          {screenTemplates.map((templateItem) => (
+                                            <option key={templateItem.id} value={templateItem.id}>{templateItem.category} / {templateItem.name}</option>
+                                          ))}
+                                        </select>
+                                      ) : (type === "check-screen" || type === "wait-screen") && field.key === "matchType" ? (
+                                        <select value={getString(config[field.key]) || "ocr"} onChange={(event) => updateScriptStepConfig(safeIndex, field.key, event.target.value)}>
+                                          <option value="ocr">ocr</option>
+                                          <option value="contains">contains</option>
+                                          <option value="image">image</option>
+                                        </select>
+                                      ) : type === "run-sub-script" && field.key === "scriptId" ? (
+                                        <select value={String(config[field.key] ?? "")} onChange={(event) => updateScriptStepConfig(safeIndex, field.key, event.target.value)}>
+                                          <option value="">Select script...</option>
+                                          {scripts.map((script) => <option key={script.id} value={script.id}>{script.name}</option>)}
+                                        </select>
+                                      ) : type === "run-sub-script" && field.key === "versionId" ? (
+                                        <select value={String(config[field.key] ?? "")} onChange={(event) => updateScriptStepConfig(safeIndex, field.key, event.target.value)}>
+                                          <option value="">Latest active</option>
+                                          {(scriptVersionIndex[getString(config.scriptId)] ?? []).map((version) => <option key={version.id} value={version.id}>v{version.versionNo} / {version.status}</option>)}
+                                        </select>
                                       ) : (
                                         <input
                                           type={field.type === "number" ? "number" : "text"}
@@ -7603,6 +7954,29 @@ export function App() {
                                   {!template ? <p className="emptyDetail">Unknown step type. Use JSON editor fallback for custom config.</p> : null}
                                   {type === "upload-file" ? <p className="emptyDetail">{uploadAssetSourceHelp[getString(config.assetSource) || "IMAGE_EDIT_NEXT_SOURCE"]}</p> : null}
                                   {type === "upload-file" ? <p className="emptyDetail">Upload staging uses /sdcard/fb-cm-factory/uploads/ with unique filenames and never uses /sdcard/Download.</p> : null}
+                                  {type === "if" ? (
+                                    <div className="branchTree">
+                                      <strong>IF branch tree</strong>
+                                      {(["thenSteps", "elseSteps"] as const).map((branchKey) => {
+                                        const branchSteps = Array.isArray(config[branchKey]) ? config[branchKey] as Array<Record<string, unknown>> : [];
+                                        return (
+                                          <div key={branchKey}>
+                                            <header>
+                                              <span>{branchKey === "thenSteps" ? "THEN" : "ELSE"}</span>
+                                              <button type="button" onClick={() => updateScriptStepConfig(safeIndex, branchKey, [...branchSteps, normalizeScriptStep({ type: "wait", description: branchKey === "thenSteps" ? "Then step" : "Else step", config: { ms: 500 } }, branchSteps.length)])}>Add Step</button>
+                                            </header>
+                                            {branchSteps.map((branchStep, branchIndex) => (
+                                              <div className="nestedRow" key={`${branchKey}-${branchIndex}`}>
+                                                <span>#{branchIndex + 1} {scriptStepType(branchStep)}</span>
+                                                <small>{scriptStepSummary(branchStep)}</small>
+                                              </div>
+                                            ))}
+                                            {!branchSteps.length ? <small>No branch steps.</small> : null}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : null}
                                 </div>
                               </>
                             );
@@ -7616,6 +7990,59 @@ export function App() {
                     </section>
                   ) : null}
                 </div>
+              </section>
+            </div>
+          ) : null}
+
+          {managementSection === "screen-templates" ? (
+            <div className="resourceManagerGrid">
+              <aside className="resourceList">
+                <button className="primaryButton" onClick={() => {
+                  setSelectedScreenTemplateId("");
+                  setScreenTemplateForm({ name: "", category: "Utility", templateType: "OCR_TEXT", templateImageUrl: "", ocrText: "", threshold: "0.8", region: "{}", status: "active" });
+                }}>New Screen Template</button>
+                {screenTemplates
+                  .filter((template) => !adminSearch || `${template.name} ${template.category} ${template.templateType}`.toLowerCase().includes(adminSearch.toLowerCase()))
+                  .map((template) => (
+                    <button
+                      key={template.id}
+                      className={selectedScreenTemplateId === template.id ? "active" : ""}
+                      onClick={() => selectScreenTemplate(template)}
+                    >
+                      <span>{template.name}</span>
+                      <small>{template.category} / {template.templateType}</small>
+                    </button>
+                  ))}
+                {!screenTemplates.length ? <p className="emptyDetail">No screen templates yet.</p> : null}
+              </aside>
+              <section className="resourceDetailPanel">
+                <div className="scriptCardHeader">
+                  <div>
+                    <strong>{selectedScreenTemplateId ? "Edit Screen Template" : "Create Screen Template"}</strong>
+                    <small>Used by check-screen and wait-screen steps.</small>
+                  </div>
+                  <span className="resourceTypeBadge">{screenTemplateForm.templateType}</span>
+                </div>
+                <div className="resourceCreateGrid">
+                  <label>Name<input value={screenTemplateForm.name} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, name: event.target.value })} /></label>
+                  <label>Category<input value={screenTemplateForm.category} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, category: event.target.value })} /></label>
+                  <label>Template Type<select value={screenTemplateForm.templateType} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, templateType: event.target.value })}>
+                    <option value="OCR_TEXT">OCR Text</option>
+                    <option value="IMAGE_MATCH">Image Match</option>
+                    <option value="REGION_MATCH">Region Match</option>
+                  </select></label>
+                  <label>Threshold<input type="number" min="0" max="1" step="0.05" value={screenTemplateForm.threshold} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, threshold: event.target.value })} /></label>
+                  <label>Status<input value={screenTemplateForm.status} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, status: event.target.value })} /></label>
+                  <label>Template Image URL<input value={screenTemplateForm.templateImageUrl} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, templateImageUrl: event.target.value })} /></label>
+                </div>
+                <label>OCR Text<textarea value={screenTemplateForm.ocrText} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, ocrText: event.target.value })} /></label>
+                <label>Region JSON<textarea value={screenTemplateForm.region} onChange={(event) => setScreenTemplateForm({ ...screenTemplateForm, region: event.target.value })} /></label>
+                <div className="resourceActions">
+                  <button onClick={createScreenTemplate}><PackagePlus size={15} /> Create</button>
+                  <button disabled={!selectedScreenTemplateId} onClick={updateScreenTemplate}><Check size={15} /> Update</button>
+                  <button className="dangerButton" disabled={!selectedScreenTemplateId} onClick={deleteScreenTemplate}><Trash2 size={15} /> Delete</button>
+                </div>
+                {screenTemplateForm.templateImageUrl ? <img className="templatePreviewImage" src={mediaUrl(screenTemplateForm.templateImageUrl)} alt="Screen template" /> : null}
               </section>
             </div>
           ) : null}
@@ -8392,6 +8819,7 @@ export function App() {
                     const batchMetadata = getRecord(batch.metadata);
                     const batchSourceAssetsSnapshot = getRecord(batchMetadata.sourceAssetsSnapshot);
                     const batchSnapshotCharacters = Array.isArray(batchSourceAssetsSnapshot.characters) ? batchSourceAssetsSnapshot.characters.map((item) => getRecord(item)) : [];
+                    const resourceGroupRun = productionGroupRuns.find((run) => run.imageBatch?.id === batch.id || run.characterGroupBatch.id === batch.id) ?? null;
                     return (
                       <>
                         <div className="drawerHeader">
@@ -8436,6 +8864,39 @@ export function App() {
                                 <details className="resourceCreatePanel"><summary>sourceAssetsSnapshot</summary><pre className="jsonBlock">{compactJson(batchSourceAssetsSnapshot)}</pre></details>
                               </>
                             ) : null}
+                            {batch.batchType === "IMAGE_BATCH" && imageEditProgressText(batch) ? (() => {
+                              const progress = imageEditBatchProgress(batch);
+                              const sourceImages = resourceGroupRun?.sourceImages ?? [];
+                              return (
+                                <>
+                                  <div className="resourceMetaGrid detail">
+                                    <span>Group</span><strong>{resourceGroupRun?.group?.name ?? group?.name ?? "-"}</strong>
+                                    <span>Progress</span><strong>{resourceGroupRun ? `${resourceGroupRun.imageEditProgress.completedCount}/${resourceGroupRun.imageEditProgress.expectedCount}` : `${progress.completedCount}/${progress.expectedCount}`}</strong>
+                                    <span>Missing</span><strong>{resourceGroupRun?.imageEditProgress.missingCount ?? Math.max(0, progress.expectedCount - progress.completedCount)}</strong>
+                                    <span>Failed</span><strong>{resourceGroupRun?.imageEditProgress.failedCount ?? progress.failedCount}</strong>
+                                  </div>
+                                  <div className="imageEditOutputGrid">
+                                    {(sourceImages.length ? sourceImages : progress.items).map((item, index) => {
+                                      const itemRecord = getRecord(item);
+                                      const editedAssetId = getString(itemRecord.editedAssetId) || getString(getRecord(itemRecord.outputAsset).id);
+                                      const editedAsset = assets.find((asset) => asset.id === editedAssetId);
+                                      const character = groups.flatMap((group) => group.membersPreview ?? []).find((member) => member.character.id === getString(itemRecord.characterId))?.character;
+                                      const outputUrl = getString(itemRecord.outputThumbnailUrl) || (editedAsset ? listImageUrl(editedAsset) : "");
+                                      return (
+                                        <div key={`${getString(itemRecord.sourceAssetId)}-${index}`} className="imageEditOutputCell">
+                                          <div className="sourceToOutput">
+                                            {getString(itemRecord.sourceThumbnailUrl) ? <img src={mediaUrl(getString(itemRecord.sourceThumbnailUrl))} alt="Source" /> : null}
+                                            {outputUrl ? <img src={mediaUrl(outputUrl)} alt="Edited output" /> : <span className="resourcePreviewPlaceholder">Missing</span>}
+                                          </div>
+                                          <strong>{getString(itemRecord.characterName) || character?.name || displayShortId(getString(itemRecord.characterId))}</strong>
+                                          <small>{getString(itemRecord.sourceImageRole)} / {editedAssetId ? "done" : "pending"}</small>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </>
+                              );
+                            })() : null}
                             <div className="resourceActions">
                               <button className="dangerButton" onClick={() => deleteProductionResource(batch)}><Trash2 size={15} /> {productionResourceIsCharacterGroup(batch) ? "Delete Character Group" : "Delete Resource"}</button>
                             </div>
@@ -8957,12 +9418,23 @@ export function App() {
                             const output = getRecord(step.output);
                             const resultLabel = getString(output.label) || (step.stepType === "download-latest" ? "Downloaded Output" : "");
                             const warning = getString(output.warning) || getString(getRecord(output.pulledFile).warning);
+                            const checkResult = getRecord(output.checkScreenResult);
                             return (
                               <article className="runtimeStepCard" key={step.id}>
                                 <header><strong>{step.stepNo}. {step.stepType}</strong><span className="statusPill">{step.status}</span></header>
                                 <small>{displayDateTime(step.startedAt ?? undefined)} → {displayDateTime(step.finishedAt ?? undefined)} / {displayDuration(step.startedAt, step.finishedAt)}</small>
                                 <p>Input: {scriptStepSummary({ config: step.input ?? {} })}</p>
                                 <p>Output: {scriptStepSummary({ config: step.output ?? {} })}</p>
+                                {step.stepType === "check-screen" || step.stepType === "wait-screen" ? (
+                                  <div className="resourceMetaGrid detail">
+                                    <span>Matched</span><strong>{String(checkResult.matched ?? output.matched ?? "-")}</strong>
+                                    <span>Confidence</span><strong>{String(checkResult.confidence ?? output.confidence ?? "-")}</strong>
+                                    <span>Template</span><strong>{getString(checkResult.templateName) || displayShortId(getString(checkResult.templateId)) || "-"}</strong>
+                                  </div>
+                                ) : null}
+                                {step.stepType === "if" ? <span className="jobWarningBadge">Branch: {getString(output.branch) || "-"}</span> : null}
+                                {step.stepType === "retry" ? <span className="jobWarningBadge">Retry count: {String(output.retryCount ?? output.attempts ?? "-")} / Target: {String(output.targetStepNo ?? "-")}</span> : null}
+                                {step.stepType === "run-sub-script" ? <span className="jobWarningBadge">Sub-script run: {displayShortId(getString(output.subScriptRunId))}</span> : null}
                                 {resultLabel && url ? <a href={mediaUrl(url)} target="_blank" rel="noreferrer">{resultLabel}</a> : null}
                                 {warning ? <span className="jobWarningBadge">{warning}</span> : null}
                                 {step.errorMessage ? <span className="jobErrorBadge">{step.errorMessage}</span> : null}
@@ -9528,13 +10000,20 @@ export function App() {
                 ))}
               </div>
               {selectedStudioMembers.length ? (
+                <>
+                <div className="resourceKpiBar compactKpiBar">
+                  <div className="resourceKpiCard"><Users size={16} /><span>Characters</span><strong>{selectedStudioMembers.length}</strong></div>
+                  <div className="resourceKpiCard"><Image size={16} /><span>Source Images</span><strong>{studioSourceImages.length}</strong></div>
+                </div>
                 <div className="studioCharactersStrip">
                   {selectedStudioMembers.map((member) => {
                     const young = member.youngOriginalImage ?? member.character.sourceImages?.youngOriginalImage;
                     const old = member.oldOriginalImage ?? member.character.sourceImages?.oldOriginalImage;
-                    return <article key={member.memberId ?? member.character.id}><div>{listImageUrl(young) ? <img src={listImageUrl(young)} alt={`${member.character.name} young`} /> : <span>Young missing</span>}{listImageUrl(old) ? <img src={listImageUrl(old)} alt={`${member.character.name} old`} /> : <span>Old missing</span>}</div><strong>{member.character.name}</strong><small>{member.character.status ?? "-"} / age {member.character.age ?? "-"}</small></article>;
+                    const ready = Boolean(young && old);
+                    return <article key={member.memberId ?? member.character.id}><div>{listImageUrl(young) ? <img src={listImageUrl(young)} alt={`${member.character.name} young`} /> : <span>Young missing</span>}{listImageUrl(old) ? <img src={listImageUrl(old)} alt={`${member.character.name} old`} /> : <span>Old missing</span>}</div><strong>{member.character.name}</strong><small>{ready ? "ready" : "missing source"} / age {member.character.age ?? "-"}</small></article>;
                   })}
                 </div>
+                </>
               ) : null}
             </section>
 
@@ -9605,8 +10084,19 @@ export function App() {
 
             <section className="studioStep panel">
               <header><span>7</span><div><strong>Launch Production</strong><small>Create resources and jobs. Execution remains manual unless existing settings trigger it.</small></div></header>
+              <div className="postPreview">
+                <strong>Repeated Job Plan</strong>
+                <p>Expected source images: {studioSourceImages.length}</p>
+                <p>Expected IMAGE_EDIT child jobs: {studioSourceImages.length}</p>
+                <p>Expected VIDEO_GENERATE transition jobs: {studioEstimatedTransitionJobs}</p>
+                <p>IMAGE_EDIT output: one IMAGE_BATCH. Status becomes READY after {studioSourceImages.length}/{studioSourceImages.length} images complete.</p>
+                <p>VIDEO_GENERATE output: one VIDEO_BATCH with transition outputs.</p>
+                <p>MUSIC_GENERATE: {musicPolicyMode === "CREATE_DEDICATED" ? "single dedicated job if needed" : "0 or 1 single job depending on policy"}.</p>
+                <p>VIDEO_COMPOSE: single group-level job. POST_CONTENT: single group/final-video job.</p>
+                <small>Prompt: {studioImageEditRow?.prompt?.name ?? "missing"} / Script: {studioImageEditRow?.script?.name ?? "missing"}</small>
+              </div>
               <div className="resourceActions"><button onClick={saveStudioDraft}>Save Draft</button>{studioDrafts.slice(0, 3).map((draft) => <button key={String(draft.id)} onClick={() => loadStudioDraft(draft)}>Load {String(draft.name ?? "Draft")}</button>)}<button className="primaryButton compact" onClick={launchStudioProduction} disabled={busy || !selectedPrimaryGroup || !selectedWorkflow}>{busy ? <Loader2 className="spin" size={16} /> : <Rocket size={16} />} Launch Production</button><button onClick={() => setPage("production-jobs")}>Open Production Control Center</button></div>
-              {launchedJobs.length ? <div className="launchResult"><strong>Created jobs</strong>{launchedJobs.map((job) => <span key={job.id}>{job.targetStageType} - {job.status}</span>)}</div> : null}
+              {launchedJobs.length || launchGroupRun ? <div className="launchResult"><strong>Launch Result</strong><span>CHARACTER_GROUP batch {displayShortId(launchGroupRun?.characterGroupBatch.id ?? outputBatch?.id)}</span><span>Created {launchedJobs.filter((job) => job.targetStageType === "IMAGE_EDIT").length || launchedJobs.length} IMAGE_EDIT jobs</span>{launchGroupRun?.imageBatch ? <span>IMAGE_BATCH {displayShortId(launchGroupRun.imageBatch.id)} progress {launchGroupRun.imageEditProgress.completedCount}/{launchGroupRun.imageEditProgress.expectedCount}</span> : null}<button onClick={() => setPage("production-jobs")}>Open Production Control Center</button><button onClick={() => { setPage("management"); setManagementSection("production-resources"); if (launchGroupRun?.imageBatch?.id) setSelectedResourceId(launchGroupRun.imageBatch.id); }}>Open Production Resources</button></div> : null}
             </section>
           </main>
 
@@ -9616,11 +10106,15 @@ export function App() {
               <span>Group <b>{selectedStudioGroup?.name ?? "-"}</b></span>
               <span>Workflow <b>{selectedWorkflow?.name ?? "-"}</b></span>
               <span>Characters <b>{selectedStudioMembers.length}</b></span>
+              <span>Source images <b>{studioSourceImages.length}</b></span>
+              <span>IMAGE_EDIT jobs <b>{studioSourceImages.length}</b></span>
+              <span>Transition jobs <b>{studioEstimatedTransitionJobs}</b></span>
+              <span>Single jobs <b>MUSIC / COMPOSE / POST</b></span>
               <span>Music <b>{musicPolicyMode}</b></span>
               <span>Capacity <b>{studioCapacityRows.some((row) => row.shortage) ? "PARTIAL" : "OK"}</b></span>
             </div>
             <div className="assetSection"><strong>Selected Attributes</strong>{Object.entries(attributeValues).map(([key, value]) => <span key={key}>{key}: {String(value)}</span>)}</div>
-            <div className="assetSection"><strong>Expected Jobs</strong>{workflowJobTypes.filter((jobType) => postPolicyEnabled || jobType !== "POST_CONTENT").map((jobType) => <span key={jobType}>{jobType}</span>)}</div>
+            <div className="assetSection"><strong>Expected Jobs</strong><span>IMAGE_EDIT x {studioSourceImages.length}</span><span>VIDEO_GENERATE transitions x {studioEstimatedTransitionJobs}</span><span>MUSIC_GENERATE x {musicPolicyMode === "CREATE_DEDICATED" ? "0-1" : "0-1 policy"}</span><span>VIDEO_COMPOSE x 1</span>{postPolicyEnabled ? <span>POST_CONTENT x 1</span> : null}</div>
             <div className="assetSection"><strong>Expected Outputs</strong>{studioExpectedOutputs.map((output) => <span key={output}>{output}</span>)}</div>
             <div className="assetSection"><strong>Prompt Previews</strong>{Object.entries(previews).map(([kind, text]) => <small key={kind}>{kind}: {text ? text.slice(0, 120) : "-"}</small>)}</div>
           </aside>
@@ -9681,27 +10175,84 @@ export function App() {
 
         {productionControlView === "group" ? (
           <section className="productionGroupBoard">
-            {productionGroupTimelines.map((entry) => (
-              <article className="productionGroupCard" key={entry.groupId} onClick={() => entry.jobs[0] ? loadJobDetail(entry.jobs[0]) : null}>
+            {filteredProductionGroupRuns.map((entry) => (
+              <article className={`productionGroupCard ${selectedGroupRun?.characterGroupBatch.id === entry.characterGroupBatch.id ? "selected" : ""}`} key={entry.characterGroupBatch.id} onClick={() => setSelectedGroupRunBatchId(entry.characterGroupBatch.id)}>
                 <header>
                   <strong>{entry.group?.name ?? "Ungrouped"}</strong>
                   <span className="statusPill">{entry.group?.memberCount ?? 0} members</span>
+                  <span className={`statusPill ${entry.imageEditProgress.status === "READY" ? "ready" : entry.imageEditProgress.failedCount ? "danger" : ""}`}>{entry.imageEditProgress.status}</span>
                 </header>
-                <div className="productionTimeline">
-                  {["CHARACTER_GROUP", "IMAGE_BATCH", "VIDEO_BATCH", "FINAL_VIDEO", "POST_CONTENT"].map((batchType) => {
-                    const batch = entry.batches.find((item) => item.batchType === batchType);
-                    return <span key={batchType} className={batch?.status === "READY" ? "ready" : batch?.status === "FAILED" ? "failed" : ""}>{batchType}<b>{batch?.status ?? "-"}</b></span>;
-                  })}
+                <div className="resourceMetaGrid">
+                  <span>Workflow</span><strong>{entry.workflow?.name ?? displayShortId(entry.characterGroupBatch.workflowId)}</strong>
+                  <span>Created</span><strong>{displayDateTime(entry.characterGroupBatch.createdAt)}</strong>
+                  <span>Image progress</span><strong>{entry.imageEditProgress.completedCount}/{entry.imageEditProgress.expectedCount}</strong>
+                  <span>Pending / Running / Failed</span><strong>{entry.imageEditProgress.pendingCount} / {entry.imageEditProgress.runningCount} / {entry.imageEditProgress.failedCount}</strong>
                 </div>
                 <div className="productionTimeline">
-                  {["IMAGE_EDIT", "VIDEO_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT"].map((stage) => {
-                    const job = entry.jobs.find((item) => item.targetStageType === stage);
-                    return <span key={stage} className={job?.status === "COMPLETED" ? "ready" : productionJobStatus(job ?? { id: "", sourceBatchId: "", targetStageType: stage, status: "PENDING", createdAt: "" }) === "FAILED" ? "failed" : ""}>{stage}<b>{job ? productionJobStatus(job) : "-"}</b></span>;
-                  })}
+                  {(() => {
+                    const relatedJobs = jobs.filter((job) => job.sourceBatchId === entry.characterGroupBatch.id || job.sourceBatchId === entry.imageBatch?.id);
+                    const videoBatch = batches.find((batch) => batch.batchType === "VIDEO_BATCH" && getString(getRecord(batch.metadata).sourceBatchId) === entry.imageBatch?.id);
+                    const videoMeta = getRecord(videoBatch?.metadata);
+                    const videoExpected = Number(videoMeta.expectedCount ?? 0);
+                    const videoCompleted = Number(videoMeta.completedCount ?? 0);
+                    const singleStages = ["MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT"];
+                    return (
+                      <>
+                        <span className={videoExpected && videoCompleted >= videoExpected ? "ready" : ""}>VIDEO_EDIT<b>{videoExpected ? `${videoCompleted}/${videoExpected}` : "waiting"}</b></span>
+                        {singleStages.map((stage) => {
+                          const job = relatedJobs.find((item) => item.targetStageType === stage);
+                          return <span key={stage} className={job?.status === "COMPLETED" ? "ready" : job?.status === "FAILED" ? "failed" : ""}>{stage}<b>{job?.status ?? "single"}</b></span>;
+                        })}
+                      </>
+                    );
+                  })()}
+                </div>
+                <div className="resourceActions">
+                  <button disabled={busy} onClick={(event) => { event.stopPropagation(); runGroupImageAction(entry, "allocate-pending"); }}>Allocate pending</button>
+                  <button disabled={busy} onClick={(event) => { event.stopPropagation(); runGroupImageAction(entry, "execute-allocated"); }}>Execute allocated</button>
+                  <button disabled={busy || !entry.imageEditProgress.failedCount} onClick={(event) => { event.stopPropagation(); runGroupImageAction(entry, "retry-failed"); }}>Retry failed</button>
+                  <button disabled={busy || !entry.imageEditProgress.pendingCount} onClick={(event) => { event.stopPropagation(); runGroupImageAction(entry, "cancel-pending"); }}>Cancel pending</button>
                 </div>
               </article>
             ))}
-            {!productionGroupTimelines.length ? <p className="emptyDetail">No production groups found.</p> : null}
+            {!filteredProductionGroupRuns.length ? <p className="emptyDetail">No production groups found.</p> : null}
+            {selectedGroupRun ? (
+              <section className="productionGroupDetail panel">
+                <div className="panelHeader compact"><Image size={18} /><h2>{selectedGroupRun.group?.name ?? "Image Edit Progress"}</h2></div>
+                <div className="resourceKpiBar compactKpiBar">
+                  <div className="resourceKpiCard"><Image size={16} /><span>Expected</span><strong>{selectedGroupRun.imageEditProgress.expectedCount}</strong></div>
+                  <div className="resourceKpiCard"><Check size={16} /><span>Completed</span><strong>{selectedGroupRun.imageEditProgress.completedCount}</strong></div>
+                  <div className="resourceKpiCard"><Archive size={16} /><span>Missing</span><strong>{selectedGroupRun.imageEditProgress.missingCount}</strong></div>
+                  <div className="resourceKpiCard"><AlertTriangle size={16} /><span>Failed</span><strong>{selectedGroupRun.imageEditProgress.failedCount}</strong></div>
+                </div>
+                <div className="imageEditOutputGrid">
+                  {selectedGroupRun.sourceImages.map((source) => (
+                    <article className="imageEditOutputCell" key={`${source.sourceAssetId}-${source.sourceImageRole}`}>
+                      <strong>{source.characterName ?? displayShortId(source.characterId)}</strong>
+                      <small>{source.sourceImageRole} / order {source.orderNo ?? "-"}</small>
+                      <div className="sourceToOutput">
+                        {source.sourceThumbnailUrl ? <img src={mediaUrl(source.sourceThumbnailUrl)} alt="Source" /> : <span className="resourcePreviewPlaceholder">Source missing</span>}
+                        {source.outputThumbnailUrl ? <img src={mediaUrl(source.outputThumbnailUrl)} alt="Output" /> : <span className="resourcePreviewPlaceholder">Output pending</span>}
+                      </div>
+                      <div className="resourceMetaGrid">
+                        <span>Job</span><strong>{source.job?.status ?? "NOT_CREATED"}</strong>
+                        <span>Runtime</span><strong>{source.runtime?.status ?? "-"}</strong>
+                        <span>Instance</span><strong>{displayShortId(source.assignedInstanceId)}</strong>
+                      </div>
+                      {source.error ? <span className="jobErrorBadge">{source.error}</span> : null}
+                      <div className="resourceActions">
+                        {source.job?.status === "PENDING" ? <button disabled={busy} onClick={() => runJobAction(source.job as OrchestratorJob, "allocate")}>Allocate</button> : null}
+                        {source.job?.status === "ALLOCATED" ? <button disabled={busy} onClick={() => runJobAction(source.job as OrchestratorJob, "execute-image-edit")}>Execute</button> : null}
+                        {source.job?.status === "FAILED" ? <button disabled={busy} onClick={() => runJobAction(source.job as OrchestratorJob, "retry")}>Retry</button> : null}
+                        {source.job ? <button onClick={() => loadJobDetail(source.job as OrchestratorJob)}>Job detail</button> : null}
+                        {source.runtime ? <button onClick={() => selectRuntimeSession(source.runtime as RuntimeSession)}>Runtime</button> : null}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+                <div className="capacityHints">{selectedGroupRun.recommendations.map((item) => <span key={item}>{item}</span>)}</div>
+              </section>
+            ) : null}
           </section>
         ) : (
           <div className="managementJobBoard productionQueueBoard">
@@ -9744,7 +10295,14 @@ export function App() {
                   ["overview", "Production Context"], ["source", "Source Resources"], ["runtime", "Runtime"], ["script", "Script"], ["output", "Output"], ["lineage", "Error"], ["json", "Debug JSON"]
                 ].map(([tab, label]) => <button key={tab} className={jobDrawerTab === tab ? "active" : ""} onClick={() => setJobDrawerTab(tab as typeof jobDrawerTab)}>{label}</button>)}</div>
                 <div className="resourceDrawerBody">
-                  {jobDrawerTab === "overview" ? <><div className="resourceMetaGrid detail"><span>Character Group</span><strong>{selectedJobGroup?.name ?? "-"}</strong><span>Members</span><strong>{selectedJobGroup?.memberCount ?? "-"}</strong><span>Workflow</span><strong>{selectedJobWorkflow?.name ?? "-"}</strong><span>Music Policy</span><strong>{compactJson(selectedJobWorkflow?.musicPolicy ?? {}).slice(0, 80)}</strong><span>Post Policy</span><strong>{compactJson(selectedJobWorkflow?.postContentPolicy ?? {}).slice(0, 80)}</strong></div><pre className="jsonBlock">{compactJson(selectedJobSourceBatch?.attributes ?? selectedJobGroup)}</pre></> : null}
+                  {jobDrawerTab === "overview" ? (() => {
+                    const payload = getRecord(selectedJob.payload);
+                    const sourceAsset = getRecord(payload.sourceAsset);
+                    const sourceUrl = getString(sourceAsset.publicUrl);
+                    const scriptId = getString(payload.scriptId) || getString(getRecord(selectedJobSourceBatch?.metadata).imageEditScriptId);
+                    const script = scripts.find((item) => item.id === scriptId);
+                    return <><div className="resourceMetaGrid detail"><span>Character Group</span><strong>{selectedJobGroup?.name ?? "-"}</strong><span>Members</span><strong>{selectedJobGroup?.memberCount ?? "-"}</strong><span>Workflow</span><strong>{selectedJobWorkflow?.name ?? "-"}</strong><span>Character</span><strong>{displayShortId(getString(payload.characterId))}</strong><span>Source Asset</span><strong>{displayShortId(getString(payload.sourceAssetId))}</strong><span>Source Role</span><strong>{getString(payload.sourceImageRole) || "-"}</strong><span>Order</span><strong>{String(payload.orderNo ?? "-")}</strong><span>Script</span><strong>{script?.name ?? displayShortId(scriptId)}</strong><span>Prompt</span><strong>{getString(getRecord(selectedJobSourceBatch?.metadata).promptPreview) || getString(getRecord(selectedJobSourceBatch?.metadata).promptTemplateId) || "-"}</strong></div>{sourceUrl ? <div className="resourcePreviewGrid"><img src={mediaUrl(sourceUrl)} alt="Source asset" /></div> : null}<pre className="jsonBlock">{compactJson(selectedJobSourceBatch?.attributes ?? selectedJobGroup)}</pre></>;
+                  })() : null}
                   {jobDrawerTab === "source" ? <><div className="outputBatchList">{[selectedJobSourceBatch, ...outputBatches].filter(Boolean).map((batch) => <div key={(batch as ProductionBatch).id}><strong>{(batch as ProductionBatch).batchType}</strong><small>{(batch as ProductionBatch).id}</small><span>{(batch as ProductionBatch).status} / {(batch as ProductionBatch).usageStatus}</span></div>)}</div><div className="resourcePreviewGrid">{selectedJobOutputAssets.slice(0, 8).map((asset) => listImageUrl(asset) ? <img key={asset.id} src={listImageUrl(asset)} alt={asset.name} /> : null)}</div></> : null}
                   {jobDrawerTab === "runtime" ? <><div className="detailList"><span>Runtime <b>{runtimeSession?.id ?? "-"}</b></span><span>Status <b>{runtimeSession?.status ?? "-"}</b></span><span>Step <b>{runtimeSession?.currentStepNo ?? "-"}</b></span><span>Host <b>{runtimeSession?.hostId ?? "-"}</b></span><span>Instance <b>{runtimeSession?.instanceId ?? "-"}</b></span></div><div className="resourceActions"><button disabled={!runtimeSession || runtimeSession.status !== "FAILED_RECOVERABLE"} onClick={recoverRuntimeSession}>Recover</button><button disabled={!runtimeSession} onClick={() => runtimeSession && runtimeAction("test-screenshot", runtimeSession)}>Test Screenshot</button></div><pre className="jsonBlock">{compactJson(runtimeSession?.checkpoint ?? {})}</pre></> : null}
                   {jobDrawerTab === "script" ? <><div className="detailList"><span>Script Run <b>{scriptRun?.id ?? "-"}</b></span><span>Status <b>{scriptRun?.status ?? "-"}</b></span><span>Version <b>{displayShortId(scriptRun?.scriptVersionId)}</b></span></div><div className="scriptStepTable">{(scriptRun?.steps ?? []).map((step) => <div key={step.id}><span>{step.stepNo}</span><span>{step.stepType}</span><b>{step.status}</b><small>{step.errorMessage ?? findUrl(step.output) ?? ""}</small></div>)}{!scriptRun?.steps?.length ? <p className="emptyDetail">No script steps recorded.</p> : null}</div></> : null}

@@ -174,6 +174,41 @@ export const scriptAssetResolver = {
       : "MANUAL_ASSET";
     const state = resolverState(runtimeContext);
 
+    if (assetSource === "IMAGE_EDIT_NEXT_SOURCE") {
+      const currentUpload = objectValue(runtimeContext.currentUpload);
+      const currentSource = objectValue(getPathValue(runtimeContext, "asset.currentSourceImage"));
+      const sourceAsset = objectValue(runtimeContext.sourceAsset);
+      const sourceAssetId = stringValue(currentUpload.assetId)
+        ?? stringValue(currentSource.id)
+        ?? stringValue(currentSource.assetId)
+        ?? stringValue(sourceAsset.id)
+        ?? stringValue(sourceAsset.assetId)
+        ?? stringValue(runtimeContext.sourceAssetId);
+      if (sourceAssetId) {
+        const asset = assetsService.get(sourceAssetId);
+        if (!asset) throw new AppError("ASSET_NOT_FOUND", "Asset not found", 404);
+        const role = stringValue(currentUpload.sourceImageRole)
+          ?? stringValue(currentUpload.role)
+          ?? stringValue(currentSource.role)
+          ?? stringValue(sourceAsset.role)
+          ?? stringValue(runtimeContext.sourceImageRole)
+          ?? "source";
+        return {
+          assetsToUpload: [{
+            assetId: sourceAssetId,
+            assetType: asset.assetType ?? asset.assetCategory ?? null,
+            characterId: stringValue(currentUpload.characterId) ?? asset.characterId ?? stringValue(runtimeContext.characterId),
+            role,
+            filePath: asset.filePath ?? stringValue(currentSource.filePath) ?? stringValue(sourceAsset.filePath),
+            publicUrl: asset.publicUrl ?? stringValue(currentSource.publicUrl) ?? stringValue(sourceAsset.publicUrl),
+            absolutePath: asset.filePath ?? stringValue(currentSource.absolutePath) ?? stringValue(sourceAsset.absolutePath),
+            orderNo: numberValue(currentUpload.orderNo ?? runtimeContext.orderNo, 1)
+          }],
+          resolverState: state
+        };
+      }
+    }
+
     if (assetSource === "MANUAL_ASSET") {
       const assetId = stringValue(effectiveConfig.assetId) ?? stringValue(effectiveConfig.fileAssetId);
       if (!assetId) throw new AppError("ASSET_ID_REQUIRED", "upload-file with MANUAL_ASSET requires assetId", 400);

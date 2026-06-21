@@ -3327,6 +3327,55 @@ h2 {
   width: 100%;
 }
 
+.compactThumbGrid {
+  grid-template-columns: repeat(2, 48px);
+  height: auto;
+  margin-top: 8px;
+  min-height: 0;
+  width: max-content;
+}
+
+.imageEditOutputGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+}
+
+.imageEditOutputCell {
+  border: 1px solid #d6e7dc;
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+}
+
+.imageEditOutputCell img,
+.imageEditOutputCell .resourcePreviewPlaceholder {
+  aspect-ratio: 1;
+  border-radius: 6px;
+  min-height: 0;
+  width: 100%;
+}
+
+.sourceToOutput {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.compactKpiBar {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.productionGroupCard.selected {
+  border-color: #5d9b75;
+  box-shadow: inset 0 0 0 2px rgba(93, 155, 117, 0.22);
+}
+
+.productionGroupDetail {
+  grid-column: 1 / -1;
+}
+
 .resourcePreviewPlaceholder,
 .resourceMusicPreview,
 .resourcePostPreview {
@@ -4085,6 +4134,37 @@ h2 {
   display: grid;
   gap: 8px;
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+}
+
+.branchTree {
+  border: 1px solid #d7dde8;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-column: 1 / -1;
+  padding: 12px;
+}
+
+.branchTree > div {
+  background: #f8fafc;
+  border-radius: 6px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.branchTree header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.templatePreviewImage {
+  border: 1px solid #d7dde8;
+  border-radius: 8px;
+  max-height: 320px;
+  max-width: 100%;
+  object-fit: contain;
 }
 
 .scriptJsonEditor {

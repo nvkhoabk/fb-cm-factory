@@ -76,6 +76,11 @@ function imageEditSourceAssetCount(sourceAssetsSnapshot: Record<string, unknown>
   }, 0);
 }
 
+function findCharacterInGroup(group: Record<string, unknown> | null, characterId?: string) {
+  const characters = Array.isArray(group?.characters) ? group.characters : [];
+  return characters.map(objectValue).find((character) => String(character.id ?? character.characterId ?? "") === characterId) ?? null;
+}
+
 export const jobExecutorService = {
   async executeMockJob(jobId: string) {
     let job = orchestratorRepository.getJob(jobId);
@@ -217,7 +222,12 @@ export const jobExecutorService = {
       ?? stringValue(scriptRuntimeRepository.getLatestActiveScript()?.id);
     if (!script) throw new AppError("SCRIPT_REQUIRED", "No script is available for IMAGE_EDIT execution");
 
-    const groupId = stringValue(sourceBatch.sourceGroupId);
+    const groupId = stringValue(payload.groupId) ?? stringValue(sourceBatch.sourceGroupId);
+    const characterId = stringValue(payload.characterId);
+    const sourceAssetId = stringValue(payload.sourceAssetId);
+    const sourceImageRole = stringValue(payload.sourceImageRole) ?? "source";
+    const orderNo = typeof payload.orderNo === "number" ? payload.orderNo : 1;
+    if (!sourceAssetId) throw new AppError("IMAGE_EDIT_SOURCE_ASSET_REQUIRED", "IMAGE_EDIT child job payload must include sourceAssetId", 400);
     const templateId = stringValue(promptTemplates.image)
       ?? stringValue(metadata.imagePromptTemplateId)
       ?? stringValue(metadata.promptTemplateId);
@@ -226,14 +236,42 @@ export const jobExecutorService = {
       : { prompt: "" };
 
     const group = groupId ? promptRenderService.getGroupPromptContext(groupId) : null;
+    const character = findCharacterInGroup(group as Record<string, unknown> | null, characterId);
     const sourceAssetsSnapshot = sourceAssetsSnapshotFromMetadata(metadata);
+    const payloadSourceAsset = objectValue(payload.sourceAsset);
+    const sourceAsset = {
+      id: sourceAssetId,
+      role: sourceImageRole,
+      absolutePath: stringValue(payloadSourceAsset.absolutePath) ?? stringValue(payloadSourceAsset.filePath),
+      filePath: stringValue(payloadSourceAsset.filePath),
+      publicUrl: stringValue(payloadSourceAsset.publicUrl),
+      name: stringValue(payloadSourceAsset.name)
+    };
+    const currentUpload = {
+      assetId: sourceAssetId,
+      characterId,
+      sourceImageRole,
+      role: sourceImageRole,
+      orderNo
+    };
     const context = {
       group,
+      character,
       attributes: sourceBatch.attributes,
       sourceAssetsSnapshot,
+      sourceAsset,
+      currentUpload,
+      groupId,
+      characterId,
+      sourceAssetId,
+      sourceImageRole,
+      orderNo,
       imageEditInputs: {
-        sourceAssetMode: "ORIGINAL_SOURCE_IMAGES",
+        sourceAssetMode: "SINGLE_SOURCE_IMAGE",
         sourceAssetsSnapshot
+      },
+      asset: {
+        currentSourceImage: sourceAsset
       },
       prompt: {
         image: renderedPrompt.prompt
@@ -281,50 +319,28 @@ export const jobExecutorService = {
     }
 
     orchestratorService.startJob(jobId);
-    const sourceAssetCount = Math.max(1, imageEditSourceAssetCount(sourceAssetsSnapshot));
-    const completedRuns = [];
-    for (let sourceIndex = 0; sourceIndex < sourceAssetCount; sourceIndex += 1) {
-      const runContext = {
-        ...context,
-        resolverState: {
-          imageEditUploadCursor: sourceIndex
-        }
-      };
-      const scriptRun = scriptRuntimeService.createScriptRun(String(runtimeSession.id), {
-        scriptId: script,
-        context: runContext
-      });
-      if (!scriptRun) throw new AppError("SCRIPT_RUN_CREATE_FAILED", "Could not create script run");
-      completedRuns.push(await scriptRuntimeService.executeScriptRun(String(scriptRun.id)));
-    }
-    const completedRun = completedRuns[completedRuns.length - 1];
-
-    const outputBatch = productionBatchRepository.create({
-      batchType: "IMAGE_BATCH",
-      sourceGroupId: groupId,
-      workflowId: stringValue(sourceBatch.workflowId),
-      workflowRunId: stringValue(sourceBatch.workflowRunId),
-      status: "READY",
-      usageStatus: "AVAILABLE",
-      attributes: sourceBatch.attributes as Record<string, unknown>,
-      metadata: {
-        sourceJobId: job.id,
-        runtimeSessionId: runtimeSession.id,
-        prompt: renderedPrompt.prompt,
-        sourceBatchId: sourceBatch.id,
-        targetStageType: "IMAGE_EDIT",
-        imageEditInputMode: "ORIGINAL_SOURCE_IMAGES",
-        sourceAssetsSnapshot
-      }
+    const scriptRun = scriptRuntimeService.createScriptRun(String(runtimeSession.id), {
+      scriptId: script,
+      context
     });
+    if (!scriptRun) throw new AppError("SCRIPT_RUN_CREATE_FAILED", "Could not create script run");
+    const completedRun = await scriptRuntimeService.executeScriptRun(String(scriptRun.id));
+    const lastOutput = objectValue(objectValue(completedRun?.context).lastStepOutput);
+    const outputBatchId = stringValue(payload.outputBatchId)
+      ?? stringValue(objectValue(lastOutput.outputBatch).id)
+      ?? null;
+    const editedAssetId = stringValue(objectValue(lastOutput.asset).id);
 
     const result = {
-      outputBatchId: outputBatch?.id ?? null,
+      outputBatchId,
       outputBatchType: "IMAGE_BATCH",
       runtimeSessionId: runtimeSession.id,
       scriptRunId: completedRun?.id ?? null,
-      scriptRunIds: completedRuns.map((run) => run?.id).filter(Boolean),
-      sourceAssetCount,
+      sourceAssetId,
+      sourceImageRole,
+      characterId,
+      orderNo,
+      editedAssetId,
       prompt: renderedPrompt.prompt
     };
 

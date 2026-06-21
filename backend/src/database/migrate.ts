@@ -629,6 +629,22 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_script_versions_script ON script_versions(script_id, version_no);
     CREATE INDEX IF NOT EXISTS idx_script_runs_session ON script_runs(runtime_session_id, status);
     CREATE INDEX IF NOT EXISTS idx_script_run_steps_run ON script_run_steps(script_run_id, step_no);
+
+    CREATE TABLE IF NOT EXISTS screen_templates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      category TEXT DEFAULT 'Utility',
+      template_type TEXT DEFAULT 'OCR_TEXT',
+      template_image_url TEXT,
+      ocr_text TEXT,
+      threshold REAL DEFAULT 0.8,
+      region_json TEXT DEFAULT '{}',
+      status TEXT DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_screen_templates_category ON screen_templates(category, status);
   `);
 
   addColumnIfMissing("instance_allocations", "created_at", "TEXT");

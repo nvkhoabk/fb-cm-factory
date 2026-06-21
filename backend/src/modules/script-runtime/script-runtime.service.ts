@@ -5,6 +5,7 @@ import { instanceSchedulerRepository } from "../instance-scheduler/instance-sche
 import { productionBatchRepository } from "../production-batches/production-batch.repository";
 import { runtimeRecoveryService } from "../runtime-recovery/runtime-recovery.service";
 import { runtimeSessionsService } from "../runtime-sessions/runtime-sessions.service";
+import { screenTemplateService } from "../screen-templates/screen-template.service";
 import { AppError, now } from "../shared/resource";
 import { scriptAssetResolver } from "./script-asset-resolver.service";
 import { scriptRuntimeRepository } from "./script-runtime.repository";
@@ -22,6 +23,7 @@ type NormalizedScriptStep = ScriptStepDefinition & {
   stepNo: number;
   stepType: string;
   input: Record<string, unknown>;
+  enabled: boolean;
 };
 
 function delay(ms: number) {
@@ -272,6 +274,22 @@ function boolValue(value: unknown, fallback: boolean) {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function numberValue(value: unknown, fallback: number) {
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function arrayValue(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
+function firstString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
 function outputBatchTypeForRole(outputRole: string) {
   if (outputRole === "VIDEO_TRANSITION_RESULT") return "VIDEO_BATCH";
   if (outputRole === "VIDEO_COMPOSE_RESULT") return "FINAL_VIDEO";
@@ -301,8 +319,19 @@ function productionContextInfo(context: Record<string, unknown>) {
     workflowRunId: stringValue(getPathValue(context, "sourceBatch.workflowRunId")) ?? stringValue(getPathValue(context, "batch.workflowRunId")),
     sourceBatchId: stringValue(getPathValue(context, "sourceBatch.id")) ?? stringValue(getPathValue(context, "batch.id")) ?? stringValue(context.sourceBatchId),
     sourceGroupId: stringValue(getPathValue(context, "sourceBatch.sourceGroupId")) ?? stringValue(getPathValue(context, "batch.sourceGroupId")),
+    groupId: stringValue(context.groupId) ?? stringValue(getPathValue(context, "sourceBatch.sourceGroupId")) ?? stringValue(getPathValue(context, "batch.sourceGroupId")),
     runtimeSessionId: stringValue(context.runtimeSessionId)
   };
+}
+
+function findImageEditOutputBatch(sourceBatchId: string | null, outputRole: string) {
+  if (!sourceBatchId) return null;
+  return productionBatchRepository.list().find((batch) => {
+    const metadata = objectFrom(batch.metadata);
+    return String(batch.batchType) === "IMAGE_BATCH"
+      && stringValue(metadata.sourceBatchId) === sourceBatchId
+      && stringValue(metadata.outputRole) === outputRole;
+  }) ?? null;
 }
 
 async function captureDownloadedOutput(params: {
@@ -326,11 +355,19 @@ async function captureDownloadedOutput(params: {
   const createAsset = boolValue(params.input.createAsset, true) && hasProductionContext;
   const createOrUpdateBatch = boolValue(params.input.createOrUpdateBatch, true) && hasProductionContext;
   const outputBatchType = outputBatchTypeForRole(outputRole);
+  const existingImageBatch = outputRole === "IMAGE_EDIT_RESULT"
+    ? findImageEditOutputBatch(production.sourceBatchId, outputRole)
+    : null;
+  const existingImageBatchMetadata = objectFrom(existingImageBatch?.metadata);
+  const existingImageItems = Array.isArray(existingImageBatchMetadata.items) ? existingImageBatchMetadata.items.map(objectFrom) : [];
+  const existingImageItem = existingImageItems.find((item) => stringValue(item.sourceAssetId) === sourceAssetId);
+  const existingEditedAssetId = stringValue(existingImageItem?.editedAssetId);
   const capturedMetadata = {
     outputRole,
     sourceAssetId,
     sourceImageRole,
     characterId,
+    groupId: production.groupId,
     jobId: production.jobId,
     runtimeSessionId: params.session.id,
     scriptRunId: params.scriptRunId,
@@ -349,6 +386,18 @@ async function captureDownloadedOutput(params: {
       productionContext: hasProductionContext,
       asset: null,
       outputBatch: null
+    };
+  }
+
+  if (existingEditedAssetId && params.input.force !== true) {
+    return {
+      outputRole,
+      pulledFile: file,
+      asset: assetsService.get(existingEditedAssetId),
+      outputBatch: existingImageBatch,
+      currentUpload,
+      skippedDuplicateOutput: true,
+      warning: "IMAGE_EDIT_OUTPUT_ALREADY_CAPTURED"
     };
   }
 
@@ -393,7 +442,7 @@ async function captureDownloadedOutput(params: {
 
   let outputBatch = null;
   if (createOrUpdateBatch && outputBatchType && asset?.id) {
-    const existing = productionBatchRepository.list().find((batch) => {
+    const existing = existingImageBatch ?? productionBatchRepository.list().find((batch) => {
       const metadata = objectFrom(batch.metadata);
       return String(batch.batchType) === outputBatchType
         && stringValue(metadata.sourceJobId) === production.jobId
@@ -412,12 +461,43 @@ async function captureDownloadedOutput(params: {
         metadata: {
           sourceJobId: production.jobId,
           sourceBatchId: production.sourceBatchId,
+          groupId: production.groupId,
           outputRole,
           runtimeSessionId: params.session.id,
           scriptRunId: params.scriptRunId
         }
       });
     if (outputBatch?.id) {
+      const batchMetadata = objectFrom(outputBatch.metadata);
+      const batchItems = Array.isArray(batchMetadata.items) ? batchMetadata.items.map(objectFrom) : [];
+      if (outputRole === "IMAGE_EDIT_RESULT" && batchItems.length) {
+        const updatedItems = batchItems.map((item) => stringValue(item.sourceAssetId) === sourceAssetId
+          ? {
+            ...item,
+            editedAssetId: asset.id,
+            jobId: production.jobId,
+            runtimeSessionId: params.session.id,
+            scriptRunId: params.scriptRunId
+          }
+          : item);
+        const completedCount = updatedItems.filter((item) => stringValue(item.editedAssetId)).length;
+        const expectedCount = Number(batchMetadata.expectedCount ?? updatedItems.length);
+        productionBatchRepository.update(String(outputBatch.id), {
+          status: completedCount >= expectedCount ? "READY" : "RUNNING",
+          usageStatus: "AVAILABLE",
+          attributes: objectFrom(outputBatch.attributes),
+          metadata: {
+            ...batchMetadata,
+            outputRole,
+            sourceBatchId: production.sourceBatchId,
+            groupId: production.groupId,
+            expectedCount,
+            completedCount,
+            failedCount: Number(batchMetadata.failedCount ?? 0),
+            items: updatedItems
+          }
+        });
+      }
       productionBatchRepository.addItem(String(outputBatch.id), {
         itemType: "ASSET",
         itemId: String(asset.id),
@@ -425,7 +505,9 @@ async function captureDownloadedOutput(params: {
         sortOrder: Number(currentUpload.orderNo ?? 0),
         metadata: capturedMetadata
       });
-      outputBatch = productionBatchRepository.setStatus(String(outputBatch.id), "READY", "AVAILABLE");
+      outputBatch = outputRole === "IMAGE_EDIT_RESULT"
+        ? productionBatchRepository.getDetail(String(outputBatch.id))
+        : productionBatchRepository.setStatus(String(outputBatch.id), "READY", "AVAILABLE");
     }
   }
 
@@ -460,10 +542,103 @@ function orderedSteps(definition: unknown): NormalizedScriptStep[] {
         ...definitionStep,
         stepType: definitionStep.stepType ?? definitionStep.type ?? "unsupported-step",
         input: mergeContext(definitionStep.config, definitionStep.input),
+        enabled: definitionStep.enabled !== false,
         stepNo: typeof definitionStep.stepNo === "number" ? definitionStep.stepNo : index + 1
       };
     })
     .sort((a, b) => Number(a.stepNo) - Number(b.stepNo));
+}
+
+function normalizeNestedSteps(value: unknown, parentStepNo: number): NormalizedScriptStep[] {
+  return arrayValue(value)
+    .map((item, index) => {
+      const step = objectFrom(item) as ScriptStepDefinition;
+      const stepNo = typeof step.stepNo === "number" ? step.stepNo : (parentStepNo * 1000) + index + 1;
+      return {
+        ...step,
+        stepType: step.stepType ?? step.type ?? "unsupported-step",
+        input: mergeContext(step.config, step.input),
+        enabled: step.enabled !== false,
+        stepNo
+      };
+    })
+    .sort((a, b) => Number(a.stepNo) - Number(b.stepNo));
+}
+
+function normalizeMatchType(value: unknown, templateType?: string) {
+  const raw = firstString(value).toLowerCase();
+  if (["contains", "image", "ocr"].includes(raw)) return raw;
+  if (templateType === "IMAGE_MATCH" || templateType === "REGION_MATCH") return "image";
+  return "ocr";
+}
+
+function contextText(_context: Record<string, unknown>) {
+  return firstString(
+    getPathValue(_context, "runtime.screenText"),
+    getPathValue(_context, "runtime.lastOcrText"),
+    getPathValue(_context, "checkScreenText"),
+    getPathValue(_context, "mockScreenText"),
+    getPathValue(_context, "screen.text"),
+    _context.screenText,
+    _context.lastOcrText
+  );
+}
+
+function evaluateCondition(conditionInput: unknown, _context: Record<string, unknown>) {
+  const condition = objectFrom(conditionInput);
+  const path = firstString(condition.path, condition.source, condition.left, "runtime.checkScreenResult.matched");
+  const operator = firstString(condition.operator, condition.op, condition.type, "exists");
+  const actual = getPathValue(_context, path);
+  const expected = condition.value ?? condition.expected ?? condition.right;
+  if (operator === "equals") return actual === expected || String(actual) === String(expected);
+  if (operator === "notEquals") return !(actual === expected || String(actual) === String(expected));
+  if (operator === "contains") return String(actual ?? "").includes(String(expected ?? ""));
+  if (operator === "greaterThan") return Number(actual) > Number(expected);
+  if (operator === "lessThan") return Number(actual) < Number(expected);
+  if (operator === "notExists") return actual === undefined || actual === null || actual === "";
+  return actual !== undefined && actual !== null && actual !== "";
+}
+
+function runtimeContextPatch(step: NormalizedScriptStep, output: Record<string, unknown>, context: Record<string, unknown>) {
+  const runtimePatch = objectFrom(output.runtime);
+  const checkScreenResult = output.checkScreenResult ?? (
+    step.stepType === "check-screen" || step.stepType === "wait-screen"
+      ? output
+      : undefined
+  );
+  const retryState = output.retryState ?? (
+    step.stepType === "retry"
+      ? { targetStepNo: output.targetStepNo, retryCount: output.retryCount ?? output.attempts }
+      : undefined
+  );
+  const subScriptOutputs = output.subScriptOutput
+    ? [...arrayValue(context.subScriptOutputs), output.subScriptOutput]
+    : context.subScriptOutputs;
+  const subScriptContext = output.subScriptContext && typeof output.subScriptContext === "object"
+    ? output.subScriptContext
+    : context.subScriptContext;
+  return {
+    uploadedFiles: Array.isArray(output.uploadedFiles) ? output.uploadedFiles : context.uploadedFiles,
+    resolverState: output.resolverState && typeof output.resolverState === "object" ? output.resolverState : context.resolverState,
+    currentUpload: output.currentUpload && typeof output.currentUpload === "object" ? output.currentUpload : context.currentUpload,
+    capturedOutputs: Array.isArray(output.capturedOutputs) ? output.capturedOutputs : context.capturedOutputs,
+    ...(checkScreenResult ? { checkScreenResult } : {}),
+    ...(retryState ? { retryState } : {}),
+    ...(output.branch ? { lastIfBranch: output.branch } : {}),
+    ...(subScriptOutputs ? { subScriptOutputs } : {}),
+    ...(output.subScriptOutput ? { subScript: output.subScriptOutput } : {}),
+    ...(subScriptContext ? { subScriptContext } : {}),
+    runtime: mergeContext(
+      objectFrom(context.runtime),
+      runtimePatch,
+      checkScreenResult ? { checkScreenResult } : {},
+      retryState ? { retryState } : {},
+      output.branch ? { lastIfBranch: output.branch } : {}
+    ),
+    lastStepNo: step.stepNo,
+    lastStepType: step.stepType,
+    lastStepOutput: output
+  };
 }
 
 export const scriptRuntimeService = {
@@ -624,7 +799,8 @@ export const scriptRuntimeService = {
     if (!version) throw new AppError("SCRIPT_VERSION_NOT_FOUND", "Script version not found", 404);
 
     let context = mergeContext(run.context);
-    const steps = orderedSteps(version.definition).filter((step) => Number(step.stepNo) > Number(run.currentStepNo));
+    const allSteps = orderedSteps(version.definition);
+    const steps = allSteps.filter((step) => Number(step.stepNo) > Number(run.currentStepNo));
 
     scriptRuntimeRepository.updateScriptRun(scriptRunId, {
       status: "RUNNING",
@@ -638,17 +814,23 @@ export const scriptRuntimeService = {
 
     try {
       for (const step of steps) {
-        const output = await this.executeStep(scriptRunId, step, context);
+        if (!step.enabled) {
+          const output = {
+            skipped: true,
+            reason: "Step disabled",
+            stepNo: step.stepNo,
+            stepType: step.stepType
+          };
+          context = mergeContext(context, runtimeContextPatch(step, output, context));
+          this.saveCheckpoint(scriptRunId, Number(step.stepNo), context, output);
+          continue;
+        }
+
+        const output = step.stepType === "retry"
+          ? await this.executeRetryStep(scriptRunId, step, allSteps, context)
+          : await this.executeStep(scriptRunId, step, context);
         const outputRecord = output && typeof output === "object" ? output as Record<string, unknown> : {};
-        context = mergeContext(context, {
-          uploadedFiles: Array.isArray(outputRecord.uploadedFiles) ? outputRecord.uploadedFiles : context.uploadedFiles,
-          resolverState: outputRecord.resolverState && typeof outputRecord.resolverState === "object" ? outputRecord.resolverState : context.resolverState,
-          currentUpload: outputRecord.currentUpload && typeof outputRecord.currentUpload === "object" ? outputRecord.currentUpload : context.currentUpload,
-          capturedOutputs: Array.isArray(outputRecord.capturedOutputs) ? outputRecord.capturedOutputs : context.capturedOutputs,
-          lastStepNo: step.stepNo,
-          lastStepType: step.stepType,
-          lastStepOutput: output
-        });
+        context = mergeContext(context, runtimeContextPatch(step, outputRecord, context));
         this.saveCheckpoint(scriptRunId, Number(step.stepNo), context, output);
       }
 
@@ -733,6 +915,136 @@ export const scriptRuntimeService = {
       });
       throw error;
     }
+  },
+
+  async executeNestedSteps(scriptRunId: string, steps: NormalizedScriptStep[], context: Record<string, unknown>) {
+    let nextContext = mergeContext(context);
+    const outputs: Record<string, unknown>[] = [];
+    for (const nestedStep of steps) {
+      if (!nestedStep.enabled) {
+        const skipped = {
+          skipped: true,
+          reason: "Step disabled",
+          stepNo: nestedStep.stepNo,
+          stepType: nestedStep.stepType
+        };
+        outputs.push(skipped);
+        nextContext = mergeContext(nextContext, runtimeContextPatch(nestedStep, skipped, nextContext));
+        continue;
+      }
+      const output = nestedStep.stepType === "retry"
+        ? await this.executeRetryStep(scriptRunId, nestedStep, steps, nextContext)
+        : await this.executeStep(scriptRunId, nestedStep, nextContext);
+      outputs.push(output);
+      nextContext = mergeContext(nextContext, runtimeContextPatch(nestedStep, output, nextContext));
+    }
+    return { context: nextContext, outputs };
+  },
+
+  async executeRetryStep(scriptRunId: string, step: NormalizedScriptStep, steps: NormalizedScriptStep[], context: Record<string, unknown>) {
+    const input = renderInputTemplates(mergeContext(step.input), context) as Record<string, unknown>;
+    const targetStepNo = numberValue(input.targetStepNo, 0);
+    const targetStep = steps.find((item) => Number(item.stepNo) === targetStepNo);
+    if (!targetStep) {
+      throw new AppError("RETRY_TARGET_NOT_FOUND", `retry targetStepNo ${targetStepNo || "(empty)"} was not found`, 400, {
+        targetStepNo,
+        availableStepNos: steps.map((item) => item.stepNo)
+      });
+    }
+
+    const stepRow = scriptRuntimeRepository.createScriptRunStep({
+      scriptRunId,
+      stepNo: Number(step.stepNo),
+      stepType: step.stepType,
+      status: "RUNNING",
+      input
+    });
+
+    const maxRetries = Math.max(1, Math.min(numberValue(input.maxRetries, 1), 10));
+    const retryDelayMs = Math.max(0, Math.min(numberValue(input.retryDelayMs, 1000), 30000));
+    const attempts: Record<string, unknown>[] = [];
+    let lastError: unknown = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+      try {
+        const attemptStep = { ...targetStep, stepNo: Number(step.stepNo) * 1000 + attempt };
+        const output = await this.executeStep(scriptRunId, attemptStep, mergeContext(context, {
+          retry: { targetStepNo, attempt, maxRetries }
+        }));
+        const result = {
+          retried: true,
+          targetStepNo,
+          attempts: attempt,
+          retryCount: attempt,
+          retryState: { targetStepNo, retryCount: attempt },
+          targetOutput: output,
+          attemptOutputs: [...attempts, output],
+          runtime: { retryState: { targetStepNo, retryCount: attempt } }
+        };
+        scriptRuntimeRepository.updateScriptRunStep(String(stepRow?.id), {
+          status: "COMPLETED",
+          output: result
+        });
+        return result;
+      } catch (error) {
+        lastError = error;
+        attempts.push({
+          attempt,
+          status: "FAILED",
+          errorCode: error instanceof AppError ? error.code : undefined,
+          errorMessage: error instanceof Error ? error.message : "Retry attempt failed"
+        });
+        if (attempt < maxRetries && retryDelayMs > 0) await delay(retryDelayMs);
+      }
+    }
+
+    scriptRuntimeRepository.updateScriptRunStep(String(stepRow?.id), {
+      status: "FAILED",
+      output: { retried: true, targetStepNo, attempts: maxRetries, attemptOutputs: attempts },
+      errorMessage: lastError instanceof Error ? lastError.message : "Retry failed"
+    });
+    throw lastError instanceof Error ? lastError : new AppError("RETRY_FAILED", "Retry failed");
+  },
+
+  async performCheckScreen(session: ReturnType<typeof runtimeSessionsService.getSession>, input: Record<string, unknown>, _context: Record<string, unknown>) {
+    const templateId = firstString(input.templateId);
+    const template = templateId ? screenTemplateService.getRequired(templateId) : null;
+    const matchType = normalizeMatchType(input.matchType, template?.templateType);
+    const threshold = Math.max(0, Math.min(numberValue(input.threshold, template?.threshold ?? 0.8), 1));
+    const screenshot = await hostAgentService.takeScreenshot(session.hostId as string, {
+      instanceId: session.instanceId as string,
+      adbId: resolveAdbId(input, _context)
+    });
+
+    let confidence = 0;
+    let matched = false;
+    const needle = firstString(input.ocrText, template?.ocrText);
+    const haystack = firstString(input.screenText, contextText(_context));
+    if (matchType === "contains" || matchType === "ocr") {
+      matched = Boolean(needle) && haystack.toLowerCase().includes(needle.toLowerCase());
+      confidence = matched ? 1 : 0;
+    } else {
+      const hasImageTemplate = Boolean(firstString(input.templateImageUrl, template?.templateImageUrl));
+      confidence = screenshot && hasImageTemplate ? 1 : screenshot ? 0.5 : 0;
+      matched = confidence >= threshold;
+    }
+
+    const result = {
+      matched,
+      confidence,
+      threshold,
+      templateId: template?.id ?? (templateId || null),
+      templateName: template?.name ?? null,
+      matchType,
+      screenshot,
+      checkedAt: now()
+    };
+
+    return {
+      ...result,
+      checkScreenResult: result,
+      runtime: { checkScreenResult: result }
+    };
   },
 
   async dispatchStep(
@@ -858,14 +1170,7 @@ export const scriptRuntimeService = {
     }
 
     if (stepType === "check-screen") {
-      const screenshot = await hostAgentService.takeScreenshot(session.hostId, {
-        instanceId: session.instanceId,
-        adbId: resolveAdbId(input, _context)
-      });
-      return {
-        screenshotExists: Boolean(screenshot),
-        screenshot
-      };
+      return this.performCheckScreen(session, input, _context);
     }
 
     if (stepType === "download-result" || stepType === "download-latest") {
@@ -952,16 +1257,58 @@ export const scriptRuntimeService = {
     }
 
     if (stepType === "wait-screen") {
-      const timeoutMs = typeof input.timeoutMs === "number" ? input.timeoutMs : 1000;
-      await delay(Math.max(0, Math.min(timeoutMs, 5000)));
-      const screenshot = await hostAgentService.takeScreenshot(session.hostId, {
-        instanceId: session.instanceId,
-        adbId: resolveAdbId(input, _context)
+      const timeoutMs = Math.max(0, Math.min(numberValue(input.timeoutMs, 60000), 300000));
+      const pollIntervalMs = Math.max(100, Math.min(numberValue(input.pollIntervalMs ?? input.intervalMs, 2000), 30000));
+      const startedAt = Date.now();
+      let attempts = 0;
+      let lastResult: Record<string, unknown> | null = null;
+
+      while (Date.now() - startedAt <= timeoutMs) {
+        attempts += 1;
+        lastResult = await this.performCheckScreen(session, input, _context);
+        if (lastResult.matched === true) {
+          const elapsedMs = Date.now() - startedAt;
+          return {
+            matched: true,
+            attempts,
+            elapsedMs,
+            checkScreenResult: lastResult.checkScreenResult,
+            runtime: { checkScreenResult: lastResult.checkScreenResult },
+            lastCheck: lastResult
+          };
+        }
+        await delay(pollIntervalMs);
+      }
+
+      throw new AppError("WAIT_SCREEN_TIMEOUT", "wait-screen timed out before template matched", 408, {
+        timeoutMs,
+        pollIntervalMs,
+        attempts,
+        lastResult
       });
-      return { waitedMs: timeoutMs, screenshot };
     }
 
-    if (stepType === "if" || stepType === "retry") {
+    if (stepType === "if") {
+      const condition = input.condition;
+      const matched = evaluateCondition(condition, _context);
+      const branch = matched ? "then" : "else";
+      const branchSteps = normalizeNestedSteps(matched ? input.thenSteps : input.elseSteps, numberValue(_context.currentStepNo, 0));
+      const branchResult = await this.executeNestedSteps(scriptRunId, branchSteps, _context);
+      return {
+        evaluated: true,
+        matched,
+        branch,
+        condition,
+        branchSteps: branchSteps.length,
+        branchOutputs: branchResult.outputs,
+        runtime: {
+          lastIfBranch: branch,
+          branchContext: branchResult.context
+        }
+      };
+    }
+
+    if (stepType === "retry") {
       return { evaluated: true, skippedNestedExecution: true };
     }
 
@@ -970,11 +1317,30 @@ export const scriptRuntimeService = {
       if (!subScriptId) throw new AppError("SUB_SCRIPT_REQUIRED", "run-sub-script requires scriptId");
       const subRun = this.createScriptRun(String(session.id), {
         scriptId: subScriptId,
-        scriptVersionId: typeof input.scriptVersionId === "string" ? input.scriptVersionId : undefined,
-        context: _context
+        scriptVersionId: firstString(input.scriptVersionId, input.versionId) || undefined,
+        context: input.inheritContext === false ? objectFrom(input.context) : mergeContext(_context, objectFrom(input.context))
       });
       if (!subRun) throw new AppError("SCRIPT_RUN_CREATE_FAILED", "Could not create sub-script run");
-      return this.executeScriptRun(String(subRun.id));
+      const completed = await this.executeScriptRun(String(subRun.id));
+      const subScriptOutput = {
+        scriptId: subScriptId,
+        scriptVersionId: subRun.scriptVersionId,
+        scriptRunId: subRun.id,
+        status: completed?.status,
+        context: completed?.context
+      };
+      return {
+        subScriptRunId: subRun.id,
+        subScriptId,
+        subScriptVersionId: subRun.scriptVersionId,
+        status: completed?.status,
+        subScriptContext: completed?.context,
+        subScriptOutput,
+        runtime: {
+          lastSubScriptRunId: subRun.id,
+          lastSubScriptStatus: completed?.status
+        }
+      };
     }
 
     throw new AppError("UNSUPPORTED_STEP_TYPE", `Unsupported script step type ${stepType}`);

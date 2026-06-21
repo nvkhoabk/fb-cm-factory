@@ -106,6 +106,14 @@ orchestratorRouter.post("/jobs/:id/fail", (req, res) => {
   }
 });
 
+orchestratorRouter.post("/jobs/:id/retry", (req, res) => {
+  try {
+    res.json({ ok: true, data: orchestratorService.retryJob(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 orchestratorRouter.delete("/jobs/:id", (req, res) => {
   try {
     orchestratorService.deleteJob(req.params.id);

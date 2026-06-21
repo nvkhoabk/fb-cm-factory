@@ -36,16 +36,32 @@ export const scriptStepDefinitionSchema = z.object({
   stepType: z.string().min(1).optional(),
   type: z.string().min(1).optional(),
   description: z.string().optional(),
+  enabled: z.boolean().optional(),
   purpose: z.string().optional(),
   input: z.record(z.string(), z.unknown()).default({}),
-  config: z.record(z.string(), z.unknown()).default({})
+  config: z.record(z.string(), z.unknown()).default({}),
+  onSuccess: z.record(z.string(), z.unknown()).optional(),
+  onFailure: z.record(z.string(), z.unknown()).optional()
 }).refine((step) => Boolean(step.stepType || step.type), {
   message: "stepType or type is required"
 });
 
 export const createScriptSchema = z.object({
   name: z.string().min(1),
-  category: z.enum(["IMAGE_EDIT", "VIDEO_GENERATE", "MUSIC_GENERATE", "VIDEO_COMPOSE", "POST_CONTENT", "UTILITY"]).default("UTILITY"),
+  category: z.enum([
+    "IMAGE_EDIT",
+    "VIDEO_GENERATE",
+    "MUSIC_GENERATE",
+    "VIDEO_COMPOSE",
+    "POST_CONTENT",
+    "UTILITY",
+    "UPLOAD",
+    "DOWNLOAD",
+    "CHROME",
+    "CHATGPT",
+    "PIXVERSE",
+    "CAPCUT"
+  ]).default("UTILITY"),
   description: z.string().optional(),
   status: z.string().default("active")
 });

@@ -1,6 +1,7 @@
 import { AppError } from "../shared/resource";
 import { instanceSchedulerService } from "../instance-scheduler/instance-scheduler.service";
 import { orchestratorRepository } from "./orchestrator.repository";
+import { productionBatchRepository } from "../production-batches/production-batch.repository";
 import type {
   CreateOrchestratorRuleInput,
   FailOrchestratorJobInput,
@@ -28,6 +29,10 @@ type MusicPolicy = {
 
 function recordValue(value: unknown) {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function normalizeMusicPolicy(value: unknown): MusicPolicy {
@@ -134,6 +139,273 @@ function globalRuleForScan(rule: ActiveRule): ResourceDrivenRule {
   };
 }
 
+function sourceAssetsSnapshot(sourceBatch: TriggerBatch) {
+  const metadata = recordValue(sourceBatch.metadata);
+  const direct = recordValue(metadata.sourceAssetsSnapshot);
+  const groupBatch = recordValue(metadata.characterGroupBatch);
+  const nested = recordValue(groupBatch.sourceAssetsSnapshot);
+  return Object.keys(direct).length ? direct : nested;
+}
+
+function sourceImageFrom(value: unknown, role: "young" | "old", characterId: string | null, orderNo: number, sourceBatch: TriggerBatch) {
+  const image = recordValue(value);
+  const sourceAssetId = stringValue(image.id) ?? stringValue(image.assetId);
+  if (!sourceAssetId) return null;
+  return {
+    groupId: stringValue(sourceBatch.sourceGroupId) ?? stringValue(recordValue(sourceBatch.metadata).groupId),
+    characterId,
+    sourceAssetId,
+    sourceImageRole: role,
+    orderNo,
+    promptContext: {},
+    sourceBatchId: sourceBatch.id,
+    sourceAsset: {
+      id: sourceAssetId,
+      role,
+      filePath: stringValue(image.filePath),
+      absolutePath: stringValue(image.absolutePath) ?? stringValue(image.filePath),
+      publicUrl: stringValue(image.publicUrl),
+      name: stringValue(image.name)
+    }
+  };
+}
+
+function imageEditWorkItems(sourceBatch: TriggerBatch) {
+  const snapshot = sourceAssetsSnapshot(sourceBatch);
+  const characters = Array.isArray(snapshot.characters) ? snapshot.characters : [];
+  let orderNo = 1;
+  return characters.flatMap((item) => {
+    const character = recordValue(item);
+    const characterId = stringValue(character.characterId) ?? stringValue(recordValue(character.character).id);
+    const young = sourceImageFrom(character.youngOriginalImage, "young", characterId, orderNo, sourceBatch);
+    if (young) orderNo += 1;
+    const old = sourceImageFrom(character.oldOriginalImage, "old", characterId, orderNo, sourceBatch);
+    if (old) orderNo += 1;
+    return [young, old].filter((workItem): workItem is NonNullable<typeof workItem> => Boolean(workItem));
+  });
+}
+
+function ensureImageEditOutputBatch(sourceBatch: TriggerBatch, workItems: ReturnType<typeof imageEditWorkItems>) {
+  const existing = productionBatchRepository.list().find((batch) => {
+    const metadata = recordValue(batch.metadata);
+    return String(batch.batchType) === "IMAGE_BATCH"
+      && stringValue(metadata.sourceBatchId) === sourceBatch.id
+      && stringValue(metadata.outputRole) === "IMAGE_EDIT_RESULT";
+  });
+  const items = workItems.map((item) => ({
+    characterId: item.characterId,
+    sourceAssetId: item.sourceAssetId,
+    sourceImageRole: item.sourceImageRole,
+    editedAssetId: null,
+    jobId: null,
+    orderNo: item.orderNo
+  }));
+  if (existing) {
+    const metadata = recordValue(existing.metadata);
+    const existingItems = Array.isArray(metadata.items) ? metadata.items.map(recordValue) : [];
+    const mergedItems = items.map((item) => {
+      const current = existingItems.find((existingItem) => stringValue(existingItem.sourceAssetId) === item.sourceAssetId);
+      return current ? { ...item, ...current } : item;
+    });
+    return productionBatchRepository.update(String(existing.id), {
+      status: String(existing.status) === "READY" ? "READY" : "RUNNING",
+      usageStatus: "AVAILABLE",
+      attributes: recordValue(existing.attributes),
+      metadata: {
+        ...metadata,
+        sourceBatchId: sourceBatch.id,
+        groupId: stringValue(sourceBatch.sourceGroupId),
+        outputRole: "IMAGE_EDIT_RESULT",
+        expectedCount: items.length,
+        completedCount: mergedItems.filter((item) => stringValue(recordValue(item).editedAssetId)).length,
+        items: mergedItems
+      }
+    });
+  }
+  return productionBatchRepository.create({
+    batchType: "IMAGE_BATCH",
+    sourceGroupId: stringValue(sourceBatch.sourceGroupId) ?? undefined,
+    workflowId: stringValue(sourceBatch.workflowId) ?? undefined,
+    workflowRunId: stringValue(sourceBatch.workflowRunId) ?? undefined,
+    status: "RUNNING",
+    usageStatus: "AVAILABLE",
+    attributes: recordValue(sourceBatch.attributes),
+    metadata: {
+      sourceBatchId: sourceBatch.id,
+      groupId: stringValue(sourceBatch.sourceGroupId),
+      outputRole: "IMAGE_EDIT_RESULT",
+      expectedCount: items.length,
+      completedCount: 0,
+      items
+    }
+  });
+}
+
+function imageBatchItems(sourceBatch: TriggerBatch) {
+  const metadata = recordValue(sourceBatch.metadata);
+  return Array.isArray(metadata.items)
+    ? metadata.items.map(recordValue)
+      .filter((item) => stringValue(item.editedAssetId))
+      .sort((a, b) => Number(a.orderNo ?? 0) - Number(b.orderNo ?? 0))
+    : [];
+}
+
+function videoTransitionWorkItems(sourceBatch: TriggerBatch) {
+  const items = imageBatchItems(sourceBatch);
+  const byCharacter = new Map<string, Record<string, unknown>[]>();
+  for (const item of items) {
+    const characterId = stringValue(item.characterId) ?? "unknown";
+    byCharacter.set(characterId, [...(byCharacter.get(characterId) ?? []), item]);
+  }
+  const transitions: Array<Record<string, unknown>> = [];
+  let orderNo = 1;
+  for (const [characterId, characterItems] of byCharacter.entries()) {
+    const oldImage = characterItems.find((item) => stringValue(item.sourceImageRole) === "old");
+    const youngImage = characterItems.find((item) => stringValue(item.sourceImageRole) === "young");
+    if (oldImage && youngImage) {
+      transitions.push({
+        transitionKey: `${characterId}:old-to-young`,
+        transitionType: "SAME_CHARACTER_OLD_TO_YOUNG",
+        fromAssetId: stringValue(oldImage.editedAssetId),
+        toAssetId: stringValue(youngImage.editedAssetId),
+        fromCharacterId: characterId,
+        toCharacterId: characterId,
+        orderNo: orderNo++
+      });
+    }
+  }
+  const youngItems = items.filter((item) => stringValue(item.sourceImageRole) === "young");
+  const oldItems = items.filter((item) => stringValue(item.sourceImageRole) === "old");
+  for (let index = 0; index < youngItems.length - 1; index += 1) {
+    const from = youngItems[index];
+    const to = oldItems[index + 1];
+    if (!from || !to) continue;
+    const fromCharacterId = stringValue(from.characterId);
+    const toCharacterId = stringValue(to.characterId);
+    transitions.push({
+      transitionKey: `${fromCharacterId}:young-to:${toCharacterId}:old`,
+      transitionType: "NEXT_CHARACTER_YOUNG_TO_OLD",
+      fromAssetId: stringValue(from.editedAssetId),
+      toAssetId: stringValue(to.editedAssetId),
+      fromCharacterId,
+      toCharacterId,
+      orderNo: orderNo++
+    });
+  }
+  return transitions.filter((item) => stringValue(item.fromAssetId) && stringValue(item.toAssetId));
+}
+
+function ensureVideoTransitionOutputBatch(sourceBatch: TriggerBatch, workItems: ReturnType<typeof videoTransitionWorkItems>) {
+  const existing = productionBatchRepository.list().find((batch) => {
+    const metadata = recordValue(batch.metadata);
+    return String(batch.batchType) === "VIDEO_BATCH"
+      && stringValue(metadata.sourceBatchId) === sourceBatch.id
+      && stringValue(metadata.outputRole) === "VIDEO_TRANSITION_RESULT";
+  });
+  const items = workItems.map((item) => ({
+    transitionKey: item.transitionKey,
+    transitionType: item.transitionType,
+    fromAssetId: item.fromAssetId,
+    toAssetId: item.toAssetId,
+    fromCharacterId: item.fromCharacterId,
+    toCharacterId: item.toCharacterId,
+    videoAssetId: null,
+    jobId: null,
+    orderNo: item.orderNo
+  }));
+  if (existing) {
+    const metadata = recordValue(existing.metadata);
+    const existingItems = Array.isArray(metadata.items) ? metadata.items.map(recordValue) : [];
+    const mergedItems = items.map((item) => {
+      const current = existingItems.find((existingItem) => stringValue(existingItem.transitionKey) === stringValue(item.transitionKey));
+      return current ? { ...item, ...current } : item;
+    });
+    return productionBatchRepository.update(String(existing.id), {
+      status: String(existing.status) === "READY" ? "READY" : "RUNNING",
+      usageStatus: "AVAILABLE",
+      attributes: recordValue(existing.attributes),
+      metadata: {
+        ...metadata,
+        sourceBatchId: sourceBatch.id,
+        groupId: stringValue(sourceBatch.sourceGroupId),
+        outputRole: "VIDEO_TRANSITION_RESULT",
+        expectedCount: items.length,
+        completedCount: mergedItems.filter((item) => stringValue(recordValue(item).videoAssetId)).length,
+        items: mergedItems
+      }
+    });
+  }
+  return productionBatchRepository.create({
+    batchType: "VIDEO_BATCH",
+    sourceGroupId: stringValue(sourceBatch.sourceGroupId) ?? undefined,
+    workflowId: stringValue(sourceBatch.workflowId) ?? undefined,
+    workflowRunId: stringValue(sourceBatch.workflowRunId) ?? undefined,
+    status: "RUNNING",
+    usageStatus: "AVAILABLE",
+    attributes: recordValue(sourceBatch.attributes),
+    metadata: {
+      sourceBatchId: sourceBatch.id,
+      groupId: stringValue(sourceBatch.sourceGroupId),
+      outputRole: "VIDEO_TRANSITION_RESULT",
+      expectedCount: items.length,
+      completedCount: 0,
+      items
+    }
+  });
+}
+
+function markImageEditItemFailed(job: ReturnType<typeof orchestratorRepository.getJob>) {
+  if (!job || job.targetStageType !== "IMAGE_EDIT") return;
+  const payload = recordValue(job.payload);
+  const sourceAssetId = stringValue(payload.sourceAssetId);
+  const outputBatchId = stringValue(payload.outputBatchId);
+  if (!sourceAssetId || !outputBatchId) return;
+  const batch = productionBatchRepository.get(String(outputBatchId));
+  if (!batch) return;
+  const metadata = recordValue(batch.metadata);
+  const items = Array.isArray(metadata.items) ? metadata.items.map(recordValue) : [];
+  const updatedItems = items.map((item) => stringValue(item.sourceAssetId) === sourceAssetId
+    ? { ...item, failed: true, failedJobId: job.id }
+    : item);
+  productionBatchRepository.update(String(outputBatchId), {
+    status: "RUNNING",
+    usageStatus: "AVAILABLE",
+    attributes: recordValue(batch.attributes),
+    metadata: {
+      ...metadata,
+      failedCount: updatedItems.filter((item) => item.failed === true && !stringValue(item.editedAssetId)).length,
+      completedCount: updatedItems.filter((item) => stringValue(item.editedAssetId)).length,
+      items: updatedItems
+    }
+  });
+}
+
+function clearImageEditItemFailure(job: ReturnType<typeof orchestratorRepository.getJob>) {
+  if (!job || job.targetStageType !== "IMAGE_EDIT") return;
+  const payload = recordValue(job.payload);
+  const sourceAssetId = stringValue(payload.sourceAssetId);
+  const outputBatchId = stringValue(payload.outputBatchId);
+  if (!sourceAssetId || !outputBatchId) return;
+  const batch = productionBatchRepository.get(String(outputBatchId));
+  if (!batch) return;
+  const metadata = recordValue(batch.metadata);
+  const items = Array.isArray(metadata.items) ? metadata.items.map(recordValue) : [];
+  const updatedItems = items.map((item) => stringValue(item.sourceAssetId) === sourceAssetId
+    ? { ...item, failed: false, failedJobId: null }
+    : item);
+  productionBatchRepository.update(String(outputBatchId), {
+    status: "RUNNING",
+    usageStatus: "AVAILABLE",
+    attributes: recordValue(batch.attributes),
+    metadata: {
+      ...metadata,
+      failedCount: updatedItems.filter((item) => item.failed === true && !stringValue(item.editedAssetId)).length,
+      completedCount: updatedItems.filter((item) => stringValue(item.editedAssetId)).length,
+      items: updatedItems
+    }
+  });
+}
+
 export const orchestratorService = {
   listJobs: () => orchestratorRepository.listJobs(),
 
@@ -184,6 +456,165 @@ export const orchestratorService = {
     const workflowHandledBatchIds = new Set<string>();
 
     const createJobForRule = (rule: ResourceDrivenRule, sourceBatch: TriggerBatch) => {
+      if (rule.targetStageType === "IMAGE_EDIT" && sourceBatch.batchType === "CHARACTER_GROUP") {
+        const workItems = imageEditWorkItems(sourceBatch);
+        if (!workItems.length) return null;
+        const outputBatch = ensureImageEditOutputBatch(sourceBatch, workItems);
+        const outputBatchId = stringValue(outputBatch?.id);
+        let firstJob = null;
+        const createdForBatch: Array<NonNullable<ReturnType<typeof orchestratorRepository.getJob>>> = [];
+        for (const item of workItems) {
+          const existing = orchestratorRepository.getJobBySourceStageAndAsset(
+            sourceBatch.id,
+            rule.targetStageType,
+            item.sourceAssetId
+          );
+          if (existing) {
+            createdForBatch.push(existing);
+            if (!firstJob) firstJob = existing;
+            continue;
+          }
+          const job = orchestratorRepository.createJob({
+            ruleId: rule.id,
+            sourceBatchId: sourceBatch.id,
+            targetStageType: rule.targetStageType,
+            payload: {
+              ruleId: rule.id ?? null,
+              ruleSource: rule.ruleSource,
+              targetStageType: "IMAGE_EDIT",
+              sourceBatchId: sourceBatch.id,
+              sourceBatchType: sourceBatch.batchType,
+              workflowId: sourceBatch.workflowId ?? undefined,
+              workflowRunId: sourceBatch.workflowRunId ?? undefined,
+              outputBatchId,
+              groupId: item.groupId,
+              characterId: item.characterId,
+              sourceAssetId: item.sourceAssetId,
+              sourceImageRole: item.sourceImageRole,
+              sourceAsset: item.sourceAsset,
+              orderNo: item.orderNo,
+              expectedOutputRole: "IMAGE_EDIT_RESULT",
+              ...(rule.resourceRule ? {
+                resourceRule: rule.resourceRule,
+                scriptCategory: rule.resourceRule.scriptCategory,
+                promptCategory: rule.resourceRule.promptCategory
+              } : {})
+            }
+          });
+          if (job) {
+            createdJobs.push(job);
+            createdForBatch.push(job);
+            if (!firstJob) firstJob = job;
+          }
+        }
+
+        if (outputBatchId) {
+          const current = productionBatchRepository.get(String(outputBatchId));
+          const metadata = recordValue(current?.metadata);
+          const metadataItems = Array.isArray(metadata.items) ? metadata.items.map(recordValue) : [];
+          const withJobIds = metadataItems.map((metadataItem) => {
+            const sourceAssetId = stringValue(metadataItem.sourceAssetId);
+            const job = createdForBatch.find((item) => stringValue(recordValue(item.payload).sourceAssetId) === sourceAssetId);
+            return job ? { ...metadataItem, jobId: job.id } : metadataItem;
+          });
+          productionBatchRepository.update(String(outputBatchId), {
+            status: "RUNNING",
+            usageStatus: "AVAILABLE",
+            attributes: recordValue(current?.attributes),
+            metadata: {
+              ...metadata,
+              items: withJobIds,
+              expectedCount: workItems.length,
+              completedCount: withJobIds.filter((item) => stringValue(recordValue(item).editedAssetId)).length
+            }
+          });
+        }
+
+        orchestratorRepository.reserveBatch(sourceBatch.id);
+        return firstJob;
+      }
+
+      if (rule.targetStageType === "VIDEO_GENERATE" && sourceBatch.batchType === "IMAGE_BATCH") {
+        const workItems = videoTransitionWorkItems(sourceBatch);
+        if (!workItems.length) return null;
+        const outputBatch = ensureVideoTransitionOutputBatch(sourceBatch, workItems);
+        const outputBatchId = stringValue(outputBatch?.id);
+        let firstJob = null;
+        const createdForBatch: Array<NonNullable<ReturnType<typeof orchestratorRepository.getJob>>> = [];
+        for (const item of workItems) {
+          const transitionKey = stringValue(item.transitionKey);
+          if (!transitionKey) continue;
+          const existing = orchestratorRepository.getJobBySourceStageAndTransition(
+            sourceBatch.id,
+            rule.targetStageType,
+            transitionKey
+          );
+          if (existing) {
+            createdForBatch.push(existing);
+            if (!firstJob) firstJob = existing;
+            continue;
+          }
+          const job = orchestratorRepository.createJob({
+            ruleId: rule.id,
+            sourceBatchId: sourceBatch.id,
+            targetStageType: rule.targetStageType,
+            payload: {
+              ruleId: rule.id ?? null,
+              ruleSource: rule.ruleSource,
+              targetStageType: "VIDEO_GENERATE",
+              sourceBatchId: sourceBatch.id,
+              sourceBatchType: sourceBatch.batchType,
+              workflowId: sourceBatch.workflowId ?? undefined,
+              workflowRunId: sourceBatch.workflowRunId ?? undefined,
+              outputBatchId,
+              transitionKey,
+              transitionType: item.transitionType,
+              fromAssetId: item.fromAssetId,
+              toAssetId: item.toAssetId,
+              fromCharacterId: item.fromCharacterId,
+              toCharacterId: item.toCharacterId,
+              orderNo: item.orderNo,
+              expectedOutputRole: "VIDEO_TRANSITION_RESULT",
+              ...(rule.resourceRule ? {
+                resourceRule: rule.resourceRule,
+                scriptCategory: rule.resourceRule.scriptCategory,
+                promptCategory: rule.resourceRule.promptCategory
+              } : {})
+            }
+          });
+          if (job) {
+            createdJobs.push(job);
+            createdForBatch.push(job);
+            if (!firstJob) firstJob = job;
+          }
+        }
+
+        if (outputBatchId) {
+          const current = productionBatchRepository.get(String(outputBatchId));
+          const metadata = recordValue(current?.metadata);
+          const metadataItems = Array.isArray(metadata.items) ? metadata.items.map(recordValue) : [];
+          const withJobIds = metadataItems.map((metadataItem) => {
+            const transitionKey = stringValue(metadataItem.transitionKey);
+            const job = createdForBatch.find((item) => stringValue(recordValue(item.payload).transitionKey) === transitionKey);
+            return job ? { ...metadataItem, jobId: job.id } : metadataItem;
+          });
+          productionBatchRepository.update(String(outputBatchId), {
+            status: "RUNNING",
+            usageStatus: "AVAILABLE",
+            attributes: recordValue(current?.attributes),
+            metadata: {
+              ...metadata,
+              items: withJobIds,
+              expectedCount: workItems.length,
+              completedCount: withJobIds.filter((item) => stringValue(recordValue(item).videoAssetId)).length
+            }
+          });
+        }
+
+        orchestratorRepository.reserveBatch(sourceBatch.id);
+        return firstJob;
+      }
+
       const existing = orchestratorRepository.getJobBySourceAndStage(
         sourceBatch.id,
         rule.targetStageType
@@ -338,7 +769,27 @@ export const orchestratorService = {
       ...(input.errorCode ? { errorCode: input.errorCode } : {}),
       ...(isInstanceIssueFailure(input) ? { instanceIssue: true } : {})
     });
+    markImageEditItemFailed(job);
     instanceSchedulerService.failActiveForJob(id, input.errorCode ?? errorMessage, isInstanceIssueFailure(input));
     return job;
+  },
+
+  retryJob(id: string) {
+    const current = orchestratorRepository.getJob(id);
+    if (!current) throw new AppError("ORCHESTRATOR_JOB_NOT_FOUND", "Orchestrator job not found", 404);
+    if (!["FAILED", "FAILED_RECOVERABLE"].includes(String(current.status))) {
+      throw new AppError("ORCHESTRATOR_JOB_NOT_RETRYABLE", "Only failed jobs can be retried", 400);
+    }
+    instanceSchedulerService.releaseActiveForJob(id);
+    clearImageEditItemFailure(current);
+    return orchestratorRepository.updateJobResult(id, "PENDING", {
+      payload: {
+        retryOfJobId: id,
+        retriedAt: new Date().toISOString(),
+        errorMessage: null,
+        errorCode: null
+      },
+      output: {}
+    });
   }
 };
