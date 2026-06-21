@@ -123,6 +123,35 @@ function resolveLocalId(input: Record<string, unknown>, context: Record<string, 
   return undefined;
 }
 
+function normalizeAdbDevices(value: unknown) {
+  const record = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const nested = record.result && typeof record.result === "object" ? record.result as Record<string, unknown> : {};
+  const devices = Array.isArray(record.devices)
+    ? record.devices
+    : Array.isArray(record.adbDevices)
+      ? record.adbDevices
+      : Array.isArray(nested.devices)
+        ? nested.devices
+        : Array.isArray(nested.adbDevices)
+          ? nested.adbDevices
+          : [];
+  return devices.map((device) => device && typeof device === "object" ? device as Record<string, unknown> : {});
+}
+
+async function assertAdbDeviceReady(hostId: string, adbId: string) {
+  const response = await hostAgentService.listAdbDevices(hostId);
+  const devices = normalizeAdbDevices(response);
+  const device = devices.find((item) => String(item.adbId ?? item.id ?? item.serial ?? "") === adbId);
+  if (!device) {
+    throw new AppError("ADB_DEVICE_NOT_FOUND", `ADB device ${adbId} was not reported by the selected Host Agent`, 409);
+  }
+
+  const state = String(device.state ?? device.status ?? device.adbStatus ?? "").toLowerCase();
+  if (!["device", "online"].includes(state)) {
+    throw new AppError("ADB_DEVICE_NOT_READY", `ADB device ${adbId} is ${state || "not ready"}. Refresh/sync the host or restart the emulator before Test Run.`, 409);
+  }
+}
+
 function orderedSteps(definition: unknown): NormalizedScriptStep[] {
   const steps = definition && typeof definition === "object"
     ? (definition as { steps?: unknown }).steps
@@ -226,6 +255,7 @@ export const scriptRuntimeService = {
     }
 
     const context = runtimeContext(input);
+    await assertAdbDeviceReady(input.hostId, input.adbId);
     const session = runtimeSessionsService.createRuntimeSession({
       hostId: input.hostId,
       instanceId: input.instanceId,
