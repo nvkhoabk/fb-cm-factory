@@ -544,17 +544,16 @@ function orderedSteps(definition: unknown): NormalizedScriptStep[] {
         stepType: definitionStep.stepType ?? definitionStep.type ?? "unsupported-step",
         input: mergeContext(definitionStep.config, definitionStep.input),
         enabled: definitionStep.enabled !== false,
-        stepNo: typeof definitionStep.stepNo === "number" ? definitionStep.stepNo : index + 1
+        stepNo: index + 1
       };
-    })
-    .sort((a, b) => Number(a.stepNo) - Number(b.stepNo));
+    });
 }
 
 function normalizeNestedSteps(value: unknown, parentStepNo: number): NormalizedScriptStep[] {
   return arrayValue(value)
     .map((item, index) => {
       const step = objectFrom(item) as ScriptStepDefinition;
-      const stepNo = typeof step.stepNo === "number" ? step.stepNo : (parentStepNo * 1000) + index + 1;
+      const stepNo = (parentStepNo * 1000) + index + 1;
       return {
         ...step,
         stepType: step.stepType ?? step.type ?? "unsupported-step",
@@ -562,8 +561,7 @@ function normalizeNestedSteps(value: unknown, parentStepNo: number): NormalizedS
         enabled: step.enabled !== false,
         stepNo
       };
-    })
-    .sort((a, b) => Number(a.stepNo) - Number(b.stepNo));
+    });
 }
 
 function normalizeMatchType(value: unknown, templateType?: string) {
@@ -1128,7 +1126,7 @@ export const scriptRuntimeService = {
 
     if (stepType === "wait") {
       const ms = typeof input.ms === "number" ? input.ms : 100;
-      await delay(Math.max(0, Math.min(ms, 5000)));
+      await delay(Math.max(0, Math.min(ms, 300000)));
       return { waitedMs: ms };
     }
 

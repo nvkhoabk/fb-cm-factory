@@ -88,9 +88,54 @@ function parseCandidateLine(line: string) {
   };
 }
 
-function outputNotFound(sourceDir: string) {
+function listDirectoryCommand(sourceDir: string) {
+  return [
+    `dir=${shellQuote(sourceDir)}`,
+    `[ -d "$dir" ] || { printf 'DIR_MISSING=%s\\n' "$dir"; exit 0; }`,
+    `for f in "$dir"/*; do`,
+    `[ -e "$f" ] || continue`,
+    `type="file"`,
+    `[ -d "$f" ] && type="dir"`,
+    `size=$(wc -c < "$f" 2>/dev/null || echo 0)`,
+    `ts=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo 0)`,
+    `printf '%s\\t%s\\t%s\\t%s\\n' "$type" "$ts" "$size" "$f"`,
+    `done`
+  ].join("\n");
+}
+
+async function downloadDirectoryDebug(adbId: string, sourceDir: string, extensions: string[], candidateStdout: string) {
+  const args = ["-s", adbId, "shell", "sh", "-c", listDirectoryCommand(sourceDir)];
+  try {
+    const listing = await adbClient.runAdb(args);
+    return {
+      adbId,
+      sourceDir,
+      extensions,
+      candidateStdout,
+      listArgs: args,
+      listingStdout: listing.stdout,
+      listingStderr: listing.stderr,
+      hint: "No candidate matched the configured extensions. Verify the app actually saved/downloaded a file before download-latest runs, and check whether the file is saved to a different folder or extension."
+    };
+  } catch (error) {
+    const cause = error && typeof error === "object" ? error as Record<string, unknown> : {};
+    return {
+      adbId,
+      sourceDir,
+      extensions,
+      candidateStdout,
+      listArgs: args,
+      listingStdout: typeof cause.stdout === "string" ? cause.stdout : "",
+      listingStderr: typeof cause.stderr === "string" ? cause.stderr : "",
+      listingError: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+function outputNotFound(sourceDir: string, detail?: unknown) {
   const error = new Error(`No downloaded image/video was found in ${sourceDir}. The previous generation/download action may have failed.`);
   error.name = "DOWNLOAD_OUTPUT_NOT_FOUND";
+  (error as Error & { detail?: unknown }).detail = detail;
   return error;
 }
 
@@ -168,7 +213,12 @@ export const downloadLatestService = {
     const folder = storageService.ensureTargetFolder(targetFolder);
 
     if (isBlockedFactorySourceDir(sourceDir)) {
-      throw outputNotFound(sourceDir);
+      throw outputNotFound(sourceDir, {
+        adbId: input.adbId,
+        sourceDir,
+        extensions,
+        reason: "sourceDir is reserved for factory internal files"
+      });
     }
 
     if (config.mockMode) {
@@ -190,7 +240,9 @@ export const downloadLatestService = {
       .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
     const newest = candidates[0];
 
-    if (!newest) throw outputNotFound(sourceDir);
+    if (!newest) {
+      throw outputNotFound(sourceDir, await downloadDirectoryDebug(input.adbId, sourceDir, extensions, latest.stdout));
+    }
 
     const localName = `${Date.now()}-${newest.fileName}`;
     const absolutePath = path.join(folder.absolutePath, localName);

@@ -156,6 +156,18 @@ export const errorCenterRepository = {
     return this.getEvent(id);
   },
 
+  updateMetadata(id: string, patch: Record<string, unknown>) {
+    const current = this.getEvent(id);
+    if (!current) return null;
+    const metadata = {
+      ...(current.metadata && typeof current.metadata === "object" ? current.metadata : {}),
+      ...patch
+    };
+    db.prepare("UPDATE error_events SET metadata_json = ?, updated_at = ? WHERE id = ?")
+      .run(JSON.stringify(metadata), now(), id);
+    return this.getEvent(id);
+  },
+
   setScreenshot(input: {
     id: string;
     screenshotAssetId?: string | null;

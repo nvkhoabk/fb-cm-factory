@@ -37,6 +37,26 @@ function findUrl(value: unknown): string | null {
   return null;
 }
 
+function findStringByKey(value: unknown, keys: string[]): string | null {
+  if (!value || typeof value !== "object") return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findStringByKey(item, keys);
+      if (found) return found;
+    }
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of keys) {
+    if (typeof record[key] === "string" && String(record[key]).trim()) return String(record[key]);
+  }
+  for (const item of Object.values(record)) {
+    const found = findStringByKey(item, keys);
+    if (found) return found;
+  }
+  return null;
+}
+
 function extensionFromContentType(value: string | null) {
   const contentType = String(value ?? "").toLowerCase();
   if (contentType.includes("jpeg") || contentType.includes("jpg")) return ".jpg";
@@ -55,10 +75,49 @@ async function downloadBuffer(url: string) {
 }
 
 async function materializeScreenshot(screenshotResult: unknown, eventId: string) {
+  const directPath = findStringByKey(screenshotResult, ["absolutePath", "filePath"]);
+  const hostFilePath = findStringByKey(screenshotResult, ["hostFilePath"]);
   const url = findUrl(screenshotResult);
-  if (!url) return null;
-  const absoluteUrl = url.startsWith("/storage/") ? `http://127.0.0.1:${config.port}${url}` : url;
-  const { buffer, mimeType } = await downloadBuffer(absoluteUrl);
+  let buffer: Buffer;
+  let mimeType = "image/png";
+  let sourceUrl = url ?? directPath ?? hostFilePath ?? "";
+  if (directPath && fs.existsSync(directPath)) {
+    buffer = fs.readFileSync(directPath);
+    mimeType = path.extname(directPath).toLowerCase() === ".jpg" || path.extname(directPath).toLowerCase() === ".jpeg" ? "image/jpeg" : "image/png";
+  } else if (hostFilePath) {
+    const candidate = path.resolve(config.storageRoot, ...hostFilePath.replace(/\\/g, "/").split("/"));
+    if (fs.existsSync(candidate)) {
+      buffer = fs.readFileSync(candidate);
+      mimeType = path.extname(candidate).toLowerCase() === ".jpg" || path.extname(candidate).toLowerCase() === ".jpeg" ? "image/jpeg" : "image/png";
+      sourceUrl = hostFilePath;
+    } else if (url) {
+      if (url.startsWith("/storage/")) {
+        const localPath = path.resolve(config.storageRoot, ...url.replace(/^\/storage\/?/, "").split("/"));
+        if (!fs.existsSync(localPath)) throw new AppError("ERROR_SCREENSHOT_FILE_NOT_FOUND", `Error screenshot file does not exist: ${localPath}`, 404);
+        buffer = fs.readFileSync(localPath);
+        mimeType = path.extname(localPath).toLowerCase() === ".jpg" || path.extname(localPath).toLowerCase() === ".jpeg" ? "image/jpeg" : "image/png";
+      } else {
+        const downloaded = await downloadBuffer(url);
+        buffer = downloaded.buffer;
+        mimeType = downloaded.mimeType;
+      }
+    } else {
+      return null;
+    }
+  } else if (url) {
+    if (url.startsWith("/storage/")) {
+      const localPath = path.resolve(config.storageRoot, ...url.replace(/^\/storage\/?/, "").split("/"));
+      if (!fs.existsSync(localPath)) throw new AppError("ERROR_SCREENSHOT_FILE_NOT_FOUND", `Error screenshot file does not exist: ${localPath}`, 404);
+      buffer = fs.readFileSync(localPath);
+      mimeType = path.extname(localPath).toLowerCase() === ".jpg" || path.extname(localPath).toLowerCase() === ".jpeg" ? "image/jpeg" : "image/png";
+    } else {
+      const downloaded = await downloadBuffer(url);
+      buffer = downloaded.buffer;
+      mimeType = downloaded.mimeType;
+    }
+  } else {
+    return null;
+  }
   const storageKey = `error-screenshots/${eventId}/failure-${randomUUID()}${extensionFromContentType(mimeType)}`;
   const filePath = path.resolve(config.storageRoot, ...storageKey.split("/"));
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -70,7 +129,16 @@ async function materializeScreenshot(screenshotResult: unknown, eventId: string)
     mimeType,
     fileSize: buffer.length,
     checksum: createHash("sha256").update(buffer).digest("hex"),
-    sourceUrl: url
+    sourceUrl
+  };
+}
+
+function errorSnapshot(error: unknown) {
+  return {
+    code: errorCode(error),
+    message: errorMessage(error),
+    name: error instanceof Error ? error.name : undefined,
+    detail: error instanceof AppError ? error.detail : error && typeof error === "object" && "detail" in error ? (error as { detail?: unknown }).detail : undefined
   };
 }
 
@@ -116,7 +184,8 @@ export const errorCenterService = {
       screenshotThumbnailUrl: null,
       metadata: {
         context: input.context ?? {},
-        capturedAt: now()
+        capturedAt: now(),
+        originalError: errorSnapshot(input.error)
       }
     });
     if (!placeholder?.id) return placeholder;
@@ -182,7 +251,23 @@ export const errorCenterService = {
           }
         }
       } catch (captureError) {
-        console.warn("[error-center] failed to capture error screenshot", captureError);
+        const captureSnapshot = errorSnapshot(captureError);
+        console.warn("[error-center] failed to capture error screenshot", {
+          originalError: errorSnapshot(input.error),
+          screenshotCaptureError: captureSnapshot,
+          runtimeSessionId: input.runtimeSessionId,
+          scriptRunId: input.scriptRunId,
+          stepNo: input.stepNo,
+          hostId: input.hostId,
+          instanceId: input.instanceId,
+          adbId: input.adbId
+        });
+        errorCenterRepository.updateMetadata(placeholder.id, {
+          screenshotCaptureFailed: true,
+          screenshotCaptureError: captureSnapshot.message,
+          screenshotCaptureErrorDetail: captureSnapshot,
+          originalError: errorSnapshot(input.error)
+        });
       }
     }
 

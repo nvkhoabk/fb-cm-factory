@@ -34,6 +34,7 @@ type ApiResponse<T> = {
   error?: {
     code: string;
     message: string;
+    detail?: unknown;
   };
 };
 
@@ -49,6 +50,12 @@ type CharacterGroup = {
   readiness?: GroupReadiness;
   membersPreview?: CharacterGroupMemberSummary[];
   productionBatchCount?: number;
+};
+
+type ApiErrorWithPayload = Error & {
+  code?: string;
+  detail?: unknown;
+  payload?: unknown;
 };
 
 type GroupReadiness = {
@@ -836,7 +843,11 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok || payload.ok === false) {
     const code = payload.error?.code;
     const message = payload.error?.message ?? `Request failed: ${path}`;
-    throw new Error(code ? `${code}: ${message}` : message);
+    const error = new Error(code ? `${code}: ${message}` : message) as ApiErrorWithPayload;
+    error.code = code;
+    error.detail = payload.error?.detail;
+    error.payload = payload;
+    throw error;
   }
   return payload.data;
 }
@@ -1751,11 +1762,15 @@ function normalizeScriptStep(step: Record<string, unknown>, index = 0) {
   return {
     ...step,
     type: getString(step.type) || getString(step.stepType) || "wait",
-    stepNo: Number(step.stepNo ?? index + 1),
+    stepNo: index + 1,
     enabled: step.enabled !== false,
     ...(description ? { description } : {}),
     config: { ...input, ...config }
   };
+}
+
+function renumberScriptSteps(steps: Array<Record<string, unknown>>) {
+  return steps.map((step, index) => normalizeScriptStep({ ...step, stepNo: index + 1 }, index));
 }
 
 function scriptStepType(step: Record<string, unknown>) {
@@ -1828,7 +1843,7 @@ function scriptStepFlowLabel(step: Record<string, unknown>) {
 function parseScriptDefinitionJson(value: string) {
   const parsed = parseJsonText(value, { steps: [] });
   return {
-    steps: Array.isArray(parsed.steps) ? parsed.steps.map((step, index) => normalizeScriptStep(getRecord(step), index)) : [],
+    steps: Array.isArray(parsed.steps) ? renumberScriptSteps(parsed.steps.map((step) => getRecord(step))) : [],
     variables: getRecord(parsed.variables),
     retryPolicy: getRecord(parsed.retryPolicy),
     detectionPolicy: getRecord(parsed.detectionPolicy)
@@ -4851,8 +4866,15 @@ export function App() {
       await refreshQueue();
       setStatus("Management updated");
     } catch (error) {
-      setAdminJson(compactJson({ error: error instanceof Error ? error.message : "Action failed" }));
-      setStatus(error instanceof Error ? error.message : "Management action failed");
+      const apiError = error as ApiErrorWithPayload;
+      setAdminJson(compactJson({
+        error: error instanceof Error ? error.message : "Action failed",
+        code: apiError.code,
+        detail: apiError.detail,
+        payload: apiError.payload
+      }));
+      const detailText = apiError.detail === undefined ? "" : ` / ${compactJson(apiError.detail).slice(0, 240)}`;
+      setStatus(`${error instanceof Error ? error.message : "Management action failed"}${detailText}`);
     } finally {
       setBusy(false);
     }
@@ -5128,10 +5150,11 @@ export function App() {
 
   function setScriptDraftDefinition(next: Partial<{ steps: Array<Record<string, unknown>>; variables: Record<string, unknown>; retryPolicy: Record<string, unknown>; detectionPolicy: Record<string, unknown> }>) {
     const current = parseScriptDefinitionJson(scriptForm.steps);
+    const steps = next.steps ? renumberScriptSteps(next.steps) : current.steps;
     setScriptForm((form) => ({
       ...form,
       steps: compactJson({
-        steps: next.steps ?? current.steps,
+        steps,
         variables: next.variables ?? current.variables,
         retryPolicy: next.retryPolicy ?? current.retryPolicy,
         detectionPolicy: next.detectionPolicy ?? current.detectionPolicy
@@ -5283,11 +5306,12 @@ export function App() {
     if (!validateScriptDraftBeforeSave()) return;
     return adminAction("Creating script version", async () => {
       const parsed = parseJsonText(scriptForm.steps);
+      const steps = Array.isArray(parsed.steps) ? renumberScriptSteps(parsed.steps.map((step) => getRecord(step))) : [];
       const version = await api<ScriptVersionRecord>(`/scripts/${selectedScriptId}/versions`, {
         method: "POST",
         body: JSON.stringify({
           status: "draft",
-          steps: Array.isArray(parsed.steps) ? parsed.steps : [],
+          steps,
           variables: parsed.variables ?? {},
           retryPolicy: parsed.retryPolicy ?? {},
           detectionPolicy: parsed.detectionPolicy ?? {}
@@ -5304,10 +5328,11 @@ export function App() {
     if (!validateScriptDraftBeforeSave()) return;
     return adminAction("Updating script version", async () => {
       const parsed = parseJsonText(scriptForm.steps);
+      const steps = Array.isArray(parsed.steps) ? renumberScriptSteps(parsed.steps.map((step) => getRecord(step))) : undefined;
       const version = await api<ScriptVersionRecord>(`/script-versions/${selectedScriptVersionId}`, {
         method: "PATCH",
         body: JSON.stringify({
-          steps: Array.isArray(parsed.steps) ? parsed.steps : undefined,
+          steps,
           variables: parsed.variables ?? {},
           retryPolicy: parsed.retryPolicy ?? {},
           detectionPolicy: parsed.detectionPolicy ?? {}
