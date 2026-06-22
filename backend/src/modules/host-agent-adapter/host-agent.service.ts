@@ -159,7 +159,7 @@ export const hostAgentService = {
       hostId: input.hostId,
       name: input.name,
       baseUrl: input.baseUrl,
-      apiKey: input.apiKey ?? null,
+      apiKey: input.apiKey,
       status: input.status,
       createdAt: timestamp,
       updatedAt: timestamp
@@ -207,11 +207,19 @@ export const hostAgentService = {
 
   targetForHost(idOrHostId: string) {
     const host = this.getHostRequired(idOrHostId);
+    const apiKey = typeof host.apiKey === "string" ? host.apiKey.trim() : "";
+    if (!apiKey) {
+      throw new AppError(
+        "HOST_AGENT_API_KEY_REQUIRED",
+        "Host Agent API key must be stored on the host record in the database",
+        400
+      );
+    }
     return {
       host,
       target: {
         baseUrl: String(host.baseUrl),
-        apiKey: String(host.apiKey || config.hostAgentApiKey)
+        apiKey
       }
     };
   },

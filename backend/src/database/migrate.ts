@@ -568,7 +568,7 @@ export function migrate() {
       host_id TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
       base_url TEXT NOT NULL,
-      api_key TEXT,
+      api_key TEXT NOT NULL,
       status TEXT DEFAULT 'active',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL

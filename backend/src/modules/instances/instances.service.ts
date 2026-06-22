@@ -11,11 +11,15 @@ import { hostAgentClient } from "../host-agent-adapter/host-agent.client";
 function publicHostTargetForInstance(hostId: string) {
   const row = db.prepare("SELECT * FROM hosts WHERE host_id = ? OR id = ? LIMIT 1").get(hostId, hostId) as Record<string, unknown> | undefined;
   if (!row) return null;
+  const apiKey = typeof row.api_key === "string" ? row.api_key.trim() : "";
+  if (!apiKey) {
+    throw new AppError("HOST_AGENT_API_KEY_REQUIRED", "Host Agent API key must be stored on the host record in the database", 400);
+  }
   return {
     host: row,
     target: {
       baseUrl: String(row.base_url),
-      apiKey: String(row.api_key ?? "")
+      apiKey
     }
   };
 }

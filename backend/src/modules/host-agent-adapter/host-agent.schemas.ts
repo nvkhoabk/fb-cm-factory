@@ -4,7 +4,7 @@ export const createHostSchema = z.object({
   hostId: z.string().min(1),
   name: z.string().min(1),
   baseUrl: z.string().url(),
-  apiKey: z.string().optional(),
+  apiKey: z.string().min(1),
   status: z.string().default("active")
 });
 
