@@ -7,9 +7,17 @@ import { storageService } from "./storage.service";
 export type DownloadLatestInput = {
   adbId: string;
   sourceDir?: string;
+  sourceDirs?: string[];
   extensions?: string[];
   targetFolder?: string;
   deleteAfterPull?: boolean;
+};
+
+export type ListDownloadCandidatesInput = {
+  adbId: string;
+  sourceDir?: string;
+  sourceDirs?: string[];
+  extensions?: string[];
 };
 
 export type ClearDownloadInput = {
@@ -20,28 +28,6 @@ export type ClearDownloadInput = {
 
 function shellQuote(value: string) {
   return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-function latestFileCommand(sourceDir: string, extensions: string[]) {
-  const normalizedExtensions = allowedExtensions(extensions).flatMap((extension) => [extension.toLowerCase(), extension.toUpperCase()]);
-  const extensionCases = normalizedExtensions
-    .join("|");
-
-  return [
-    `dir=${shellQuote(sourceDir)}`,
-    `for f in "$dir"/*; do`,
-    `[ -f "$f" ] || continue`,
-    `base="\${f##*/}"`,
-    `lower=$(printf '%s' "$base" | tr 'A-Z' 'a-z')`,
-    `case "$lower" in *fb-cm-factory-screenshot*|*live-screenshot*|*debug-screenshot*|live-*) continue ;; esac`,
-    `ext="\${f##*.}"`,
-    `case "$ext" in ${extensionCases})`,
-    `ts=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo 0)`,
-    `size=$(wc -c < "$f" 2>/dev/null || echo 0)`,
-    `printf '%s\\t%s\\t%s\\n' "$ts" "$size" "$f"`,
-    `;; esac`,
-    `done | sort -nr`
-  ].join("\n");
 }
 
 function isBlockedFactorySourceDir(sourceDir: string) {
@@ -56,6 +42,7 @@ function isBlockedFactorySourceDir(sourceDir: string) {
 }
 
 const allowedMediaExtensions = ["png", "jpg", "jpeg", "webp", "mp4", "mov", "webm"];
+const defaultDownloadSourceDirs = ["/sdcard/Download", "/storage/emulated/0/Download"];
 
 function allowedExtensions(extensions?: string[]) {
   const normalized = (extensions?.length ? extensions : allowedMediaExtensions)
@@ -76,64 +63,59 @@ function taskOutputFolder(targetFolder?: string) {
   return path.join("task-outputs", normalized, dateFolder);
 }
 
-function parseCandidateLine(line: string) {
-  const [timestamp, size, ...pathParts] = line.split("\t");
-  const remotePath = pathParts.join("\t").trim();
-  if (!remotePath) return null;
+function normalizeSourceDirs(input: { sourceDir?: string; sourceDirs?: string[] }) {
+  const fromList = input.sourceDirs
+    ?.map((sourceDir) => sourceDir.trim())
+    .filter(Boolean);
+  const dirs = fromList?.length
+    ? fromList
+    : input.sourceDir?.trim()
+      ? [input.sourceDir.trim()]
+      : defaultDownloadSourceDirs;
+  return dirs.filter((sourceDir, index, all) => all.indexOf(sourceDir) === index);
+}
+
+function fileExtension(fileName: string) {
+  const dotIndex = fileName.lastIndexOf(".");
+  if (dotIndex < 0 || dotIndex === fileName.length - 1) return "";
+  return fileName.slice(dotIndex + 1).toLowerCase();
+}
+
+function modifiedAtFromLs(date: string, time: string) {
+  const normalizedTime = /^\d{2}:\d{2}$/.test(time) ? `${time}:00` : time;
+  const parsed = new Date(`${date}T${normalizedTime}`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function parseLsCandidateLine(sourceDir: string, line: string, extensions: string[]) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith("total ")) return null;
+  if (trimmed.startsWith("d")) return null;
+  const match = trimmed.match(/^(\S+)\s+\d+\s+\S+\s+\S+\s+(\d+)\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}(?::\d{2})?)\s+(.+)$/);
+  if (!match) return null;
+  const [, mode, sizeText, dateText, timeText, fileName] = match;
+  if (mode.startsWith("d")) return null;
+  const extension = fileExtension(fileName);
+  if (!extensions.includes(extension)) return null;
+  const normalizedSourceDir = sourceDir.replace(/\/+$/, "");
   return {
-    modifiedAtUnix: Number(timestamp) || 0,
-    fileSize: Number(size) || 0,
-    remotePath,
-    fileName: path.posix.basename(remotePath)
+    sourceDir,
+    fileName,
+    remotePath: `${normalizedSourceDir}/${fileName}`,
+    size: Number(sizeText) || 0,
+    modifiedAt: modifiedAtFromLs(dateText, timeText)
   };
 }
 
-function listDirectoryCommand(sourceDir: string) {
-  return [
-    `dir=${shellQuote(sourceDir)}`,
-    `[ -d "$dir" ] || { printf 'DIR_MISSING=%s\\n' "$dir"; exit 0; }`,
-    `for f in "$dir"/*; do`,
-    `[ -e "$f" ] || continue`,
-    `type="file"`,
-    `[ -d "$f" ] && type="dir"`,
-    `size=$(wc -c < "$f" 2>/dev/null || echo 0)`,
-    `ts=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo 0)`,
-    `printf '%s\\t%s\\t%s\\t%s\\n' "$type" "$ts" "$size" "$f"`,
-    `done`
-  ].join("\n");
+function candidateTime(candidate: { modifiedAt: string | null }) {
+  if (!candidate.modifiedAt) return null;
+  const parsed = new Date(candidate.modifiedAt).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
-async function downloadDirectoryDebug(adbId: string, sourceDir: string, extensions: string[], candidateStdout: string) {
-  const args = ["-s", adbId, "shell", "sh", "-c", listDirectoryCommand(sourceDir)];
-  try {
-    const listing = await adbClient.runAdb(args);
-    return {
-      adbId,
-      sourceDir,
-      extensions,
-      candidateStdout,
-      listArgs: args,
-      listingStdout: listing.stdout,
-      listingStderr: listing.stderr,
-      hint: "No candidate matched the configured extensions. Verify the app actually saved/downloaded a file before download-latest runs, and check whether the file is saved to a different folder or extension."
-    };
-  } catch (error) {
-    const cause = error && typeof error === "object" ? error as Record<string, unknown> : {};
-    return {
-      adbId,
-      sourceDir,
-      extensions,
-      candidateStdout,
-      listArgs: args,
-      listingStdout: typeof cause.stdout === "string" ? cause.stdout : "",
-      listingStderr: typeof cause.stderr === "string" ? cause.stderr : "",
-      listingError: error instanceof Error ? error.message : String(error)
-    };
-  }
-}
-
-function outputNotFound(sourceDir: string, detail?: unknown) {
-  const error = new Error(`No downloaded image/video was found in ${sourceDir}. The previous generation/download action may have failed.`);
+function outputNotFound(sourceDirs: string[] | string, detail?: unknown) {
+  const dirs = Array.isArray(sourceDirs) ? sourceDirs.join(", ") : sourceDirs;
+  const error = new Error(`No downloaded image/video was found in ${dirs}. The previous generation/download action may have failed.`);
   error.name = "DOWNLOAD_OUTPUT_NOT_FOUND";
   (error as Error & { detail?: unknown }).detail = detail;
   return error;
@@ -160,6 +142,62 @@ function clearDownloadCommand(sourceDir: string, extensions: string[]) {
 }
 
 export const downloadLatestService = {
+  async listDownloadCandidates(input: ListDownloadCandidatesInput) {
+    const sourceDirs = normalizeSourceDirs(input);
+    const extensions = allowedExtensions(input.extensions);
+    const rawOutputs: Record<string, { stdout: string; stderr: string; error?: string }> = {};
+
+    if (config.mockMode) {
+      const candidates = [{
+        sourceDir: sourceDirs[0],
+        fileName: "mock-latest.png",
+        remotePath: `${sourceDirs[0].replace(/\/+$/, "")}/mock-latest.png`,
+        size: 25,
+        modifiedAt: new Date().toISOString()
+      }];
+      console.info("[download-latest] list candidates", JSON.stringify({ adbId: input.adbId, sourceDirs, rawOutputs, candidates }));
+      return { adbId: input.adbId, sourceDirs, extensions, candidates, rawOutputs };
+    }
+
+    const candidatesWithOrder: Array<ReturnType<typeof parseLsCandidateLine> & { sourceIndex: number; listIndex: number }> = [];
+    for (const [sourceIndex, sourceDir] of sourceDirs.entries()) {
+      const args = ["-s", input.adbId, "shell", "ls", "-lt", sourceDir];
+      try {
+        const result = await adbClient.runAdb(args);
+        rawOutputs[sourceDir] = { stdout: result.stdout, stderr: result.stderr };
+        result.stdout.split(/\r?\n/).forEach((line, listIndex) => {
+          const candidate = parseLsCandidateLine(sourceDir, line, extensions);
+          if (candidate) candidatesWithOrder.push({ ...candidate, sourceIndex, listIndex });
+        });
+      } catch (error) {
+        const cause = error && typeof error === "object" ? error as Record<string, unknown> : {};
+        rawOutputs[sourceDir] = {
+          stdout: typeof cause.stdout === "string" ? cause.stdout : "",
+          stderr: typeof cause.stderr === "string" ? cause.stderr : "",
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+    }
+
+    candidatesWithOrder.sort((left, right) => {
+      const leftTime = candidateTime(left);
+      const rightTime = candidateTime(right);
+      if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
+      if (leftTime !== null && rightTime === null) return -1;
+      if (leftTime === null && rightTime !== null) return 1;
+      if (left.sourceIndex !== right.sourceIndex) return left.sourceIndex - right.sourceIndex;
+      return left.listIndex - right.listIndex;
+    });
+    const candidates = candidatesWithOrder.map(({ sourceIndex: _sourceIndex, listIndex: _listIndex, ...candidate }) => candidate);
+    console.info("[download-latest] list candidates", JSON.stringify({
+      adbId: input.adbId,
+      sourceDirs,
+      rawOutputs,
+      candidates
+    }));
+    return { adbId: input.adbId, sourceDirs, extensions, candidates, rawOutputs };
+  },
+
   async clearDownload(input: ClearDownloadInput) {
     const sourceDir = input.sourceDir?.trim() || "/sdcard/Download";
     const extensions = allowedExtensions(input.extensions);
@@ -207,16 +245,18 @@ export const downloadLatestService = {
   },
 
   async downloadLatest(input: DownloadLatestInput) {
-    const sourceDir = input.sourceDir?.trim() || "/sdcard/Download";
+    const sourceDirs = normalizeSourceDirs(input);
     const extensions = allowedExtensions(input.extensions);
     const targetFolder = taskOutputFolder(input.targetFolder);
     const folder = storageService.ensureTargetFolder(targetFolder);
 
-    if (isBlockedFactorySourceDir(sourceDir)) {
-      throw outputNotFound(sourceDir, {
+    const blockedSourceDir = sourceDirs.find(isBlockedFactorySourceDir);
+    if (blockedSourceDir) {
+      throw outputNotFound(sourceDirs, {
         adbId: input.adbId,
-        sourceDir,
+        sourceDirs,
         extensions,
+        blockedSourceDir,
         reason: "sourceDir is reserved for factory internal files"
       });
     }
@@ -227,25 +267,37 @@ export const downloadLatestService = {
       const stored = storageService.storageFileResult(absolutePath, folder.safeFolder);
       return {
         adbId: input.adbId,
-        remotePath: `${sourceDir}/mock-latest.png`,
+        remotePath: `${sourceDirs[0].replace(/\/+$/, "")}/mock-latest.png`,
         fileName: path.basename(absolutePath),
         modifiedAt: new Date().toISOString(),
         ...stored
       };
     }
 
-    const latest = await adbClient.runAdb(["-s", input.adbId, "shell", "sh", "-c", latestFileCommand(sourceDir, extensions)]);
-    const candidates = latest.stdout.split(/\r?\n/)
-      .map((line) => parseCandidateLine(line))
-      .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
-    const newest = candidates[0];
+    const discovery = await this.listDownloadCandidates({ adbId: input.adbId, sourceDirs, extensions });
+    const newest = discovery.candidates[0];
 
     if (!newest) {
-      throw outputNotFound(sourceDir, await downloadDirectoryDebug(input.adbId, sourceDir, extensions, latest.stdout));
+      throw outputNotFound(sourceDirs, {
+        adbId: input.adbId,
+        sourceDirs,
+        extensions,
+        rawOutputs: discovery.rawOutputs,
+        parsedCandidates: discovery.candidates,
+        hint: "No candidate matched the configured extensions. Verify the app actually saved/downloaded a file before download-latest runs, and check whether the file is saved to a different folder or extension."
+      });
     }
 
     const localName = `${Date.now()}-${newest.fileName}`;
     const absolutePath = path.join(folder.absolutePath, localName);
+    console.info("[download-latest] selected candidate", JSON.stringify({
+      adbId: input.adbId,
+      sourceDirs,
+      rawOutputs: discovery.rawOutputs,
+      parsedCandidates: discovery.candidates,
+      selectedCandidate: newest,
+      pullTarget: absolutePath
+    }));
     await adbClient.runAdb(["-s", input.adbId, "pull", newest.remotePath, absolutePath]);
     if (input.deleteAfterPull) {
       await adbClient.runAdb(["-s", input.adbId, "shell", "rm", "-f", newest.remotePath]);
@@ -256,8 +308,8 @@ export const downloadLatestService = {
       adbId: input.adbId,
       remotePath: newest.remotePath,
       fileName: newest.fileName,
-      modifiedAt: newest.modifiedAtUnix ? new Date(newest.modifiedAtUnix * 1000).toISOString() : undefined,
-      warning: candidates.length > 1 ? "MULTIPLE_DOWNLOAD_CANDIDATES" : undefined,
+      modifiedAt: newest.modifiedAt ?? undefined,
+      warning: discovery.candidates.length > 1 ? "MULTIPLE_DOWNLOAD_CANDIDATES" : undefined,
       ...stored
     };
   }

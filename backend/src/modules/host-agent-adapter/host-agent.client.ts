@@ -210,6 +210,7 @@ export const hostAgentClient = {
     localId?: string | number;
     adbId: string;
     sourceDir?: string;
+    sourceDirs?: string[];
     extensions?: string[];
     targetFolder?: string;
     deleteAfterPull?: boolean;
@@ -223,9 +224,33 @@ export const hostAgentClient = {
         instanceId: input.instanceId,
         adbId: input.adbId,
         sourceDir: input.sourceDir,
+        sourceDirs: input.sourceDirs,
         extensions: input.extensions,
         targetFolder: input.targetFolder,
         deleteAfterPull: input.deleteAfterPull
+      })
+    });
+  },
+
+  listDownloadCandidates(target: HostAgentTarget, input: {
+    instanceId: string;
+    localId?: string | number;
+    adbId: string;
+    sourceDir?: string;
+    sourceDirs?: string[];
+    extensions?: string[];
+  }) {
+    const localId = input.localId === undefined || input.localId === null || input.localId === ""
+      ? input.instanceId
+      : String(input.localId);
+    return requestAgent(target, `/instances/${encodeURIComponent(localId)}/list-download-candidates`, {
+      method: "POST",
+      body: body({
+        instanceId: input.instanceId,
+        adbId: input.adbId,
+        sourceDir: input.sourceDir,
+        sourceDirs: input.sourceDirs,
+        extensions: input.extensions
       })
     });
   },

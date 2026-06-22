@@ -8,6 +8,7 @@ import {
   cleanupUploadSessionCommandSchema,
   downloadLatestCommandSchema,
   instanceCommandSchema,
+  listDownloadCandidatesCommandSchema,
   liveScreenshotCommandSchema,
   longPressCommandSchema,
   openFileCommandSchema,
@@ -217,6 +218,18 @@ hostAgentRouter.post("/:id/instances/:instanceId/download-latest", async (req, r
       instanceId: req.params.instanceId
     });
     res.json({ ok: true, data: await hostAgentService.downloadLatest(req.params.id, input) });
+  } catch (error) {
+    sendHostAgentError(res, error);
+  }
+});
+
+hostAgentRouter.post("/:id/instances/:instanceId/list-download-candidates", async (req, res) => {
+  try {
+    const input = parseCommand(listDownloadCandidatesCommandSchema, {
+      ...(req.body ?? {}),
+      instanceId: req.params.instanceId
+    });
+    res.json({ ok: true, data: await hostAgentService.listDownloadCandidates(req.params.id, input) });
   } catch (error) {
     sendHostAgentError(res, error);
   }

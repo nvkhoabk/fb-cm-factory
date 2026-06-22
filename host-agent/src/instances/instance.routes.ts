@@ -172,9 +172,26 @@ instanceRouter.post("/:localId/download-latest", requireAgentApiKey, async (req,
       data: await instanceCommands.downloadLatest({
         adbId: String(req.body?.adbId ?? ""),
         sourceDir: typeof req.body?.sourceDir === "string" ? req.body.sourceDir : undefined,
+        sourceDirs: Array.isArray(req.body?.sourceDirs) ? req.body.sourceDirs.map(String) : undefined,
         extensions: Array.isArray(req.body?.extensions) ? req.body.extensions.map(String) : undefined,
         targetFolder: typeof req.body?.targetFolder === "string" ? req.body.targetFolder : undefined,
         deleteAfterPull: req.body?.deleteAfterPull === true
+      })
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+instanceRouter.post("/:localId/list-download-candidates", requireAgentApiKey, async (req, res) => {
+  try {
+    res.json({
+      ok: true,
+      data: await instanceCommands.listDownloadCandidates({
+        adbId: String(req.body?.adbId ?? ""),
+        sourceDir: typeof req.body?.sourceDir === "string" ? req.body.sourceDir : undefined,
+        sourceDirs: Array.isArray(req.body?.sourceDirs) ? req.body.sourceDirs.map(String) : undefined,
+        extensions: Array.isArray(req.body?.extensions) ? req.body.extensions.map(String) : undefined
       })
     });
   } catch (error) {

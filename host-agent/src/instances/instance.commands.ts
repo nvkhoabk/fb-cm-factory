@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { adbClient } from "../adb/adb.client";
 import { config } from "../config";
-import { downloadLatestService, type ClearDownloadInput, type DownloadLatestInput } from "../storage/download-latest.service";
+import { downloadLatestService, type ClearDownloadInput, type DownloadLatestInput, type ListDownloadCandidatesInput } from "../storage/download-latest.service";
 import { storageService } from "../storage/storage.service";
 
 export type PointInput = {
@@ -438,6 +438,11 @@ export const instanceCommands = {
   async downloadLatest(input: DownloadLatestInput) {
     requireAdbId(input.adbId);
     return downloadLatestService.downloadLatest(input);
+  },
+
+  async listDownloadCandidates(input: ListDownloadCandidatesInput) {
+    requireAdbId(input.adbId);
+    return downloadLatestService.listDownloadCandidates(input);
   },
 
   async clearDownload(input: ClearDownloadInput) {

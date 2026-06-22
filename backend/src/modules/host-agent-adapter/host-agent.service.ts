@@ -12,6 +12,7 @@ import type {
   ClearDownloadCommandInput,
   DownloadLatestCommandInput,
   InstanceCommandInput,
+  ListDownloadCandidatesCommandInput,
   LiveScreenshotCommandInput,
   CleanupOldTempCommandInput,
   CleanupUploadSessionCommandInput,
@@ -374,6 +375,14 @@ export const hostAgentService = {
     return {
       host: publicHost(host),
       result: await hostAgentClient.downloadLatest(target, input)
+    };
+  },
+
+  async listDownloadCandidates(hostId: string, input: ListDownloadCandidatesCommandInput) {
+    const { host, target } = this.targetForHost(hostId);
+    return {
+      host: publicHost(host),
+      result: await hostAgentClient.listDownloadCandidates(target, input)
     };
   },
 

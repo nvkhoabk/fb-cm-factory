@@ -59,9 +59,17 @@ export const sendKeyCommandSchema = instanceCommandSchema.extend({
 export const downloadLatestCommandSchema = instanceCommandSchema.extend({
   localId: z.union([z.string(), z.number()]).optional(),
   sourceDir: z.string().optional(),
+  sourceDirs: z.array(z.string()).optional(),
   extensions: z.array(z.string()).optional(),
   targetFolder: z.string().optional(),
   deleteAfterPull: z.boolean().optional()
+});
+
+export const listDownloadCandidatesCommandSchema = instanceCommandSchema.extend({
+  localId: z.union([z.string(), z.number()]).optional(),
+  sourceDir: z.string().optional(),
+  sourceDirs: z.array(z.string()).optional(),
+  extensions: z.array(z.string()).optional()
 });
 
 export const clearDownloadCommandSchema = instanceCommandSchema.extend({
@@ -103,6 +111,7 @@ export type ScrollToEndCommandInput = z.infer<typeof scrollToEndCommandSchema>;
 export type SendTextCommandInput = z.infer<typeof sendTextCommandSchema>;
 export type SendKeyCommandInput = z.infer<typeof sendKeyCommandSchema>;
 export type DownloadLatestCommandInput = z.infer<typeof downloadLatestCommandSchema>;
+export type ListDownloadCandidatesCommandInput = z.infer<typeof listDownloadCandidatesCommandSchema>;
 export type ClearDownloadCommandInput = z.infer<typeof clearDownloadCommandSchema>;
 export type PushUploadFileCommandInput = z.infer<typeof pushUploadFileCommandSchema>;
 export type OpenFileCommandInput = z.infer<typeof openFileCommandSchema>;
