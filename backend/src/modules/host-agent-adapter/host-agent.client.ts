@@ -59,6 +59,23 @@ async function requestAgent(
   }
 }
 
+async function requestAgentWithFallback(
+  target: HostAgentTarget,
+  paths: string[],
+  options: RequestInit = {}
+) {
+  let lastError: unknown;
+  for (const path of paths) {
+    try {
+      return await requestAgent(target, path, options);
+    } catch (error) {
+      lastError = error;
+      if (!(error instanceof AppError) || error.code !== "ROUTE_NOT_FOUND") throw error;
+    }
+  }
+  throw lastError;
+}
+
 function body(value: Record<string, unknown>) {
   return JSON.stringify(value);
 }
@@ -191,10 +208,33 @@ export const hostAgentClient = {
     });
   },
 
-  sendText(target: HostAgentTarget, instanceId: string, adbId: string, text: string) {
-    return requestAgent(target, `/instances/${encodeURIComponent(instanceId)}/send-text`, {
+  sendText(target: HostAgentTarget, input: {
+    instanceId: string;
+    localId?: string | number;
+    adbId: string;
+    text: string;
+    chunkSize?: number;
+    delayMs?: number;
+    clearBeforeSend?: boolean;
+    pressEnterAfter?: boolean;
+  }) {
+    const localId = input.localId === undefined || input.localId === null || input.localId === ""
+      ? input.instanceId
+      : String(input.localId);
+    return requestAgentWithFallback(target, [
+      `/agent/instances/${encodeURIComponent(localId)}/send-text`,
+      `/instances/${encodeURIComponent(localId)}/send-text`
+    ], {
       method: "POST",
-      body: body({ instanceId, adbId, text })
+      body: body({
+        instanceId: input.instanceId,
+        adbId: input.adbId,
+        text: input.text,
+        chunkSize: input.chunkSize,
+        delayMs: input.delayMs,
+        clearBeforeSend: input.clearBeforeSend,
+        pressEnterAfter: input.pressEnterAfter
+      })
     });
   },
 
@@ -218,7 +258,10 @@ export const hostAgentClient = {
     const localId = input.localId === undefined || input.localId === null || input.localId === ""
       ? input.instanceId
       : String(input.localId);
-    return requestAgent(target, `/instances/${encodeURIComponent(localId)}/download-latest`, {
+    return requestAgentWithFallback(target, [
+      `/agent/instances/${encodeURIComponent(localId)}/download-latest`,
+      `/instances/${encodeURIComponent(localId)}/download-latest`
+    ], {
       method: "POST",
       body: body({
         instanceId: input.instanceId,
@@ -243,7 +286,37 @@ export const hostAgentClient = {
     const localId = input.localId === undefined || input.localId === null || input.localId === ""
       ? input.instanceId
       : String(input.localId);
-    return requestAgent(target, `/instances/${encodeURIComponent(localId)}/list-download-candidates`, {
+    return requestAgentWithFallback(target, [
+      `/agent/instances/${encodeURIComponent(localId)}/list-download-candidates`,
+      `/instances/${encodeURIComponent(localId)}/list-download-candidates`
+    ], {
+      method: "POST",
+      body: body({
+        instanceId: input.instanceId,
+        adbId: input.adbId,
+        sourceDir: input.sourceDir,
+        sourceDirs: input.sourceDirs,
+        extensions: input.extensions
+      })
+    });
+  },
+
+  listDownloadFolder(target: HostAgentTarget, input: {
+    instanceId: string;
+    localId?: string | number;
+    adbId: string;
+    sourceDir?: string;
+    sourceDirs?: string[];
+    extensions?: string[];
+  }) {
+    const localId = input.localId === undefined || input.localId === null || input.localId === ""
+      ? input.instanceId
+      : String(input.localId);
+    return requestAgentWithFallback(target, [
+      `/agent/instances/${encodeURIComponent(localId)}/list-download-folder`,
+      `/instances/${encodeURIComponent(localId)}/list-download-folder`,
+      `/instances/${encodeURIComponent(localId)}/list-download-candidates`
+    ], {
       method: "POST",
       body: body({
         instanceId: input.instanceId,
@@ -260,17 +333,22 @@ export const hostAgentClient = {
     localId?: string | number;
     adbId: string;
     sourceDir?: string;
+    sourceDirs?: string[];
     extensions?: string[];
   }) {
     const localId = input.localId === undefined || input.localId === null || input.localId === ""
       ? input.instanceId
       : String(input.localId);
-    return requestAgent(target, `/instances/${encodeURIComponent(localId)}/clear-download`, {
+    return requestAgentWithFallback(target, [
+      `/agent/instances/${encodeURIComponent(localId)}/clear-download`,
+      `/instances/${encodeURIComponent(localId)}/clear-download`
+    ], {
       method: "POST",
       body: body({
         instanceId: input.instanceId,
         adbId: input.adbId,
         sourceDir: input.sourceDir,
+        sourceDirs: input.sourceDirs,
         extensions: input.extensions
       })
     });

@@ -42,6 +42,11 @@ export type ScrollToEndInput = {
 export type TextInput = {
   adbId: string;
   text: unknown;
+  chunkSize?: number;
+  delayMs?: number;
+  ensureIme?: boolean;
+  clearBeforeSend?: boolean;
+  pressEnterAfter?: boolean;
 };
 
 export type KeyInput = {
@@ -86,11 +91,14 @@ function requireAdbId(adbId: unknown) {
   return adbId;
 }
 
-function commandError(code: string, message: string, cause?: unknown) {
+function commandError(code: string, message: string, cause?: unknown, detail?: unknown) {
   const error = new Error(message);
   error.name = code;
   if (cause) {
     (error as Error & { cause?: unknown }).cause = cause;
+  }
+  if (detail !== undefined) {
+    (error as Error & { detail?: unknown }).detail = detail;
   }
   return error;
 }
@@ -108,6 +116,33 @@ function requireText(text: unknown) {
 
 function outputLooksLikeMissingAdbKeyboard(stdout: string, stderr: string) {
   return /unknown|not found|not selected|does not exist|error/i.test(`${stdout}\n${stderr}`);
+}
+
+const adbKeyboardIme = "com.android.adbkeyboard/.AdbIME";
+
+function splitTextIntoChunks(text: string, chunkSize: number) {
+  const chars = Array.from(text);
+  const chunks: string[] = [];
+  let start = 0;
+
+  while (start < chars.length) {
+    const remaining = chars.length - start;
+    if (remaining <= chunkSize) {
+      chunks.push(chars.slice(start).join(""));
+      break;
+    }
+
+    let end = start + chunkSize;
+    const window = chars.slice(start, end);
+    const newlineIndex = Math.max(window.lastIndexOf("\n"), window.lastIndexOf("\r"));
+    const spaceIndex = window.lastIndexOf(" ");
+    const splitIndex = newlineIndex > 0 ? newlineIndex + 1 : spaceIndex > 0 ? spaceIndex + 1 : chunkSize;
+    end = start + splitIndex;
+    chunks.push(chars.slice(start, end).join(""));
+    start = end;
+  }
+
+  return chunks;
 }
 
 function safePathSegment(value: string) {
@@ -203,14 +238,114 @@ function normalizeKeyCode(keyCode: string | number) {
   } as Record<string, number>)[normalized] ?? keyCode;
 }
 
-function rangeNumber(value: unknown, fallback: number, min: number, max: number, key: string) {
+function rangeNumber(value: unknown, fallback: number, min: number, max: number, key: string, code = "INVALID_SCROLL_INPUT") {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   const rounded = Math.floor(parsed);
   if (rounded < min || rounded > max) {
-    throw commandError("INVALID_SCROLL_INPUT", `${key} must be between ${min} and ${max}`);
+    throw commandError(code, `${key} must be between ${min} and ${max}`);
   }
   return rounded;
+}
+
+async function ensureAdbKeyboard(adbId: string) {
+  if (config.mockMode) return;
+  try {
+    const listResult = await adbClient.runAdb(["-s", adbId, "shell", "ime", "list", "-s"]);
+    if (!listResult.stdout.split(/\r?\n/).map((line) => line.trim()).includes(adbKeyboardIme)) {
+      throw commandError("ADB_KEYBOARD_NOT_AVAILABLE", "ADB Keyboard IME is not available or could not be selected");
+    }
+    const enableResult = await adbClient.runAdb(["-s", adbId, "shell", "ime", "enable", adbKeyboardIme]);
+    if (outputLooksLikeMissingAdbKeyboard(enableResult.stdout, enableResult.stderr)) {
+      throw commandError("ADB_KEYBOARD_NOT_AVAILABLE", "ADB Keyboard IME is not available or could not be selected");
+    }
+    const setResult = await adbClient.runAdb(["-s", adbId, "shell", "ime", "set", adbKeyboardIme]);
+    if (outputLooksLikeMissingAdbKeyboard(setResult.stdout, setResult.stderr)) {
+      throw commandError("ADB_KEYBOARD_NOT_AVAILABLE", "ADB Keyboard IME is not available or could not be selected");
+    }
+  } catch (error) {
+    if (error instanceof Error && error.name === "ADB_KEYBOARD_NOT_AVAILABLE") throw error;
+    throw commandError("ADB_KEYBOARD_NOT_AVAILABLE", "ADB Keyboard IME is not available or could not be selected", error);
+  }
+}
+
+async function clearFocusedText(adbId: string) {
+  try {
+    await adbClient.runAdb(["-s", adbId, "shell", "input", "keycombination", "113", "29"]);
+  } catch {
+    await adbClient.runAdb(["-s", adbId, "shell", "input", "keyevent", "KEYCODE_MOVE_END"]);
+  }
+  await wait(100);
+  await adbClient.runAdb(["-s", adbId, "shell", "input", "keyevent", "KEYCODE_DEL"]);
+}
+
+async function sendTextSafe(adbId: string, text: string, options: {
+  chunkSize?: number;
+  delayMs?: number;
+  ensureIme?: boolean;
+  clearBeforeSend?: boolean;
+  pressEnterAfter?: boolean;
+} = {}) {
+  const chunkSize = rangeNumber(options.chunkSize, 500, 1, 4000, "chunkSize", "INVALID_SEND_TEXT_INPUT");
+  const delayMs = rangeNumber(options.delayMs, 300, 0, 5000, "delayMs", "INVALID_SEND_TEXT_INPUT");
+  const ensureIme = options.ensureIme !== false;
+  const chunks = splitTextIntoChunks(text, chunkSize);
+
+  debugInteraction("send-text", {
+    adbId,
+    method: "ADB_INPUT_B64_CHUNKED",
+    textLength: text.length,
+    chunkCount: chunks.length,
+    chunkSize,
+    delayMs,
+    ensureIme,
+    clearBeforeSend: options.clearBeforeSend === true,
+    pressEnterAfter: options.pressEnterAfter === true
+  });
+
+  if (ensureIme) await ensureAdbKeyboard(adbId);
+  if (options.clearBeforeSend === true && !config.mockMode) await clearFocusedText(adbId);
+
+  for (const [index, chunk] of chunks.entries()) {
+    try {
+      if (!config.mockMode) {
+        await adbClient.runAdb([
+          "-s",
+          adbId,
+          "shell",
+          "am",
+          "broadcast",
+          "-a",
+          "ADB_INPUT_B64",
+          "--es",
+          "msg",
+          encodeTextToBase64(chunk)
+        ]);
+      }
+      if (delayMs > 0 && index < chunks.length - 1) await wait(delayMs);
+    } catch (error) {
+      throw commandError("SEND_TEXT_CHUNK_FAILED", `Failed to send text chunk ${index + 1} of ${chunks.length}`, error, {
+        chunkIndex: index,
+        chunkNo: index + 1,
+        chunkCount: chunks.length,
+        chunkLength: chunk.length,
+        textLength: text.length
+      });
+    }
+  }
+
+  if (options.pressEnterAfter === true && !config.mockMode) {
+    await adbClient.runAdb(["-s", adbId, "shell", "input", "keyevent", "66"]);
+  }
+
+  return {
+    adbId,
+    method: "ADB_INPUT_B64_CHUNKED",
+    textLength: text.length,
+    chunkCount: chunks.length,
+    chunkSize,
+    delayMs
+  };
 }
 
 function wait(ms: number) {
@@ -384,48 +519,13 @@ export const instanceCommands = {
   async sendText(input: TextInput) {
     const adbId = requireAdbId(input.adbId);
     const text = requireText(input.text);
-    const base64Text = encodeTextToBase64(text);
-    debugInteraction("send-text", {
-      adbId,
-      method: "ADB_INPUT_B64",
-      textLength: text.length,
-      useAdbKeyboard: config.useAdbKeyboard
+    return sendTextSafe(adbId, text, {
+      chunkSize: input.chunkSize,
+      delayMs: input.delayMs,
+      ensureIme: input.ensureIme ?? config.useAdbKeyboard,
+      clearBeforeSend: input.clearBeforeSend,
+      pressEnterAfter: input.pressEnterAfter
     });
-
-    if (config.useAdbKeyboard) {
-      try {
-        const imeResult = await adbClient.runAdb(["-s", adbId, "shell", "ime", "set", "com.android.adbkeyboard/.AdbIME"]);
-        if (outputLooksLikeMissingAdbKeyboard(imeResult.stdout, imeResult.stderr)) {
-          throw commandError("ADB_KEYBOARD_NOT_AVAILABLE", "ADB Keyboard IME is not available or could not be selected");
-        }
-      } catch (error) {
-        if (error instanceof Error && error.name === "ADB_KEYBOARD_NOT_AVAILABLE") throw error;
-        throw commandError("ADB_KEYBOARD_NOT_AVAILABLE", "ADB Keyboard IME is not available or could not be selected", error);
-      }
-    }
-
-    try {
-      await adbClient.runAdb([
-        "-s",
-        adbId,
-        "shell",
-        "am",
-        "broadcast",
-        "-a",
-        "ADB_INPUT_B64",
-        "--es",
-        "msg",
-        base64Text
-      ]);
-    } catch (error) {
-      throw commandError("SEND_TEXT_FAILED", "Failed to send text through ADB_INPUT_B64", error);
-    }
-
-    return {
-      adbId,
-      method: "ADB_INPUT_B64",
-      textLength: text.length
-    };
   },
 
   async sendKey(input: KeyInput) {

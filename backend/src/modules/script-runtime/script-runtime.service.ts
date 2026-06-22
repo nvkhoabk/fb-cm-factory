@@ -1200,8 +1200,13 @@ export const scriptRuntimeService = {
     if (stepType === "send-text") {
       return hostAgentService.sendText(session.hostId, {
         instanceId: session.instanceId,
+        localId: resolveLocalId(input, _context),
         adbId: resolveAdbId(input, _context),
-        text: String(input.text ?? "")
+        text: String(input.text ?? ""),
+        chunkSize: typeof input.chunkSize === "number" ? input.chunkSize : undefined,
+        delayMs: typeof input.delayMs === "number" ? input.delayMs : undefined,
+        clearBeforeSend: typeof input.clearBeforeSend === "boolean" ? input.clearBeforeSend : undefined,
+        pressEnterAfter: typeof input.pressEnterAfter === "boolean" ? input.pressEnterAfter : undefined
       });
     }
 
@@ -1209,8 +1214,13 @@ export const scriptRuntimeService = {
       const adbId = resolveAdbId(input, _context);
       const textResult = await hostAgentService.sendText(session.hostId, {
         instanceId: session.instanceId,
+        localId: resolveLocalId(input, _context),
         adbId,
-        text: String(input.text ?? "")
+        text: String(input.text ?? ""),
+        chunkSize: typeof input.chunkSize === "number" ? input.chunkSize : undefined,
+        delayMs: typeof input.delayMs === "number" ? input.delayMs : undefined,
+        clearBeforeSend: typeof input.clearBeforeSend === "boolean" ? input.clearBeforeSend : undefined,
+        pressEnterAfter: false
       });
       const keyResult = await hostAgentService.sendKey(session.hostId, {
         instanceId: session.instanceId,
@@ -1245,6 +1255,7 @@ export const scriptRuntimeService = {
         localId: resolveLocalId(input, _context),
         adbId: resolveAdbId(input, _context),
         sourceDir: typeof input.sourceDir === "string" && input.sourceDir.trim() ? input.sourceDir.trim() : undefined,
+        sourceDirs: Array.isArray(input.sourceDirs) ? input.sourceDirs.map(String) : undefined,
         extensions: Array.isArray(input.extensions) ? input.extensions.map(String) : undefined,
         targetFolder: typeof input.targetFolder === "string" ? input.targetFolder : "task-outputs",
         deleteAfterPull: typeof input.deleteAfterPull === "boolean" ? input.deleteAfterPull : undefined
@@ -1264,6 +1275,7 @@ export const scriptRuntimeService = {
         localId: resolveLocalId(input, _context),
         adbId: resolveAdbId(input, _context),
         sourceDir: typeof input.sourceDir === "string" && input.sourceDir.trim() ? input.sourceDir.trim() : undefined,
+        sourceDirs: Array.isArray(input.sourceDirs) ? input.sourceDirs.map(String) : undefined,
         extensions: Array.isArray(input.extensions) ? input.extensions.map(String) : undefined
       });
     }

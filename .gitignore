@@ -5,11 +5,16 @@ node_modules/
 *.db-shm
 *.db-wal
 *.sqlite
+*.sqlite3
 /backend/storage/
+/backend/public/
 /host-agent/storage/
+/host-agent/public/screenshots/
 /frontend/storage/
 backend/storage/
+backend/public/
 host-agent/storage/
+host-agent/public/screenshots/
 
 # Do not ignore source storage modules
 !backend/src/storage/

@@ -49,7 +49,12 @@ export const scrollToEndCommandSchema = instanceCommandSchema.extend({
 });
 
 export const sendTextCommandSchema = instanceCommandSchema.extend({
-  text: z.string()
+  localId: z.union([z.string(), z.number()]).optional(),
+  text: z.string(),
+  chunkSize: z.number().int().positive().optional(),
+  delayMs: z.number().int().min(0).optional(),
+  clearBeforeSend: z.boolean().optional(),
+  pressEnterAfter: z.boolean().optional()
 });
 
 export const sendKeyCommandSchema = instanceCommandSchema.extend({
@@ -75,6 +80,7 @@ export const listDownloadCandidatesCommandSchema = instanceCommandSchema.extend(
 export const clearDownloadCommandSchema = instanceCommandSchema.extend({
   localId: z.union([z.string(), z.number()]).optional(),
   sourceDir: z.string().optional(),
+  sourceDirs: z.array(z.string()).optional(),
   extensions: z.array(z.string()).optional()
 });
 

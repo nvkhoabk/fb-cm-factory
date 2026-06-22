@@ -725,8 +725,8 @@ const scriptStepTemplates: Record<string, { label: string; fields: Array<{ key: 
   screenshot: { label: "screenshot", fields: [{ key: "label", label: "label" }] },
   tap: { label: "tap", fields: [{ key: "x", label: "x", type: "number", required: true }, { key: "y", label: "y", type: "number", required: true }] },
   swipe: { label: "swipe", fields: [{ key: "x1", label: "x1", type: "number", required: true }, { key: "y1", label: "y1", type: "number", required: true }, { key: "x2", label: "x2", type: "number", required: true }, { key: "y2", label: "y2", type: "number", required: true }, { key: "duration", label: "duration", type: "number" }] },
-  "send-text": { label: "send-text", fields: [{ key: "text", label: "text", required: true }] },
-  "send-text-submit": { label: "send-text-submit", fields: [{ key: "text", label: "text", required: true }, { key: "submitKey", label: "submitKey" }] },
+  "send-text": { label: "send-text", fields: [{ key: "text", label: "text", required: true }, { key: "chunkSize", label: "chunkSize", type: "number" }, { key: "delayMs", label: "delayMs", type: "number" }, { key: "pressEnterAfter", label: "pressEnterAfter", type: "boolean" }, { key: "clearBeforeSend", label: "clearBeforeSend", type: "boolean" }] },
+  "send-text-submit": { label: "send-text-submit", fields: [{ key: "text", label: "text", required: true }, { key: "chunkSize", label: "chunkSize", type: "number" }, { key: "delayMs", label: "delayMs", type: "number" }, { key: "clearBeforeSend", label: "clearBeforeSend", type: "boolean" }, { key: "submitKey", label: "submitKey" }] },
   "send-key": { label: "send-key", fields: [{ key: "key", label: "key", required: true }] },
   "long-press": { label: "Long Press", fields: [{ key: "x", label: "x", type: "number", required: true }, { key: "y", label: "y", type: "number", required: true }, { key: "durationMs", label: "durationMs", type: "number" }] },
   "scroll-to-end": { label: "Scroll To End", fields: [{ key: "direction", label: "direction" }, { key: "iterations", label: "iterations", type: "number" }, { key: "durationMs", label: "durationMs", type: "number" }, { key: "pauseMs", label: "pauseMs", type: "number" }] },
@@ -1880,6 +1880,18 @@ function validateScriptSteps(steps: Array<Record<string, unknown>>) {
   });
   if (!steps.length) messages.push({ index: 0, level: "error", message: "At least one step is required" });
   return messages;
+}
+
+function defaultScriptStepFieldValue(type: string, field: { key: string; type?: "number" | "json" | "text" | "boolean" }) {
+  if ((type === "send-text" || type === "send-text-submit") && field.key === "chunkSize") return 500;
+  if ((type === "send-text" || type === "send-text-submit") && field.key === "delayMs") return 300;
+  if ((type === "send-text" || type === "send-text-submit") && (field.key === "pressEnterAfter" || field.key === "clearBeforeSend")) return false;
+  if (field.type === "number") return 0;
+  if (field.type === "json") return [];
+  if (field.type === "boolean") return true;
+  if (field.key === "target" && type === "upload-file") return "android-file-picker";
+  if (field.key === "assetSource" && type === "upload-file") return "IMAGE_EDIT_NEXT_SOURCE";
+  return "";
 }
 
 function instanceCapabilityLabels(instance: InstanceRecord) {
@@ -5193,17 +5205,7 @@ export function App() {
     const template = scriptStepTemplates[type];
     const config = Object.fromEntries((template?.fields ?? []).map((field) => [
       field.key,
-      field.type === "number"
-        ? 0
-        : field.type === "json"
-          ? []
-          : field.type === "boolean"
-            ? true
-            : field.key === "target" && type === "upload-file"
-              ? "android-file-picker"
-              : field.key === "assetSource" && type === "upload-file"
-                ? "IMAGE_EDIT_NEXT_SOURCE"
-                : ""
+      defaultScriptStepFieldValue(type, field)
     ]));
     const insertIndex = selectedScriptStepIndex >= 0 && selectedScriptStepIndex < scriptDraft.steps.length
       ? selectedScriptStepIndex + 1
@@ -7933,7 +7935,7 @@ export function App() {
                                           ) : field.type === "boolean" ? (
                                             <input
                                               type="checkbox"
-                                              checked={config[field.key] !== false}
+                                              checked={(type === "send-text" || type === "send-text-submit") && (field.key === "pressEnterAfter" || field.key === "clearBeforeSend") ? config[field.key] === true : config[field.key] !== false}
                                               onChange={(event) => updateScriptStepConfig(index, field.key, event.target.checked)}
                                             />
                                           ) : type === "upload-file" && field.key === "assetSource" ? (
@@ -7980,6 +7982,7 @@ export function App() {
                                           )}
                                         </label>
                                       ))}
+                                      {(type === "send-text" || type === "send-text-submit") ? <p className="emptyDetail">Long prompts are sent in chunks using ADB Keyboard.</p> : null}
                                       {type === "upload-file" ? <p className="emptyDetail">{uploadAssetSourceHelp[getString(config.assetSource) || "IMAGE_EDIT_NEXT_SOURCE"]}</p> : null}
                                     </div>
                                     <div className="resourceActions">
@@ -8270,7 +8273,7 @@ export function App() {
                                       ) : field.type === "boolean" ? (
                                         <input
                                           type="checkbox"
-                                          checked={config[field.key] !== false}
+                                          checked={(type === "send-text" || type === "send-text-submit") && (field.key === "pressEnterAfter" || field.key === "clearBeforeSend") ? config[field.key] === true : config[field.key] !== false}
                                           onChange={(event) => updateScriptStepConfig(safeIndex, field.key, event.target.checked)}
                                         />
                                       ) : type === "upload-file" && field.key === "assetSource" ? (
@@ -8318,6 +8321,7 @@ export function App() {
                                     </label>
                                   ))}
                                   {!template ? <p className="emptyDetail">Unknown step type. Use JSON editor fallback for custom config.</p> : null}
+                                  {(type === "send-text" || type === "send-text-submit") ? <p className="emptyDetail">Long prompts are sent in chunks using ADB Keyboard.</p> : null}
                                   {type === "upload-file" ? <p className="emptyDetail">{uploadAssetSourceHelp[getString(config.assetSource) || "IMAGE_EDIT_NEXT_SOURCE"]}</p> : null}
                                   {type === "upload-file" ? <p className="emptyDetail">Upload staging uses /sdcard/fb-cm-factory/uploads/ with unique filenames and never uses /sdcard/Download.</p> : null}
                                   {type === "if" ? (

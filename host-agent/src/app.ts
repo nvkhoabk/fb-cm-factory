@@ -16,6 +16,7 @@ app.use("/storage", express.static(config.hostStorageRoot));
 app.use("/health", healthRouter);
 app.use("/adb", adbRouter);
 app.use("/instances", instanceRouter);
+app.use("/agent/instances", instanceRouter);
 app.use("/ldplayer", ldplayerRouter);
 app.use("/storage-api", storageRouter);
 

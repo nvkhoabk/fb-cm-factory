@@ -23,12 +23,22 @@ export type ListDownloadCandidatesInput = {
 export type ClearDownloadInput = {
   adbId: string;
   sourceDir?: string;
+  sourceDirs?: string[];
   extensions?: string[];
 };
 
-function shellQuote(value: string) {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
+type DownloadCandidate = {
+  sourceDir: string;
+  fileName: string;
+  remotePath: string;
+  size: number;
+  modifiedAt: string | null;
+};
+
+type DownloadCandidateWithOrder = DownloadCandidate & {
+  sourceIndex: number;
+  listIndex: number;
+};
 
 function isBlockedFactorySourceDir(sourceDir: string) {
   const normalized = sourceDir.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
@@ -113,32 +123,65 @@ function candidateTime(candidate: { modifiedAt: string | null }) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function outputNotFound(sourceDirs: string[] | string, detail?: unknown) {
-  const dirs = Array.isArray(sourceDirs) ? sourceDirs.join(", ") : sourceDirs;
-  const error = new Error(`No downloaded image/video was found in ${dirs}. The previous generation/download action may have failed.`);
+function outputNotFound(detail?: unknown) {
+  const error = new Error("No downloaded image/video was found in Android Download folders.");
   error.name = "DOWNLOAD_OUTPUT_NOT_FOUND";
   (error as Error & { detail?: unknown }).detail = detail;
   return error;
 }
 
-function clearDownloadCommand(sourceDir: string, extensions: string[]) {
-  const extensionCases = extensions.flatMap((extension) => [extension.toLowerCase(), extension.toUpperCase()]).join("|");
-  return [
-    `dir=${shellQuote(sourceDir)}`,
-    `count=0`,
-    `names=""`,
-    `[ -d "$dir" ] || { printf 'COUNT=0\\n'; exit 0; }`,
-    `for f in "$dir"/*; do`,
-    `[ -f "$f" ] || continue`,
-    `ext="\${f##*.}"`,
-    `case "$ext" in ${extensionCases})`,
-    `base="\${f##*/}"`,
-    `if rm -f "$f"; then count=$((count + 1)); names="$names$base\\n"; fi`,
-    `;; esac`,
-    `done`,
-    `printf 'COUNT=%s\\n' "$count"`,
-    `printf '%b' "$names"`
-  ].join("\n");
+async function listAndroidDownloadFiles(adbId: string, sourceDirs: string[], extensions: string[]) {
+  const rawOutputs: Record<string, { stdout: string; stderr: string; error?: string }> = {};
+  const candidatesWithOrder: DownloadCandidateWithOrder[] = [];
+
+  for (const [sourceIndex, sourceDir] of sourceDirs.entries()) {
+    const args = ["-s", adbId, "shell", "ls", "-lt", sourceDir];
+    try {
+      const result = await adbClient.runAdb(args);
+      rawOutputs[sourceDir] = { stdout: result.stdout, stderr: result.stderr };
+      result.stdout.split(/\r?\n/).forEach((line, listIndex) => {
+        const candidate = parseLsCandidateLine(sourceDir, line, extensions);
+        if (candidate) candidatesWithOrder.push({ ...candidate, sourceIndex, listIndex });
+      });
+    } catch (error) {
+      const cause = error && typeof error === "object" ? error as Record<string, unknown> : {};
+      rawOutputs[sourceDir] = {
+        stdout: typeof cause.stdout === "string" ? cause.stdout : "",
+        stderr: typeof cause.stderr === "string" ? cause.stderr : "",
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  candidatesWithOrder.sort((left, right) => {
+    const leftTime = candidateTime(left);
+    const rightTime = candidateTime(right);
+    if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
+    if (leftTime !== null && rightTime === null) return -1;
+    if (leftTime === null && rightTime !== null) return 1;
+    if (left.sourceIndex !== right.sourceIndex) return left.sourceIndex - right.sourceIndex;
+    return left.listIndex - right.listIndex;
+  });
+
+  const candidates = candidatesWithOrder.map(({ sourceIndex: _sourceIndex, listIndex: _listIndex, ...candidate }) => candidate);
+  return { candidates, rawOutputs };
+}
+
+function dedupeDownloadFiles(candidates: DownloadCandidate[]) {
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = `${candidate.fileName.toLowerCase()}:${candidate.size}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function partialFailure(message: string, detail: unknown) {
+  const error = new Error(message);
+  error.name = "CLEAR_DOWNLOAD_PARTIAL_FAILURE";
+  (error as Error & { detail?: unknown }).detail = detail;
+  return error;
 }
 
 export const downloadLatestService = {
@@ -159,36 +202,9 @@ export const downloadLatestService = {
       return { adbId: input.adbId, sourceDirs, extensions, candidates, rawOutputs };
     }
 
-    const candidatesWithOrder: Array<ReturnType<typeof parseLsCandidateLine> & { sourceIndex: number; listIndex: number }> = [];
-    for (const [sourceIndex, sourceDir] of sourceDirs.entries()) {
-      const args = ["-s", input.adbId, "shell", "ls", "-lt", sourceDir];
-      try {
-        const result = await adbClient.runAdb(args);
-        rawOutputs[sourceDir] = { stdout: result.stdout, stderr: result.stderr };
-        result.stdout.split(/\r?\n/).forEach((line, listIndex) => {
-          const candidate = parseLsCandidateLine(sourceDir, line, extensions);
-          if (candidate) candidatesWithOrder.push({ ...candidate, sourceIndex, listIndex });
-        });
-      } catch (error) {
-        const cause = error && typeof error === "object" ? error as Record<string, unknown> : {};
-        rawOutputs[sourceDir] = {
-          stdout: typeof cause.stdout === "string" ? cause.stdout : "",
-          stderr: typeof cause.stderr === "string" ? cause.stderr : "",
-          error: error instanceof Error ? error.message : String(error)
-        };
-      }
-    }
-
-    candidatesWithOrder.sort((left, right) => {
-      const leftTime = candidateTime(left);
-      const rightTime = candidateTime(right);
-      if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
-      if (leftTime !== null && rightTime === null) return -1;
-      if (leftTime === null && rightTime !== null) return 1;
-      if (left.sourceIndex !== right.sourceIndex) return left.sourceIndex - right.sourceIndex;
-      return left.listIndex - right.listIndex;
-    });
-    const candidates = candidatesWithOrder.map(({ sourceIndex: _sourceIndex, listIndex: _listIndex, ...candidate }) => candidate);
+    const listed = await listAndroidDownloadFiles(input.adbId, sourceDirs, extensions);
+    const candidates = listed.candidates;
+    Object.assign(rawOutputs, listed.rawOutputs);
     console.info("[download-latest] list candidates", JSON.stringify({
       adbId: input.adbId,
       sourceDirs,
@@ -199,49 +215,63 @@ export const downloadLatestService = {
   },
 
   async clearDownload(input: ClearDownloadInput) {
-    const sourceDir = input.sourceDir?.trim() || "/sdcard/Download";
+    const sourceDirs = normalizeSourceDirs(input);
     const extensions = allowedExtensions(input.extensions);
 
     if (config.mockMode) {
       return {
         adbId: input.adbId,
-        sourceDir,
+        sourceDirs,
         extensions,
-        deletedFiles: 0,
-        fileNames: []
+        deletedCount: 0,
+        deletedFiles: [],
+        remainingCount: 0,
+        remainingFiles: []
       };
     }
 
-    try {
-      const result = await adbClient.runAdb(["-s", input.adbId, "shell", "sh", "-c", clearDownloadCommand(sourceDir, extensions)]);
-      const lines = result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-      const countLine = lines.find((line) => line.startsWith("COUNT="));
-      const deletedFiles = Number(countLine?.replace("COUNT=", "") ?? 0) || 0;
-      const fileNames = lines.filter((line) => !line.startsWith("COUNT="));
-      return {
-        adbId: input.adbId,
-        sourceDir,
-        extensions,
-        deletedFiles,
-        fileNames
-      };
-    } catch (error) {
-      const clearError = new Error("CLEAR_DOWNLOAD_FAILED");
-      clearError.name = "CLEAR_DOWNLOAD_FAILED";
-      const cause = error && typeof error === "object" ? error as Record<string, unknown> : {};
-      (clearError as Error & { cause?: unknown; detail?: unknown }).cause = error;
-      (clearError as Error & { detail?: unknown }).detail = {
-        adbId: input.adbId,
-        sourceDir,
-        extensions,
-        command: config.adbPath,
-        args: ["-s", input.adbId, "shell", "sh", "-c", clearDownloadCommand(sourceDir, extensions)],
-        stdout: typeof cause.stdout === "string" ? cause.stdout : "",
-        stderr: typeof cause.stderr === "string" ? cause.stderr : "",
-        message: error instanceof Error ? error.message : String(error)
-      };
-      throw clearError;
+    const before = await listAndroidDownloadFiles(input.adbId, sourceDirs, extensions);
+    const filesToDelete = dedupeDownloadFiles(before.candidates);
+    const deletedFiles: DownloadCandidate[] = [];
+    const deleteErrors: Array<{ file: DownloadCandidate; message: string; stdout?: string; stderr?: string }> = [];
+
+    for (const file of filesToDelete) {
+      try {
+        await adbClient.runAdb(["-s", input.adbId, "shell", "rm", file.remotePath]);
+        deletedFiles.push(file);
+      } catch (error) {
+        const cause = error && typeof error === "object" ? error as Record<string, unknown> : {};
+        deleteErrors.push({
+          file,
+          message: error instanceof Error ? error.message : String(error),
+          stdout: typeof cause.stdout === "string" ? cause.stdout : undefined,
+          stderr: typeof cause.stderr === "string" ? cause.stderr : undefined
+        });
+      }
     }
+
+    const after = await listAndroidDownloadFiles(input.adbId, sourceDirs, extensions);
+    const remainingFiles = dedupeDownloadFiles(after.candidates);
+    const payload = {
+      adbId: input.adbId,
+      sourceDirs,
+      extensions,
+      deletedCount: deletedFiles.length,
+      deletedFiles,
+      remainingCount: remainingFiles.length,
+      remainingFiles,
+      rawOutputs: {
+        before: before.rawOutputs,
+        after: after.rawOutputs
+      },
+      ...(deleteErrors.length ? { deleteErrors } : {})
+    };
+
+    if (remainingFiles.length > 0 || deleteErrors.length > 0) {
+      throw partialFailure("Some Android Download files could not be cleared.", payload);
+    }
+
+    return payload;
   },
 
   async downloadLatest(input: DownloadLatestInput) {
@@ -252,7 +282,7 @@ export const downloadLatestService = {
 
     const blockedSourceDir = sourceDirs.find(isBlockedFactorySourceDir);
     if (blockedSourceDir) {
-      throw outputNotFound(sourceDirs, {
+      throw outputNotFound({
         adbId: input.adbId,
         sourceDirs,
         extensions,
@@ -270,6 +300,7 @@ export const downloadLatestService = {
         remotePath: `${sourceDirs[0].replace(/\/+$/, "")}/mock-latest.png`,
         fileName: path.basename(absolutePath),
         modifiedAt: new Date().toISOString(),
+        candidatesCount: 1,
         ...stored
       };
     }
@@ -278,7 +309,7 @@ export const downloadLatestService = {
     const newest = discovery.candidates[0];
 
     if (!newest) {
-      throw outputNotFound(sourceDirs, {
+      throw outputNotFound({
         adbId: input.adbId,
         sourceDirs,
         extensions,
@@ -309,6 +340,7 @@ export const downloadLatestService = {
       remotePath: newest.remotePath,
       fileName: newest.fileName,
       modifiedAt: newest.modifiedAt ?? undefined,
+      candidatesCount: discovery.candidates.length,
       warning: discovery.candidates.length > 1 ? "MULTIPLE_DOWNLOAD_CANDIDATES" : undefined,
       ...stored
     };

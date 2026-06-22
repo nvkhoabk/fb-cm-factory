@@ -358,7 +358,7 @@ export const hostAgentService = {
     const { host, target } = this.targetForHost(hostId);
     return {
       host: publicHost(host),
-      result: await hostAgentClient.sendText(target, input.instanceId, input.adbId, input.text)
+      result: await hostAgentClient.sendText(target, input)
     };
   },
 
@@ -383,6 +383,14 @@ export const hostAgentService = {
     return {
       host: publicHost(host),
       result: await hostAgentClient.listDownloadCandidates(target, input)
+    };
+  },
+
+  async listDownloadFolder(hostId: string, input: ListDownloadCandidatesCommandInput) {
+    const { host, target } = this.targetForHost(hostId);
+    return {
+      host: publicHost(host),
+      result: await hostAgentClient.listDownloadFolder(target, input)
     };
   },
 

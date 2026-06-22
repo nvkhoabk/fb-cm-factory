@@ -235,6 +235,18 @@ hostAgentRouter.post("/:id/instances/:instanceId/list-download-candidates", asyn
   }
 });
 
+hostAgentRouter.post("/:id/instances/:instanceId/list-download-folder", async (req, res) => {
+  try {
+    const input = parseCommand(listDownloadCandidatesCommandSchema, {
+      ...(req.body ?? {}),
+      instanceId: req.params.instanceId
+    });
+    res.json({ ok: true, data: await hostAgentService.listDownloadFolder(req.params.id, input) });
+  } catch (error) {
+    sendHostAgentError(res, error);
+  }
+});
+
 hostAgentRouter.post("/:id/instances/:instanceId/clear-download", async (req, res) => {
   try {
     const input = parseCommand(clearDownloadCommandSchema, {

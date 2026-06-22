@@ -12,14 +12,17 @@ function sendError(res: import("express").Response, error: unknown) {
     "NO_MATCHING_FILE_FOUND",
     "ADB_KEYBOARD_NOT_AVAILABLE",
     "SEND_TEXT_FAILED",
+    "SEND_TEXT_CHUNK_FAILED",
     "TEXT_REQUIRED",
     "RUNTIME_CONTEXT_REQUIRED",
     "ASSET_ID_REQUIRED",
     "UPLOAD_FILE_NOT_FOUND",
     "INVALID_REMOTE_PATH",
     "INVALID_SCROLL_INPUT",
+    "INVALID_SEND_TEXT_INPUT",
     "DOWNLOAD_OUTPUT_NOT_FOUND",
-    "CLEAR_DOWNLOAD_FAILED"
+    "CLEAR_DOWNLOAD_FAILED",
+    "CLEAR_DOWNLOAD_PARTIAL_FAILURE"
   ]);
   const code = knownCodes.has(errorName)
     ? errorName
@@ -27,7 +30,7 @@ function sendError(res: import("express").Response, error: unknown) {
   const detail = error && typeof error === "object" && "detail" in error
     ? (error as { detail?: unknown }).detail
     : undefined;
-  res.status(code === "ADB_ID_REQUIRED" || code === "TEXT_REQUIRED" || code === "NO_MATCHING_FILE_FOUND" || code === "RUNTIME_CONTEXT_REQUIRED" || code === "ASSET_ID_REQUIRED" || code === "UPLOAD_FILE_NOT_FOUND" || code === "INVALID_REMOTE_PATH" || code === "INVALID_SCROLL_INPUT" || code === "DOWNLOAD_OUTPUT_NOT_FOUND" ? 400 : code === "CLEAR_DOWNLOAD_FAILED" ? 502 : 500)
+  res.status(code === "ADB_ID_REQUIRED" || code === "TEXT_REQUIRED" || code === "NO_MATCHING_FILE_FOUND" || code === "RUNTIME_CONTEXT_REQUIRED" || code === "ASSET_ID_REQUIRED" || code === "UPLOAD_FILE_NOT_FOUND" || code === "INVALID_REMOTE_PATH" || code === "INVALID_SCROLL_INPUT" || code === "INVALID_SEND_TEXT_INPUT" || code === "DOWNLOAD_OUTPUT_NOT_FOUND" ? 400 : code === "CLEAR_DOWNLOAD_FAILED" || code === "CLEAR_DOWNLOAD_PARTIAL_FAILURE" || code === "SEND_TEXT_CHUNK_FAILED" || code === "ADB_KEYBOARD_NOT_AVAILABLE" ? 502 : 500)
     .json({ ok: false, error: { code, message, ...(detail === undefined ? {} : { detail }) } });
 }
 
@@ -143,7 +146,11 @@ instanceRouter.post("/:localId/send-text", requireAgentApiKey, async (req, res) 
       ok: true,
       data: await instanceCommands.sendText({
         adbId: String(req.body?.adbId ?? ""),
-        text: req.body?.text
+        text: req.body?.text,
+        chunkSize: req.body?.chunkSize === undefined ? undefined : numberBody(req.body.chunkSize, "chunkSize"),
+        delayMs: req.body?.delayMs === undefined ? undefined : numberBody(req.body.delayMs, "delayMs"),
+        clearBeforeSend: req.body?.clearBeforeSend === true,
+        pressEnterAfter: req.body?.pressEnterAfter === true
       })
     });
   } catch (error) {
@@ -199,6 +206,27 @@ instanceRouter.post("/:localId/list-download-candidates", requireAgentApiKey, as
   }
 });
 
+instanceRouter.post("/:localId/list-download-folder", requireAgentApiKey, async (req, res) => {
+  try {
+    const data = await instanceCommands.listDownloadCandidates({
+      adbId: String(req.body?.adbId ?? ""),
+      sourceDir: typeof req.body?.sourceDir === "string" ? req.body.sourceDir : undefined,
+      sourceDirs: Array.isArray(req.body?.sourceDirs) ? req.body.sourceDirs.map(String) : undefined,
+      extensions: Array.isArray(req.body?.extensions) ? req.body.extensions.map(String) : undefined
+    });
+    res.json({
+      ok: true,
+      data: {
+        sourceDirs: data.sourceDirs,
+        files: data.candidates,
+        rawOutputs: data.rawOutputs
+      }
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 instanceRouter.post("/:localId/clear-download", requireAgentApiKey, async (req, res) => {
   try {
     res.json({
@@ -206,6 +234,7 @@ instanceRouter.post("/:localId/clear-download", requireAgentApiKey, async (req, 
       data: await instanceCommands.clearDownload({
         adbId: String(req.body?.adbId ?? ""),
         sourceDir: typeof req.body?.sourceDir === "string" ? req.body.sourceDir : undefined,
+        sourceDirs: Array.isArray(req.body?.sourceDirs) ? req.body.sourceDirs.map(String) : undefined,
         extensions: Array.isArray(req.body?.extensions) ? req.body.extensions.map(String) : undefined
       })
     });
