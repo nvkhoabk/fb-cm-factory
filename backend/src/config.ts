@@ -1,12 +1,32 @@
-import "dotenv/config";
+import fs from "node:fs";
 import path from "node:path";
+import dotenv from "dotenv";
 import { z } from "zod";
 
-function defaultStorageRoot() {
+function backendRoot() {
   const cwd = process.cwd();
-  const repoRoot = path.basename(cwd).toLowerCase() === "backend"
-    ? path.resolve(cwd, "..")
-    : cwd;
+  return path.basename(cwd).toLowerCase() === "backend"
+    ? cwd
+    : path.resolve(cwd, "backend");
+}
+
+function loadEnv() {
+  if (process.env.DOTENV_CONFIG_PATH) {
+    dotenv.config({ path: process.env.DOTENV_CONFIG_PATH });
+    return;
+  }
+
+  const root = backendRoot();
+  const productionEnv = path.resolve(root, ".env.production");
+  const defaultEnv = path.resolve(root, ".env");
+  const envPath = fs.existsSync(productionEnv) ? productionEnv : defaultEnv;
+  dotenv.config({ path: envPath });
+}
+
+loadEnv();
+
+function defaultStorageRoot() {
+  const repoRoot = path.resolve(backendRoot(), "..");
   return path.resolve(repoRoot, "..", "data", "fb-cm-factory", "backend-storage");
 }
 
