@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "db:migrate": "tsx src/database/migrate.ts",
+    "db:migrate:prod": "node dist/database/migrate.js",
     "cleanup:media": "tsx scripts/cleanup-media-in-db.ts",
     "cleanup:adb": "tsx scripts/cleanup-invalid-adb-mappings.ts",
     "thumbnails:generate": "tsx scripts/generate-missing-thumbnails.ts",

@@ -10,6 +10,10 @@ function backendRoot() {
     : path.resolve(cwd, "backend");
 }
 
+function appRoot() {
+  return path.resolve(backendRoot(), "..");
+}
+
 function loadEnv() {
   if (process.env.DOTENV_CONFIG_PATH) {
     dotenv.config({ path: process.env.DOTENV_CONFIG_PATH });
@@ -25,15 +29,18 @@ function loadEnv() {
 
 loadEnv();
 
+function defaultDbPath() {
+  return path.resolve(appRoot(), "data", "backend-db", "fb-cm-factory.db");
+}
+
 function defaultStorageRoot() {
-  const repoRoot = path.resolve(backendRoot(), "..");
-  return path.resolve(repoRoot, "..", "data", "fb-cm-factory", "backend-storage");
+  return path.resolve(appRoot(), "data", "backend-storage");
 }
 
 const configSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3200),
-  DB_PATH: z.string().min(1),
+  DB_PATH: z.string().min(1).default(defaultDbPath()),
   STORAGE_ROOT: z.string().min(1).default(defaultStorageRoot()),
   MANAGER_V1_BASE_URL: z.string().url().default("http://localhost:3000"),
   MANAGER_V1_API_KEY: z.string().default("")
