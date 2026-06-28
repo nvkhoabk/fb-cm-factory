@@ -7,5 +7,6 @@
   "ldConsolePath": "ldconsole",
   "publicBaseUrl": "http://localhost:4100",
   "hostStorageRoot": "C:/Users/Khoa Nguyen/Documents/Du an Facebook CM/data/fb-cm-factory/host-agent-storage",
-  "mockMode": true
+  "mockMode": true,
+  "useAdbKeyboard": true
 }

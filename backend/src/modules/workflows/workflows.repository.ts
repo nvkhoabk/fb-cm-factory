@@ -8,7 +8,13 @@ import type {
   FailWorkflowStageRunInput,
   UpdateWorkflowInput,
   UpdateWorkflowStageInput,
-  WorkflowRunStatus
+  CapacityConfigInput,
+  MusicPolicyInput,
+  PostContentPolicyInput,
+  WorkflowPromptMappingInput,
+  WorkflowResourceRulesInput,
+  WorkflowRunStatus,
+  WorkflowScriptMappingInput
 } from "./workflows.schemas";
 
 function mapWorkflow(row: Record<string, unknown>) {
@@ -17,6 +23,13 @@ function mapWorkflow(row: Record<string, unknown>) {
     name: row.name,
     description: row.description ?? null,
     status: row.status,
+    mode: "RESOURCE_DRIVEN",
+    capacityConfig: jsonParse(row.capacity_config_json, {}),
+    musicPolicy: jsonParse(row.music_policy_json, {}),
+    postContentPolicy: jsonParse(row.post_content_policy_json, {}),
+    resourceRules: jsonParse(row.resource_rules_json, []),
+    scriptMapping: jsonParse(row.script_mapping_json, {}),
+    promptMapping: jsonParse(row.prompt_mapping_json, {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -45,6 +58,7 @@ function mapWorkflowRun(row: Record<string, unknown>) {
     status: row.status,
     input: jsonParse(row.input_json, {}),
     output: jsonParse(row.output_json, {}),
+    capacityConfig: jsonParse(row.capacity_config_json, {}),
     currentStageNo: Number(row.current_stage_no ?? 0),
     errorMessage: row.error_message ?? null,
     startedAt: row.started_at ?? null,
@@ -90,15 +104,22 @@ export const workflowsRepository = {
 
     db.prepare(`
       INSERT INTO workflows (
-        id, name, description, status, created_at, updated_at
+        id, name, description, status, music_policy_json, post_content_policy_json,
+        resource_rules_json, script_mapping_json, prompt_mapping_json, created_at, updated_at
       ) VALUES (
-        @id, @name, @description, @status, @createdAt, @updatedAt
+        @id, @name, @description, @status, @musicPolicyJson, @postContentPolicyJson,
+        @resourceRulesJson, @scriptMappingJson, @promptMappingJson, @createdAt, @updatedAt
       )
     `).run({
       id,
       name: input.name,
       description: input.description ?? null,
       status: input.status,
+      musicPolicyJson: jsonString(input.musicPolicy ?? {}, {}),
+      postContentPolicyJson: jsonString(input.postContentPolicy ?? {}, {}),
+      resourceRulesJson: jsonString(input.resourceRules ?? [], []),
+      scriptMappingJson: jsonString(input.scriptMapping ?? {}, {}),
+      promptMappingJson: jsonString(input.promptMapping ?? {}, {}),
       createdAt,
       updatedAt: createdAt
     });
@@ -115,6 +136,11 @@ export const workflowsRepository = {
       SET name = @name,
           description = @description,
           status = @status,
+          music_policy_json = @musicPolicyJson,
+          post_content_policy_json = @postContentPolicyJson,
+          resource_rules_json = @resourceRulesJson,
+          script_mapping_json = @scriptMappingJson,
+          prompt_mapping_json = @promptMappingJson,
           updated_at = @updatedAt
       WHERE id = @id
     `).run({
@@ -122,6 +148,119 @@ export const workflowsRepository = {
       name: input.name ?? current.name,
       description: input.description ?? current.description,
       status: input.status ?? current.status,
+      musicPolicyJson: jsonString(input.musicPolicy ?? current.musicPolicy ?? {}, {}),
+      postContentPolicyJson: jsonString(input.postContentPolicy ?? current.postContentPolicy ?? {}, {}),
+      resourceRulesJson: jsonString(input.resourceRules ?? current.resourceRules ?? [], []),
+      scriptMappingJson: jsonString(input.scriptMapping ?? current.scriptMapping ?? {}, {}),
+      promptMappingJson: jsonString(input.promptMapping ?? current.promptMapping ?? {}, {}),
+      updatedAt: now()
+    });
+
+    return this.get(id);
+  },
+
+  updateCapacity(id: string, capacityConfig: CapacityConfigInput) {
+    const current = this.get(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE workflows
+      SET capacity_config_json = @capacityConfigJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      capacityConfigJson: jsonString(capacityConfig, {}),
+      updatedAt: now()
+    });
+
+    return this.get(id);
+  },
+
+  updateMusicPolicy(id: string, musicPolicy: MusicPolicyInput) {
+    const current = this.get(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE workflows
+      SET music_policy_json = @musicPolicyJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      musicPolicyJson: jsonString(musicPolicy, {}),
+      updatedAt: now()
+    });
+
+    return this.get(id);
+  },
+
+  updatePostContentPolicy(id: string, postContentPolicy: PostContentPolicyInput) {
+    const current = this.get(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE workflows
+      SET post_content_policy_json = @postContentPolicyJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      postContentPolicyJson: jsonString(postContentPolicy, {}),
+      updatedAt: now()
+    });
+
+    return this.get(id);
+  },
+
+  updateResourceRules(id: string, resourceRules: WorkflowResourceRulesInput) {
+    const current = this.get(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE workflows
+      SET resource_rules_json = @resourceRulesJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      resourceRulesJson: jsonString(resourceRules, []),
+      updatedAt: now()
+    });
+
+    return this.get(id);
+  },
+
+  updateScriptMapping(id: string, scriptMapping: WorkflowScriptMappingInput) {
+    const current = this.get(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE workflows
+      SET script_mapping_json = @scriptMappingJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      scriptMappingJson: jsonString(scriptMapping, {}),
+      updatedAt: now()
+    });
+
+    return this.get(id);
+  },
+
+  updatePromptMapping(id: string, promptMapping: WorkflowPromptMappingInput) {
+    const current = this.get(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE workflows
+      SET prompt_mapping_json = @promptMappingJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      promptMappingJson: jsonString(promptMapping, {}),
       updatedAt: now()
     });
 
@@ -129,7 +268,39 @@ export const workflowsRepository = {
   },
 
   delete(id: string) {
-    return db.prepare("DELETE FROM workflows WHERE id = ?").run(id).changes > 0;
+    const transaction = db.transaction(() => {
+      const runRows = db.prepare("SELECT id FROM workflow_runs WHERE workflow_id = ?").all(id) as Array<{ id: string }>;
+      const stageRows = db.prepare("SELECT id FROM workflow_stages WHERE workflow_id = ?").all(id) as Array<{ id: string }>;
+      const runIds = runRows.map((row) => row.id);
+      const stageIds = stageRows.map((row) => row.id);
+
+      for (const runId of runIds) {
+        db.prepare("UPDATE instance_allocations SET workflow_run_id = NULL WHERE workflow_run_id = ?").run(runId);
+        db.prepare("UPDATE production_batches SET workflow_run_id = NULL WHERE workflow_run_id = ?").run(runId);
+        db.prepare("UPDATE production_batch_usage SET workflow_run_id = NULL WHERE workflow_run_id = ?").run(runId);
+        db.prepare("UPDATE prompt_sets SET workflow_run_id = NULL WHERE workflow_run_id = ?").run(runId);
+        db.prepare("UPDATE assets SET created_by_workflow_run_id = NULL WHERE created_by_workflow_run_id = ?").run(runId);
+        db.prepare("UPDATE asset_relations SET workflow_run_id = NULL WHERE workflow_run_id = ?").run(runId);
+        db.prepare("UPDATE asset_reservations SET workflow_run_id = NULL WHERE workflow_run_id = ?").run(runId);
+        db.prepare("UPDATE instances SET current_workflow_run_id = NULL WHERE current_workflow_run_id = ?").run(runId);
+        db.prepare("DELETE FROM workflow_stage_runs WHERE workflow_run_id = ?").run(runId);
+      }
+
+      for (const stageId of stageIds) {
+        db.prepare("UPDATE assets SET created_by_stage_run_id = NULL WHERE created_by_stage_run_id = ?").run(stageId);
+        db.prepare("UPDATE asset_relations SET stage_run_id = NULL WHERE stage_run_id = ?").run(stageId);
+        db.prepare("UPDATE asset_reservations SET stage_run_id = NULL WHERE stage_run_id = ?").run(stageId);
+        db.prepare("DELETE FROM workflow_stage_runs WHERE workflow_stage_id = ?").run(stageId);
+      }
+
+      db.prepare("UPDATE production_batches SET workflow_id = NULL WHERE workflow_id = ?").run(id);
+      db.prepare("DELETE FROM workflow_runs WHERE workflow_id = ?").run(id);
+      db.prepare("DELETE FROM workflow_stages WHERE workflow_id = ?").run(id);
+      db.prepare("DELETE FROM workflow_versions WHERE workflow_id = ?").run(id);
+      return db.prepare("DELETE FROM workflows WHERE id = ?").run(id).changes > 0;
+    });
+
+    return transaction();
   },
 
   createStage(workflowId: string, input: CreateWorkflowStageInput) {
@@ -232,6 +403,46 @@ export const workflowsRepository = {
       ...run,
       stageRuns: this.listStageRuns(id)
     };
+  },
+
+  updateRunCapacity(id: string, capacityConfig: CapacityConfigInput) {
+    const current = this.getRun(id);
+    if (!current) return null;
+
+    db.prepare(`
+      UPDATE workflow_runs
+      SET capacity_config_json = @capacityConfigJson,
+          updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id,
+      capacityConfigJson: jsonString(capacityConfig, {}),
+      updatedAt: now()
+    });
+
+    return this.getRunDetail(id);
+  },
+
+  listCapacityAllocations(workflowRunId: string) {
+    return db.prepare(`
+      SELECT * FROM instance_allocations
+      WHERE workflow_run_id = ?
+      ORDER BY allocated_at DESC
+    `).all(workflowRunId).map((row) => {
+      const record = row as Record<string, unknown>;
+      return {
+        id: record.id,
+        instanceId: record.instance_id,
+        hostId: record.host_id ?? null,
+        localId: record.local_id ?? null,
+        adbId: record.adb_id ?? null,
+        workflowRunId: record.workflow_run_id ?? null,
+        status: record.status,
+        allocatedAt: record.allocated_at,
+        releasedAt: record.released_at ?? null,
+        metadata: jsonParse(record.metadata_json, {})
+      };
+    });
   },
 
   createRun(workflowId: string, input: CreateWorkflowRunInput) {

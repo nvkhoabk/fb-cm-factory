@@ -130,6 +130,33 @@ export const characterGroupsRepository = {
       .changes > 0;
   },
 
+  members(groupId: string) {
+    return db.prepare(`
+      SELECT * FROM character_group_members
+      WHERE group_id = ?
+      ORDER BY sort_order ASC, created_at ASC
+    `).all(groupId).map((row) => mapMember(row as Record<string, unknown>));
+  },
+
+  reorderMembers(groupId: string, memberIds: string[]) {
+    const update = db.prepare(`
+      UPDATE character_group_members
+      SET sort_order = @sortOrder,
+          updated_at = @updatedAt
+      WHERE group_id = @groupId
+        AND id = @memberId
+    `);
+    const touchGroup = db.prepare("UPDATE character_groups SET updated_at = ? WHERE id = ?");
+    const timestamp = now();
+    return db.transaction(() => {
+      memberIds.forEach((memberId, index) => {
+        update.run({ groupId, memberId, sortOrder: index, updatedAt: timestamp });
+      });
+      touchGroup.run(timestamp, groupId);
+      return this.members(groupId);
+    })();
+  },
+
   assignAttribute(groupId: string, input: AssignGroupAttributeInput) {
     const id = createId("cgav");
 

@@ -11,6 +11,7 @@ export type HostAgentConfig = {
   publicBaseUrl: string;
   hostStorageRoot: string;
   mockMode: boolean;
+  useAdbKeyboard: boolean;
 };
 
 const configPath = path.resolve(__dirname, "../config.json");
@@ -40,5 +41,6 @@ export const config: HostAgentConfig = {
   ldConsolePath: requiredString(rawConfig.ldConsolePath, "ldConsolePath"),
   publicBaseUrl: requiredString(rawConfig.publicBaseUrl, "publicBaseUrl").replace(/\/+$/, ""),
   hostStorageRoot: path.resolve(requiredString(rawConfig.hostStorageRoot, "hostStorageRoot")),
-  mockMode: Boolean(rawConfig.mockMode)
+  mockMode: Boolean(rawConfig.mockMode),
+  useAdbKeyboard: rawConfig.useAdbKeyboard !== false
 };

@@ -173,6 +173,30 @@ export const productionBatchRepository = {
       .changes > 0;
   },
 
+  delete(id: string) {
+    const transaction = db.transaction(() => {
+      const jobRows = db.prepare("SELECT id FROM orchestrator_jobs WHERE source_batch_id = ?").all(id) as Array<{ id: string }>;
+      for (const job of jobRows) {
+        const sessionRows = db.prepare("SELECT id FROM runtime_sessions WHERE job_id = ?").all(job.id) as Array<{ id: string }>;
+        for (const session of sessionRows) {
+          const runRows = db.prepare("SELECT id FROM script_runs WHERE runtime_session_id = ?").all(session.id) as Array<{ id: string }>;
+          for (const run of runRows) {
+            db.prepare("DELETE FROM script_run_steps WHERE script_run_id = ?").run(run.id);
+          }
+          db.prepare("DELETE FROM script_runs WHERE runtime_session_id = ?").run(session.id);
+          db.prepare("DELETE FROM runtime_session_steps WHERE runtime_session_id = ?").run(session.id);
+        }
+        db.prepare("DELETE FROM runtime_sessions WHERE job_id = ?").run(job.id);
+        db.prepare("DELETE FROM instance_allocations WHERE orchestrator_job_id = ?").run(job.id);
+      }
+      db.prepare("DELETE FROM orchestrator_jobs WHERE source_batch_id = ?").run(id);
+      db.prepare("DELETE FROM production_batch_items WHERE batch_id = ?").run(id);
+      db.prepare("DELETE FROM production_batch_usage WHERE source_batch_id = ? OR target_batch_id = ?").run(id, id);
+      return db.prepare("DELETE FROM production_batches WHERE id = ?").run(id).changes > 0;
+    });
+    return transaction();
+  },
+
   setStatus(id: string, status: string, usageStatus?: string) {
     const current = this.get(id);
     if (!current) return null;

@@ -20,3 +20,23 @@ instanceSchedulerRouter.post("/:id/release", (req, res) => {
   }
 });
 
+instanceSchedulerRouter.post("/:id/fail", (req, res) => {
+  try {
+    const body = req.body && typeof req.body === "object"
+      ? req.body as { reason?: unknown; errorMessage?: unknown; errorCode?: unknown; instanceIssue?: unknown }
+      : {};
+    const reason = typeof body.errorCode === "string"
+      ? body.errorCode
+      : typeof body.reason === "string"
+        ? body.reason
+        : typeof body.errorMessage === "string"
+          ? body.errorMessage
+          : null;
+    res.json({
+      ok: true,
+      data: instanceSchedulerService.failAllocation(req.params.id, reason, body.instanceIssue === true)
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+});

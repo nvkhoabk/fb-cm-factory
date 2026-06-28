@@ -2,12 +2,18 @@ import { Router } from "express";
 import { sendError } from "../shared/resource";
 import {
   completeWorkflowStageRunSchema,
+  capacityConfigSchema,
   createWorkflowSchema,
   createWorkflowRunSchema,
   createWorkflowStageSchema,
   failWorkflowStageRunSchema,
+  musicPolicySchema,
+  postContentPolicySchema,
   updateWorkflowSchema,
-  updateWorkflowStageSchema
+  updateWorkflowStageSchema,
+  workflowPromptMappingSchema,
+  workflowResourceRulesSchema,
+  workflowScriptMappingSchema
 } from "./workflows.schemas";
 import { workflowsService } from "./workflows.service";
 
@@ -28,6 +34,22 @@ workflowsRouter.post("/", (req, res) => {
   }
 });
 
+workflowsRouter.get("/:id/detail", (req, res) => {
+  try {
+    res.json({ ok: true, data: workflowsService.getDetail(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowsRouter.post("/:id/duplicate", (req, res) => {
+  try {
+    res.status(201).json({ ok: true, data: workflowsService.duplicate(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 workflowsRouter.get("/:id", (req, res) => {
   try {
     res.json({ ok: true, data: workflowsService.get(req.params.id) });
@@ -40,6 +62,100 @@ workflowsRouter.patch("/:id", (req, res) => {
   try {
     const input = updateWorkflowSchema.parse(req.body);
     res.json({ ok: true, data: workflowsService.update(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowsRouter.patch("/:id/capacity", (req, res) => {
+  try {
+    const input = capacityConfigSchema.parse(req.body ?? {});
+    res.json({ ok: true, data: workflowsService.updateCapacity(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowsRouter.get("/:id/resource-rules", (req, res) => {
+  try {
+    res.json({ ok: true, data: workflowsService.getResourceRules(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowsRouter.patch("/:id/resource-rules", (req, res) => {
+  try {
+    const input = workflowResourceRulesSchema.parse(req.body ?? []);
+    res.json({ ok: true, data: workflowsService.updateResourceRules(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowsRouter.get("/:id/script-mapping", (req, res) => {
+  try {
+    res.json({ ok: true, data: workflowsService.getScriptMapping(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowsRouter.patch("/:id/script-mapping", (req, res) => {
+  try {
+    const input = workflowScriptMappingSchema.parse(req.body ?? {});
+    res.json({ ok: true, data: workflowsService.updateScriptMapping(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowsRouter.get("/:id/prompt-mapping", (req, res) => {
+  try {
+    res.json({ ok: true, data: workflowsService.getPromptMapping(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowsRouter.patch("/:id/prompt-mapping", (req, res) => {
+  try {
+    const input = workflowPromptMappingSchema.parse(req.body ?? {});
+    res.json({ ok: true, data: workflowsService.updatePromptMapping(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowsRouter.get("/:id/music-policy", (req, res) => {
+  try {
+    res.json({ ok: true, data: workflowsService.getMusicPolicy(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowsRouter.patch("/:id/music-policy", (req, res) => {
+  try {
+    const input = musicPolicySchema.parse(req.body ?? {});
+    res.json({ ok: true, data: workflowsService.updateMusicPolicy(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowsRouter.get("/:id/post-content-policy", (req, res) => {
+  try {
+    res.json({ ok: true, data: workflowsService.getPostContentPolicy(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowsRouter.patch("/:id/post-content-policy", (req, res) => {
+  try {
+    const input = postContentPolicySchema.parse(req.body ?? {});
+    res.json({ ok: true, data: workflowsService.updatePostContentPolicy(req.params.id, input) });
   } catch (error) {
     sendError(res, error);
   }
@@ -97,6 +213,31 @@ workflowRunsRouter.get("/", (_req, res) => {
 workflowRunsRouter.get("/:id", (req, res) => {
   try {
     res.json({ ok: true, data: workflowsService.getRun(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowRunsRouter.get("/:id/capacity", (req, res) => {
+  try {
+    res.json({ ok: true, data: workflowsService.getRunCapacity(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowRunsRouter.post("/:id/capacity", (req, res) => {
+  try {
+    const input = capacityConfigSchema.parse(req.body ?? {});
+    res.json({ ok: true, data: workflowsService.updateRunCapacity(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+workflowRunsRouter.post("/:id/allocate-capacity", (req, res) => {
+  try {
+    res.json({ ok: true, data: workflowsService.allocateCapacity(req.params.id) });
   } catch (error) {
     sendError(res, error);
   }

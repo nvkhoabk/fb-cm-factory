@@ -51,6 +51,19 @@ export const runtimeSessionsRepository = {
     return row ? mapSession(row as Record<string, unknown>) : null;
   },
 
+  deleteSession(id: string) {
+    const transaction = db.transaction(() => {
+      const runIds = db.prepare("SELECT id FROM script_runs WHERE runtime_session_id = ?").all(id) as Array<{ id: string }>;
+      for (const run of runIds) {
+        db.prepare("DELETE FROM script_run_steps WHERE script_run_id = ?").run(run.id);
+      }
+      db.prepare("DELETE FROM script_runs WHERE runtime_session_id = ?").run(id);
+      db.prepare("DELETE FROM runtime_session_steps WHERE runtime_session_id = ?").run(id);
+      return db.prepare("DELETE FROM runtime_sessions WHERE id = ?").run(id).changes > 0;
+    });
+    return transaction();
+  },
+
   listSteps(runtimeSessionId: string) {
     return db.prepare(`
       SELECT * FROM runtime_session_steps
@@ -109,6 +122,9 @@ export const runtimeSessionsRepository = {
     db.prepare(`
       UPDATE runtime_sessions
       SET status = @status,
+          script_id = @scriptId,
+          host_id = @hostId,
+          instance_id = @instanceId,
           current_step_no = @currentStepNo,
           context_json = @contextJson,
           checkpoint_json = @checkpointJson,
@@ -119,6 +135,9 @@ export const runtimeSessionsRepository = {
     `).run({
       id,
       status,
+      scriptId: input.scriptId === undefined ? current.scriptId : input.scriptId,
+      hostId: input.hostId === undefined ? current.hostId : input.hostId,
+      instanceId: input.instanceId === undefined ? current.instanceId : input.instanceId,
       currentStepNo: input.currentStepNo ?? current.currentStepNo,
       contextJson: jsonString(input.context ?? current.context, {}),
       checkpointJson: jsonString(input.checkpoint ?? current.checkpoint, {}),

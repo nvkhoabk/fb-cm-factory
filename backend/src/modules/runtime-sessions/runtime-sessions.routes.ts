@@ -8,6 +8,8 @@ import {
   updateRuntimeStepSchema
 } from "./runtime-sessions.schemas";
 import { hostAgentService } from "../host-agent-adapter/host-agent.service";
+import { runScriptSchema } from "../script-runtime/script-runtime.schemas";
+import { scriptRuntimeService } from "../script-runtime/script-runtime.service";
 import { runtimeSessionsService } from "./runtime-sessions.service";
 
 export const runtimeSessionsRouter = Router();
@@ -37,6 +39,15 @@ runtimeSessionsRouter.patch("/:id", (req, res) => {
   try {
     const input = updateRuntimeSessionSchema.parse(req.body ?? {});
     res.json({ ok: true, data: runtimeSessionsService.updateRuntimeSession(req.params.id, input) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+runtimeSessionsRouter.delete("/:id", (req, res) => {
+  try {
+    runtimeSessionsService.deleteSession(req.params.id);
+    res.json({ ok: true, data: { deleted: true } });
   } catch (error) {
     sendError(res, error);
   }
@@ -98,5 +109,24 @@ runtimeSessionsRouter.post("/:id/test-screenshot", async (req, res) => {
     res.json({ ok: true, data: await hostAgentService.testRuntimeScreenshot(req.params.id) });
   } catch (error) {
     sendError(res, error);
+  }
+});
+
+runtimeSessionsRouter.post("/:id/run-script", async (req, res) => {
+  try {
+    const input = runScriptSchema.parse(req.body ?? {});
+    const run = scriptRuntimeService.createScriptRun(req.params.id, input);
+    if (!run) {
+      return res.status(500).json({
+        ok: false,
+        error: {
+          code: "SCRIPT_RUN_CREATE_FAILED",
+          message: "Could not create script run"
+        }
+      });
+    }
+    return res.status(201).json({ ok: true, data: await scriptRuntimeService.executeScriptRun(String(run.id)) });
+  } catch (error) {
+    return sendError(res, error);
   }
 });

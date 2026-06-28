@@ -1,12 +1,47 @@
-import "dotenv/config";
+import fs from "node:fs";
+import path from "node:path";
+import dotenv from "dotenv";
 import { z } from "zod";
+
+function backendRoot() {
+  const cwd = process.cwd();
+  return path.basename(cwd).toLowerCase() === "backend"
+    ? cwd
+    : path.resolve(cwd, "backend");
+}
+
+function appRoot() {
+  return path.resolve(backendRoot(), "..");
+}
+
+function loadEnv() {
+  if (process.env.DOTENV_CONFIG_PATH) {
+    dotenv.config({ path: process.env.DOTENV_CONFIG_PATH });
+    return;
+  }
+
+  const root = backendRoot();
+  const productionEnv = path.resolve(root, ".env.production");
+  const defaultEnv = path.resolve(root, ".env");
+  const envPath = fs.existsSync(productionEnv) ? productionEnv : defaultEnv;
+  dotenv.config({ path: envPath });
+}
+
+loadEnv();
+
+function defaultDbPath() {
+  return path.resolve(appRoot(), "data", "backend-db", "fb-cm-factory.db");
+}
+
+function defaultStorageRoot() {
+  return path.resolve(appRoot(), "data", "backend-storage");
+}
 
 const configSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3200),
-  DB_PATH: z.string().min(1),
-  STORAGE_ROOT: z.string().min(1).default("./storage"),
-  HOST_AGENT_API_KEY: z.string().min(1).default("change-me"),
+  DB_PATH: z.string().min(1).default(defaultDbPath()),
+  STORAGE_ROOT: z.string().min(1).default(defaultStorageRoot()),
   MANAGER_V1_BASE_URL: z.string().url().default("http://localhost:3000"),
   MANAGER_V1_API_KEY: z.string().default("")
 });
@@ -23,7 +58,6 @@ export const config = {
   port: parsed.data.PORT,
   dbPath: parsed.data.DB_PATH,
   storageRoot: parsed.data.STORAGE_ROOT,
-  hostAgentApiKey: parsed.data.HOST_AGENT_API_KEY,
   managerV1BaseUrl: parsed.data.MANAGER_V1_BASE_URL,
   managerV1ApiKey: parsed.data.MANAGER_V1_API_KEY
 };

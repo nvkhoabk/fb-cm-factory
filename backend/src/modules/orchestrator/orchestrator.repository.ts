@@ -24,8 +24,13 @@ function mapBatch(row: Record<string, unknown>) {
   return {
     id: String(row.id),
     batchType: String(row.batch_type),
+    sourceGroupId: row.source_group_id ?? null,
+    workflowId: row.workflow_id ?? null,
+    workflowRunId: row.workflow_run_id ?? null,
     status: String(row.status),
-    usageStatus: String(row.usage_status)
+    usageStatus: String(row.usage_status),
+    attributes: jsonParse<Record<string, unknown>>(row.attributes_json, {}),
+    metadata: jsonParse<Record<string, unknown>>(row.metadata_json, {})
   };
 }
 
@@ -80,10 +85,8 @@ export const orchestratorRepository = {
   },
 
   seedDefaultRulesIfEmpty() {
-    if (this.countRules() > 0) return [];
-
-    return [
-      this.createRule({
+    const defaults = [
+      {
         name: "Default image batch to video generate",
         triggerBatchType: "IMAGE_BATCH",
         triggerStatus: "READY",
@@ -91,8 +94,8 @@ export const orchestratorRepository = {
         priority: 100,
         isActive: true,
         config: {}
-      }),
-      this.createRule({
+      },
+      {
         name: "Default video batch to video compose",
         triggerBatchType: "VIDEO_BATCH",
         triggerStatus: "READY",
@@ -102,8 +105,37 @@ export const orchestratorRepository = {
         config: {
           requiresMusic: true
         }
-      })
+      },
+      {
+        name: "Default final video to post content",
+        triggerBatchType: "FINAL_VIDEO",
+        triggerStatus: "READY",
+        targetStageType: "POST_CONTENT",
+        priority: 300,
+        isActive: true,
+        config: {}
+      }
     ];
+
+    const createdRules = [];
+    for (const rule of defaults) {
+      const existing = this.getJobRuleByTriggerAndTarget(rule.triggerBatchType, rule.triggerStatus, rule.targetStageType);
+      if (!existing) createdRules.push(this.createRule(rule));
+    }
+
+    return createdRules;
+  },
+
+  getJobRuleByTriggerAndTarget(triggerBatchType: string, triggerStatus: string, targetStageType: string) {
+    const row = db.prepare(`
+      SELECT * FROM orchestrator_rules
+      WHERE trigger_batch_type = ?
+        AND trigger_status = ?
+        AND target_stage_type = ?
+      LIMIT 1
+    `).get(triggerBatchType, triggerStatus, targetStageType);
+
+    return row ? mapRule(row as Record<string, unknown>) : null;
   },
 
   listActiveRules() {
@@ -174,6 +206,10 @@ export const orchestratorRepository = {
     return this.getRule(id);
   },
 
+  deleteRule(id: string) {
+    return db.prepare("DELETE FROM orchestrator_rules WHERE id = ?").run(id).changes > 0;
+  },
+
   listJobs() {
     return db.prepare("SELECT * FROM orchestrator_jobs ORDER BY created_at DESC")
       .all()
@@ -185,11 +221,55 @@ export const orchestratorRepository = {
     return row ? mapJob(row as Record<string, unknown>) : null;
   },
 
+  deleteJob(id: string) {
+    const transaction = db.transaction(() => {
+      const sessionRows = db.prepare("SELECT id FROM runtime_sessions WHERE job_id = ?").all(id) as Array<{ id: string }>;
+      for (const session of sessionRows) {
+        const runRows = db.prepare("SELECT id FROM script_runs WHERE runtime_session_id = ?").all(session.id) as Array<{ id: string }>;
+        for (const run of runRows) {
+          db.prepare("DELETE FROM script_run_steps WHERE script_run_id = ?").run(run.id);
+        }
+        db.prepare("DELETE FROM script_runs WHERE runtime_session_id = ?").run(session.id);
+        db.prepare("DELETE FROM runtime_session_steps WHERE runtime_session_id = ?").run(session.id);
+      }
+      db.prepare("DELETE FROM runtime_sessions WHERE job_id = ?").run(id);
+      db.prepare("DELETE FROM instance_allocations WHERE orchestrator_job_id = ?").run(id);
+      return db.prepare("DELETE FROM orchestrator_jobs WHERE id = ?").run(id).changes > 0;
+    });
+    return transaction();
+  },
+
   getJobBySourceAndStage(sourceBatchId: string, targetStageType: string) {
     const row = db.prepare(`
       SELECT * FROM orchestrator_jobs
       WHERE source_batch_id = ? AND target_stage_type = ?
     `).get(sourceBatchId, targetStageType);
+
+    return row ? mapJob(row as Record<string, unknown>) : null;
+  },
+
+  getJobBySourceStageAndAsset(sourceBatchId: string, targetStageType: string, sourceAssetId: string) {
+    const row = db.prepare(`
+      SELECT * FROM orchestrator_jobs
+      WHERE source_batch_id = ?
+        AND target_stage_type = ?
+        AND json_extract(payload_json, '$.sourceAssetId') = ?
+        AND status IN ('PENDING', 'ALLOCATED', 'RUNNING', 'COMPLETED', 'FAILED_RECOVERABLE')
+      LIMIT 1
+    `).get(sourceBatchId, targetStageType, sourceAssetId);
+
+    return row ? mapJob(row as Record<string, unknown>) : null;
+  },
+
+  getJobBySourceStageAndTransition(sourceBatchId: string, targetStageType: string, transitionKey: string) {
+    const row = db.prepare(`
+      SELECT * FROM orchestrator_jobs
+      WHERE source_batch_id = ?
+        AND target_stage_type = ?
+        AND json_extract(payload_json, '$.transitionKey') = ?
+        AND status IN ('PENDING', 'ALLOCATED', 'RUNNING', 'COMPLETED', 'FAILED_RECOVERABLE')
+      LIMIT 1
+    `).get(sourceBatchId, targetStageType, transitionKey);
 
     return row ? mapJob(row as Record<string, unknown>) : null;
   },
@@ -279,19 +359,49 @@ export const orchestratorRepository = {
     `).all(batchType, status).map((row) => mapBatch(row as Record<string, unknown>));
   },
 
+  listWorkflowLinkedAvailableBatches() {
+    return db.prepare(`
+      SELECT * FROM production_batches
+      WHERE workflow_id IS NOT NULL
+        AND workflow_id != ''
+        AND usage_status = 'AVAILABLE'
+      ORDER BY created_at ASC
+    `).all().map((row) => mapBatch(row as Record<string, unknown>));
+  },
+
   getReusableOrAvailableMusic() {
     const row = db.prepare(`
       SELECT * FROM production_batches
       WHERE batch_type = 'MUSIC_TRACK'
         AND status = 'READY'
-        AND usage_status IN ('REUSABLE', 'AVAILABLE')
-      ORDER BY
-        CASE usage_status WHEN 'REUSABLE' THEN 0 ELSE 1 END,
-        created_at DESC
+        AND usage_status = 'REUSABLE'
+      ORDER BY RANDOM()
       LIMIT 1
     `).get();
 
     return row ? mapBatch(row as Record<string, unknown>) : null;
+  },
+
+  listReusableMusicTracks() {
+    return db.prepare(`
+      SELECT * FROM production_batches
+      WHERE batch_type = 'MUSIC_TRACK'
+        AND status = 'READY'
+        AND usage_status = 'REUSABLE'
+      ORDER BY created_at DESC
+    `).all().map((row) => mapBatch(row as Record<string, unknown>));
+  },
+
+  getWorkflowMusicPolicy(workflowId?: string | null) {
+    if (!workflowId) return {};
+    const row = db.prepare("SELECT music_policy_json FROM workflows WHERE id = ?").get(workflowId) as { music_policy_json?: unknown } | undefined;
+    return row ? jsonParse<Record<string, unknown>>(row.music_policy_json, {}) : {};
+  },
+
+  getWorkflowResourceRules(workflowId?: string | null) {
+    if (!workflowId) return [];
+    const row = db.prepare("SELECT resource_rules_json FROM workflows WHERE id = ?").get(workflowId) as { resource_rules_json?: unknown } | undefined;
+    return row ? jsonParse<Record<string, unknown>[]>(row.resource_rules_json, []) : [];
   },
 
   reserveBatch(id: string) {

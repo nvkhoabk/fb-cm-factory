@@ -26,6 +26,12 @@ export const runtimeSessionsService = {
     return session;
   },
 
+  deleteSession(id: string) {
+    if (!runtimeSessionsRepository.deleteSession(id)) {
+      throw new AppError("RUNTIME_SESSION_NOT_FOUND", "Runtime session not found", 404);
+    }
+  },
+
   listSteps(id: string) {
     this.getSession(id);
     return runtimeSessionsRepository.listSteps(id);
@@ -55,7 +61,19 @@ export const runtimeSessionsService = {
       allocationId: allocation?.id ?? payload.allocationId ?? null,
       poolId: allocation?.poolId ?? payload.poolId ?? null,
       instanceId: allocation?.instanceId ?? payload.instanceId ?? null,
-      hostId: payload.hostId ?? null
+      hostId: allocation?.hostId ?? payload.hostId ?? null,
+      localId: allocation?.localId ?? payload.localId ?? null,
+      adbId: allocation?.adbId ?? payload.adbId ?? null
+    };
+    const runtimeContext = {
+      ...context,
+      runtime: {
+        instanceId: allocationInfo.instanceId,
+        hostId: allocationInfo.hostId,
+        localId: allocationInfo.localId,
+        adbId: allocationInfo.adbId
+      },
+      allocation: allocationInfo
     };
 
     return runtimeSessionsRepository.createSession({
@@ -65,10 +83,10 @@ export const runtimeSessionsService = {
       scriptId: typeof payload.scriptId === "string" ? payload.scriptId : undefined,
       status: "PENDING",
       currentStepNo: 0,
-      context,
+      context: runtimeContext,
       checkpoint: {
         currentStepNo: 0,
-        context,
+        context: runtimeContext,
         allocation: allocationInfo
       }
     });

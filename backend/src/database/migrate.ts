@@ -2,6 +2,7 @@ import { db } from "./db";
 
 function addColumnIfMissing(table: string, column: string, definition: string) {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (columns.length === 0) return;
   const exists = columns.some((item) => item.name === column);
 
   if (!exists) {
@@ -283,6 +284,16 @@ export function migrate() {
       FOREIGN KEY (asset_id) REFERENCES assets(id)
     );
 
+    CREATE TABLE IF NOT EXISTS character_import_runs (
+      id TEXT PRIMARY KEY,
+      mode TEXT NOT NULL,
+      status TEXT NOT NULL,
+      imported_count INTEGER DEFAULT 0,
+      skipped_count INTEGER DEFAULT 0,
+      summary_json TEXT DEFAULT '{}',
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_workflows_workspace ON workflows(workspace_id, status);
     CREATE INDEX IF NOT EXISTS idx_workflow_runs_status ON workflow_runs(status, priority);
     CREATE INDEX IF NOT EXISTS idx_instance_slots_pool ON instance_slots(pool_id, status, health_status);
@@ -296,6 +307,11 @@ export function migrate() {
   addColumnIfMissing("character_groups", "updated_at", "TEXT");
   addColumnIfMissing("character_group_members", "role", "TEXT DEFAULT 'subject'");
   addColumnIfMissing("character_group_members", "sort_order", "INTEGER DEFAULT 0");
+  addColumnIfMissing("assets", "thumbnail_file_path", "TEXT");
+  addColumnIfMissing("assets", "thumbnail_public_url", "TEXT");
+  addColumnIfMissing("assets", "thumbnail_width", "INTEGER");
+  addColumnIfMissing("assets", "thumbnail_height", "INTEGER");
+  addColumnIfMissing("assets", "thumbnail_status", "TEXT DEFAULT 'PENDING'");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS group_attributes (
@@ -332,6 +348,12 @@ export function migrate() {
   addColumnIfMissing("workflow_runs", "current_stage_no", "INTEGER DEFAULT 0");
   addColumnIfMissing("workflow_runs", "updated_at", "TEXT");
   addColumnIfMissing("orchestrator_jobs", "output_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("instance_pool_members", "metadata_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("instance_pool_members", "role", "TEXT");
+  addColumnIfMissing("instance_pool_members", "notes", "TEXT");
+  addColumnIfMissing("instance_allocations", "host_id", "TEXT");
+  addColumnIfMissing("instance_allocations", "local_id", "TEXT");
+  addColumnIfMissing("instance_allocations", "adb_id", "TEXT");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS prompt_template_versions (
@@ -352,9 +374,27 @@ export function migrate() {
       instance_id TEXT NOT NULL,
       priority INTEGER DEFAULT 100,
       status TEXT DEFAULT 'active',
+      role TEXT,
+      notes TEXT,
+      metadata_json TEXT DEFAULT '{}',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (pool_id) REFERENCES instance_pools(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS instances (
+      id TEXT PRIMARY KEY,
+      host_id TEXT NOT NULL,
+      local_id TEXT NOT NULL,
+      name TEXT,
+      adb_id TEXT,
+      status TEXT DEFAULT 'UNKNOWN',
+      runtime_status TEXT DEFAULT 'IDLE',
+      metadata_json TEXT DEFAULT '{}',
+      last_seen_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(host_id, local_id)
     );
 
     CREATE TABLE IF NOT EXISTS workflow_stages (
@@ -458,6 +498,9 @@ export function migrate() {
       id TEXT PRIMARY KEY,
       pool_id TEXT NOT NULL,
       instance_id TEXT NOT NULL,
+      host_id TEXT,
+      local_id TEXT,
+      adb_id TEXT,
       orchestrator_job_id TEXT,
       workflow_run_id TEXT,
       workflow_stage_run_id TEXT,
@@ -525,7 +568,7 @@ export function migrate() {
       host_id TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
       base_url TEXT NOT NULL,
-      api_key TEXT,
+      api_key TEXT NOT NULL,
       status TEXT DEFAULT 'active',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -533,10 +576,173 @@ export function migrate() {
 
     CREATE INDEX IF NOT EXISTS idx_hosts_host_id ON hosts(host_id);
     CREATE INDEX IF NOT EXISTS idx_hosts_status ON hosts(status);
+
+    CREATE TABLE IF NOT EXISTS scripts (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      status TEXT DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS script_versions (
+      id TEXT PRIMARY KEY,
+      script_id TEXT NOT NULL,
+      version_no INTEGER NOT NULL,
+      status TEXT DEFAULT 'draft',
+      definition_json TEXT DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (script_id) REFERENCES scripts(id) ON DELETE CASCADE,
+      UNIQUE(script_id, version_no)
+    );
+
+    CREATE TABLE IF NOT EXISTS script_runs (
+      id TEXT PRIMARY KEY,
+      runtime_session_id TEXT NOT NULL,
+      script_id TEXT NOT NULL,
+      script_version_id TEXT NOT NULL,
+      status TEXT DEFAULT 'PENDING',
+      current_step_no INTEGER DEFAULT 0,
+      context_json TEXT DEFAULT '{}',
+      started_at TEXT,
+      finished_at TEXT,
+      FOREIGN KEY (runtime_session_id) REFERENCES runtime_sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (script_id) REFERENCES scripts(id),
+      FOREIGN KEY (script_version_id) REFERENCES script_versions(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS script_run_steps (
+      id TEXT PRIMARY KEY,
+      script_run_id TEXT NOT NULL,
+      step_no INTEGER NOT NULL,
+      step_type TEXT NOT NULL,
+      status TEXT DEFAULT 'PENDING',
+      input_json TEXT DEFAULT '{}',
+      output_json TEXT DEFAULT '{}',
+      error_message TEXT,
+      started_at TEXT,
+      finished_at TEXT,
+      FOREIGN KEY (script_run_id) REFERENCES script_runs(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_script_versions_script ON script_versions(script_id, version_no);
+    CREATE INDEX IF NOT EXISTS idx_script_runs_session ON script_runs(runtime_session_id, status);
+    CREATE INDEX IF NOT EXISTS idx_script_run_steps_run ON script_run_steps(script_run_id, step_no);
+
+    CREATE TABLE IF NOT EXISTS screen_templates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      category TEXT DEFAULT 'SYSTEM',
+      match_type TEXT DEFAULT 'OCR_TEXT',
+      template_type TEXT DEFAULT 'OCR_TEXT',
+      description TEXT,
+      template_image_asset_id TEXT,
+      template_image_path TEXT,
+      template_image_url TEXT,
+      template_thumbnail_url TEXT,
+      ocr_text TEXT,
+      threshold REAL DEFAULT 0.8,
+      region_json TEXT DEFAULT '{}',
+      metadata_json TEXT DEFAULT '{}',
+      status TEXT DEFAULT 'ACTIVE',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_screen_templates_category ON screen_templates(category, status);
+
+    CREATE TABLE IF NOT EXISTS error_events (
+      id TEXT PRIMARY KEY,
+      runtime_session_id TEXT,
+      script_run_id TEXT,
+      step_no INTEGER,
+      host_id TEXT,
+      instance_id TEXT,
+      adb_id TEXT,
+      error_code TEXT,
+      error_message TEXT,
+      screenshot_asset_id TEXT,
+      screenshot_file_path TEXT,
+      screenshot_public_url TEXT,
+      screenshot_thumbnail_url TEXT,
+      status TEXT DEFAULT 'NEW',
+      classification TEXT DEFAULT 'UNKNOWN',
+      resolution_type TEXT,
+      recovery_script_id TEXT,
+      metadata_json TEXT DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_error_events_status ON error_events(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_error_events_runtime ON error_events(runtime_session_id, script_run_id);
+
+    CREATE TABLE IF NOT EXISTS recovery_rules (
+      id TEXT PRIMARY KEY,
+      screen_template_id TEXT NOT NULL,
+      recovery_script_id TEXT NOT NULL,
+      enabled INTEGER DEFAULT 1,
+      priority INTEGER DEFAULT 100,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_recovery_rules_template ON recovery_rules(screen_template_id, enabled, priority);
   `);
 
   addColumnIfMissing("instance_allocations", "created_at", "TEXT");
   addColumnIfMissing("instance_allocations", "updated_at", "TEXT");
+  addColumnIfMissing("scripts", "category", "TEXT DEFAULT 'UTILITY'");
+  addColumnIfMissing("scripts", "description", "TEXT");
+  addColumnIfMissing("scripts", "updated_at", "TEXT");
+  addColumnIfMissing("script_versions", "steps_json", "TEXT DEFAULT '[]'");
+  addColumnIfMissing("script_versions", "variables_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("script_versions", "retry_policy_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("script_versions", "detection_policy_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("script_versions", "updated_at", "TEXT");
+  addColumnIfMissing("instances", "capabilities_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("instances", "current_pool_type", "TEXT DEFAULT 'AVAILABLE'");
+  addColumnIfMissing("instances", "current_workflow_run_id", "TEXT");
+  addColumnIfMissing("instances", "maintenance_reason", "TEXT");
+  addColumnIfMissing("instances", "last_error_at", "TEXT");
+  addColumnIfMissing("instances", "adb_mapping_confidence", "TEXT DEFAULT 'unknown'");
+  addColumnIfMissing("instances", "adb_mapping_source", "TEXT DEFAULT 'none'");
+  addColumnIfMissing("instances", "adb_mapping_updated_at", "TEXT");
+  addColumnIfMissing("instances", "manual_adb_id", "TEXT");
+  addColumnIfMissing("assets", "asset_category", "TEXT");
+  addColumnIfMissing("assets", "asset_sub_type", "TEXT");
+  addColumnIfMissing("assets", "tags_json", "TEXT DEFAULT '[]'");
+  addColumnIfMissing("assets", "attributes_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("assets", "preview_url", "TEXT");
+  addColumnIfMissing("assets", "source_asset_id", "TEXT");
+  addColumnIfMissing("workflows", "capacity_config_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("workflows", "music_policy_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("workflows", "post_content_policy_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("workflows", "resource_rules_json", "TEXT DEFAULT '[]'");
+  addColumnIfMissing("workflows", "script_mapping_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("workflows", "prompt_mapping_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("workflow_runs", "capacity_config_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("screen_templates", "match_type", "TEXT DEFAULT 'OCR_TEXT'");
+  addColumnIfMissing("screen_templates", "description", "TEXT");
+  addColumnIfMissing("screen_templates", "template_image_asset_id", "TEXT");
+  addColumnIfMissing("screen_templates", "template_image_path", "TEXT");
+  addColumnIfMissing("screen_templates", "template_thumbnail_url", "TEXT");
+  addColumnIfMissing("screen_templates", "metadata_json", "TEXT DEFAULT '{}'");
+  addColumnIfMissing("error_events", "classification", "TEXT DEFAULT 'UNKNOWN'");
+  addColumnIfMissing("error_events", "resolution_type", "TEXT");
+  addColumnIfMissing("error_events", "recovery_script_id", "TEXT");
+  addColumnIfMissing("error_events", "screenshot_file_path", "TEXT");
+  addColumnIfMissing("error_events", "screenshot_public_url", "TEXT");
+  addColumnIfMissing("error_events", "screenshot_thumbnail_url", "TEXT");
+  addColumnIfMissing("error_events", "metadata_json", "TEXT DEFAULT '{}'");
+
+  db.prepare(`
+    UPDATE instances
+    SET current_pool_type = 'AVAILABLE'
+    WHERE current_pool_type IS NULL OR current_pool_type = ''
+  `).run();
 }
 
 if (require.main === module) {

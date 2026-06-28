@@ -1,4 +1,7 @@
 import { AppError } from "../shared/resource";
+import { orchestratorRepository } from "../orchestrator/orchestrator.repository";
+import { orchestratorService } from "../orchestrator/orchestrator.service";
+import { characterSourceAssetsService } from "../character-assets/character-source-assets.service";
 import { productionBatchRepository } from "./production-batch.repository";
 import type {
   BatchType,
@@ -7,6 +10,10 @@ import type {
   CreateProductionBatchItemInput,
   UpdateProductionBatchInput
 } from "./production-batch.schemas";
+
+function objectValue(value: unknown) {
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
 
 export const productionBatchService = {
   list: () => productionBatchRepository.list(),
@@ -19,7 +26,28 @@ export const productionBatchService = {
     return batch;
   },
 
-  create: (input: CreateProductionBatchInput) => productionBatchRepository.create(input),
+  create(input: CreateProductionBatchInput) {
+    if (!input.sourceGroupId) return productionBatchRepository.create(input);
+
+    const sourceAssets = characterSourceAssetsService.resolveCharacterGroupSourceAssets(input.sourceGroupId);
+    const metadata = objectValue(input.metadata);
+    return productionBatchRepository.create({
+      ...input,
+      metadata: {
+        ...metadata,
+        groupId: input.sourceGroupId,
+        characterIds: sourceAssets.characterIds,
+        attributesSnapshot: sourceAssets.attributesSnapshot,
+        sourceAssetsSnapshot: sourceAssets,
+        characterGroupBatch: {
+          groupId: input.sourceGroupId,
+          characterIds: sourceAssets.characterIds,
+          attributesSnapshot: sourceAssets.attributesSnapshot,
+          sourceAssetsSnapshot: sourceAssets
+        }
+      }
+    });
+  },
 
   update(id: string, input: UpdateProductionBatchInput) {
     const batch = productionBatchRepository.update(id, input);
@@ -38,6 +66,12 @@ export const productionBatchService = {
   deleteItem(batchId: string, itemId: string) {
     if (!productionBatchRepository.deleteItem(batchId, itemId)) {
       throw new AppError("PRODUCTION_BATCH_ITEM_NOT_FOUND", "Production batch item not found", 404);
+    }
+  },
+
+  delete(id: string) {
+    if (!productionBatchRepository.delete(id)) {
+      throw new AppError("PRODUCTION_BATCH_NOT_FOUND", "Production batch not found", 404);
     }
   },
 
@@ -103,5 +137,42 @@ export const productionBatchService = {
     }
 
     return productionBatchRepository.getLineage(batchId);
+  },
+
+  launch(id: string) {
+    const batch = productionBatchRepository.get(id);
+    if (!batch) throw new AppError("PRODUCTION_BATCH_NOT_FOUND", "Production batch not found", 404);
+    if (!["NEW", "READY"].includes(String(batch.status))) {
+      throw new AppError("PRODUCTION_BATCH_NOT_LAUNCHABLE", "Only NEW or READY batches can be launched");
+    }
+
+    const readyBatch = batch.status === "READY"
+      ? batch
+      : productionBatchRepository.setStatus(id, "READY");
+
+    orchestratorService.scan();
+    const metadata = readyBatch?.metadata && typeof readyBatch.metadata === "object"
+      ? readyBatch.metadata as Record<string, unknown>
+      : {};
+    if (readyBatch?.batchType === "IMAGE_BATCH" && !orchestratorRepository.getJobBySourceAndStage(String(id), "IMAGE_EDIT")) {
+      orchestratorRepository.createJob({
+        sourceBatchId: String(id),
+        targetStageType: "IMAGE_EDIT",
+        payload: {
+          sourceBatchId: id,
+          sourceBatchType: readyBatch.batchType,
+          scriptId: metadata.scriptId ?? metadata.imageEditScriptId ?? null,
+          hostId: metadata.hostId ?? null
+        }
+      });
+    }
+    const relatedJobs = orchestratorRepository.listJobs()
+      .filter((item) => item.sourceBatchId === id);
+
+    return {
+      batch: readyBatch,
+      createdJobs: relatedJobs,
+      jobs: relatedJobs
+    };
   }
 };

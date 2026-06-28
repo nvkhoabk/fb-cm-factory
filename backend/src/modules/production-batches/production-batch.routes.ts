@@ -33,6 +33,14 @@ productionBatchRouter.post("/", (req, res) => {
   }
 });
 
+productionBatchRouter.post("/:id/launch", (req, res) => {
+  try {
+    res.json({ ok: true, data: productionBatchService.launch(req.params.id) });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 productionBatchRouter.get("/:id", (req, res) => {
   try {
     res.json({ ok: true, data: productionBatchService.get(req.params.id) });
@@ -79,6 +87,15 @@ productionBatchRouter.post("/:id/use", (req, res) => {
 productionBatchRouter.delete("/:id/items/:itemId", (req, res) => {
   try {
     productionBatchService.deleteItem(req.params.id, req.params.itemId);
+    res.json({ ok: true, data: { deleted: true } });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+productionBatchRouter.delete("/:id", (req, res) => {
+  try {
+    productionBatchService.delete(req.params.id);
     res.json({ ok: true, data: { deleted: true } });
   } catch (error) {
     sendError(res, error);

@@ -7,6 +7,9 @@ import {
 } from "./manager-bridge.schemas";
 import { managerBridgeService } from "./manager-bridge.service";
 
+/**
+ * @deprecated Use Host Agent V2 direct execution.
+ */
 export const managerBridgeRouter = Router();
 
 managerBridgeRouter.get("/health", async (_req, res) => {

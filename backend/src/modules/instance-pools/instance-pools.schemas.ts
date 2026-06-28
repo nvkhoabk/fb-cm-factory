@@ -16,9 +16,20 @@ export const createInstancePoolSchema = z.object({
 export const createInstancePoolMemberSchema = z.object({
   instanceId: z.string().min(1),
   priority: z.number().int().default(100),
-  status: z.string().default("active")
+  status: z.string().default("ACTIVE"),
+  role: z.string().optional(),
+  notes: z.string().optional(),
+  metadata: z.record(z.string(), z.unknown()).default({})
+});
+
+export const updateInstancePoolMemberSchema = z.object({
+  priority: z.number().int().optional(),
+  status: z.string().optional(),
+  role: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional()
 });
 
 export type CreateInstancePoolInput = z.infer<typeof createInstancePoolSchema>;
 export type CreateInstancePoolMemberInput = z.infer<typeof createInstancePoolMemberSchema>;
-
+export type UpdateInstancePoolMemberInput = z.infer<typeof updateInstancePoolMemberSchema>;

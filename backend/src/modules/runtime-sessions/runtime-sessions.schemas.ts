@@ -5,6 +5,7 @@ export const runtimeStatusSchema = z.enum([
   "RUNNING",
   "PAUSED",
   "FAILED",
+  "FAILED_RECOVERABLE",
   "COMPLETED"
 ]);
 
@@ -21,6 +22,9 @@ export const createRuntimeSessionSchema = z.object({
 
 export const updateRuntimeSessionSchema = z.object({
   status: runtimeStatusSchema.optional(),
+  scriptId: z.string().min(1).nullable().optional(),
+  hostId: z.string().min(1).nullable().optional(),
+  instanceId: z.string().min(1).nullable().optional(),
   currentStepNo: z.number().int().nonnegative().optional(),
   context: z.record(z.string(), z.unknown()).optional(),
   checkpoint: z.record(z.string(), z.unknown()).optional(),

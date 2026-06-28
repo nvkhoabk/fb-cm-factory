@@ -2,6 +2,9 @@ import { productionBatchRepository } from "../production-batches/production-batc
 import { AppError } from "../shared/resource";
 import { managerBridgeClient } from "./manager-bridge.client";
 
+/**
+ * @deprecated Use Host Agent V2 direct execution.
+ */
 function taskPayloadFromBatch(batchId: string, taskType: string) {
   const batch = productionBatchRepository.getDetail(batchId);
   if (!batch) throw new AppError("PRODUCTION_BATCH_NOT_FOUND", "Production batch not found", 404);
@@ -14,6 +17,9 @@ function taskPayloadFromBatch(batchId: string, taskType: string) {
   };
 }
 
+/**
+ * @deprecated Use Host Agent V2 direct execution.
+ */
 export const managerBridgeService = {
   async healthCheckManager() {
     try {

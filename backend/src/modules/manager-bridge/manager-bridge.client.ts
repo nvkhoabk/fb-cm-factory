@@ -1,6 +1,9 @@
 import { config } from "../../config";
 import { AppError } from "../shared/resource";
 
+/**
+ * @deprecated Use Host Agent V2 direct execution.
+ */
 type ManagerResponse = {
   ok?: boolean;
   data?: unknown;
@@ -77,6 +80,9 @@ async function requestManager(path: string, options: RequestInit = {}) {
   }
 }
 
+/**
+ * @deprecated Use Host Agent V2 direct execution.
+ */
 export const managerBridgeClient = {
   async healthCheckManager() {
     return requestManager("/health", {
