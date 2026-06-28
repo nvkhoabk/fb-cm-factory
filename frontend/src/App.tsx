@@ -25,18 +25,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRef, type MouseEvent, type PointerEvent } from "react";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:3200";
-
-type ApiResponse<T> = {
-  ok: boolean;
-  data: T;
-  error?: {
-    code: string;
-    message: string;
-    detail?: unknown;
-  };
-};
+import { api, mediaUrl, type ApiErrorWithPayload, type ApiResponse } from "./api";
 
 type CharacterGroup = {
   id: string;
@@ -50,12 +39,6 @@ type CharacterGroup = {
   readiness?: GroupReadiness;
   membersPreview?: CharacterGroupMemberSummary[];
   productionBatchCount?: number;
-};
-
-type ApiErrorWithPayload = Error & {
-  code?: string;
-  detail?: unknown;
-  payload?: unknown;
 };
 
 type GroupReadiness = {
@@ -831,27 +814,6 @@ const managementMenuItems: Array<{ id: ManagementSection; labelKey: string }> = 
   { id: "instance-pools", labelKey: "management.instancePools" }
 ];
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      "content-type": "application/json",
-      ...(init?.headers ?? {})
-    }
-  });
-  const payload = (await response.json()) as ApiResponse<T>;
-  if (!response.ok || payload.ok === false) {
-    const code = payload.error?.code;
-    const message = payload.error?.message ?? `Request failed: ${path}`;
-    const error = new Error(code ? `${code}: ${message}` : message) as ApiErrorWithPayload;
-    error.code = code;
-    error.detail = payload.error?.detail;
-    error.payload = payload;
-    throw error;
-  }
-  return payload.data;
-}
-
 async function hostApi<T>(baseUrl: string, path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${baseUrl.replace(/\/+$/, "")}${path}`, {
     ...init,
@@ -1062,13 +1024,6 @@ function getRecord(value: unknown) {
 
 function getString(value: unknown) {
   return typeof value === "string" && value ? value : "";
-}
-
-function mediaUrl(value?: string | null) {
-  if (!value) return "";
-  if (/^(https?:|data:|blob:)/i.test(value)) return value;
-  if (value.startsWith("/")) return `${API_BASE.replace(/\/+$/, "")}${value}`;
-  return value;
 }
 
 function cacheBustedUrl(value: string) {
@@ -2359,7 +2314,7 @@ export function App() {
   });
   const [adminSearch, setAdminSearch] = useState("");
   const [adminJson, setAdminJson] = useState("{}");
-  const [hostForm, setHostForm] = useState({ hostId: "", name: "", baseUrl: "http://localhost:3300", apiKey: "", status: "active" });
+  const [hostForm, setHostForm] = useState({ hostId: "", name: "", baseUrl: "", apiKey: "", status: "active" });
   const [poolForm, setPoolForm] = useState({ name: "", poolType: "IMAGE_EDIT", status: "active" });
   const [memberForm, setMemberForm] = useState({ instanceId: "", priority: "100", status: "ACTIVE", metadata: "{\n  \"hostId\": \"\",\n  \"localId\": \"\",\n  \"adbId\": \"\"\n}" });
   const [scriptForm, setScriptForm] = useState({

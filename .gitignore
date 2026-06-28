@@ -2,6 +2,8 @@ node_modules/
 .env
 .env.*
 !backend/.env.production.example
+!frontend/.env.development
+!frontend/.env.production
 *.db
 *.db-shm
 *.db-wal
