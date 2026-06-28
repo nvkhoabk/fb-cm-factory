@@ -26,6 +26,18 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRef, type MouseEvent, type PointerEvent } from "react";
 import { api, mediaUrl, type ApiErrorWithPayload, type ApiResponse } from "./api";
+import {
+  EmptyStateGuide,
+  FeatureHint,
+  HelpPanel,
+  HelpPopover,
+  HelpTooltip,
+  PageQuickGuide,
+  PageQuickGuideButton,
+  ProductionStepGuide,
+  ScriptStepHelpPanel
+} from "./help/HelpComponents";
+import { helpContent, type HelpPageKey } from "./help/helpContent";
 
 type CharacterGroup = {
   id: string;
@@ -813,6 +825,21 @@ const managementMenuItems: Array<{ id: ManagementSection; labelKey: string }> = 
   { id: "instances", labelKey: "management.instances" },
   { id: "instance-pools", labelKey: "management.instancePools" }
 ];
+
+const managementHelpPageKeys: Partial<Record<ManagementSection, HelpPageKey>> = {
+  characters: "characters",
+  "character-import": "characterImport",
+  "character-groups": "characterGroups",
+  "prompt-templates": "promptTemplates",
+  scripts: "scripts",
+  workflows: "workflows",
+  hosts: "hosts",
+  instances: "instances",
+  "instance-pools": "capacityPools",
+  "runtime-sessions": "runtimeSessions",
+  "production-resources": "productionResources",
+  "screen-templates": "screenTemplates"
+};
 
 async function hostApi<T>(baseUrl: string, path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${baseUrl.replace(/\/+$/, "")}${path}`, {
@@ -1988,6 +2015,8 @@ export function App() {
     const saved = window.localStorage.getItem("fbcm-language");
     return saved === "vi" || saved === "en" ? saved : "en";
   });
+  const [trainingMode, setTrainingMode] = useState(() => window.localStorage.getItem("fbcm.trainingMode") === "true");
+  const [helpPanelKey, setHelpPanelKey] = useState<HelpPageKey | null>(null);
   const [characters, setCharacters] = useState<CharacterRecord[]>([]);
   const [groups, setGroups] = useState<CharacterGroup[]>([]);
   const [attributes, setAttributes] = useState<GroupAttribute[]>([]);
@@ -2369,6 +2398,35 @@ export function App() {
           : page === "management"
             ? t("app.management")
             : t("app.productionStudio");
+  const currentHelpPageKey: HelpPageKey = page === "control-center"
+    ? "dashboard"
+    : page === "production-jobs"
+      ? "productionControl"
+      : page === "asset-center"
+        ? "assetCenter"
+        : page === "monitoring"
+          ? "errorCenter"
+          : page === "studio"
+            ? "productionStudio"
+            : managementHelpPageKeys[managementSection] ?? "characters";
+  const navigateHelpTarget = useCallback((target: HelpPageKey) => {
+    const managementTarget = Object.entries(managementHelpPageKeys).find(([, value]) => value === target)?.[0] as ManagementSection | undefined;
+    if (managementTarget) {
+      setPage("management");
+      setManagementSection(managementTarget);
+    } else if (target === "dashboard") {
+      setPage("control-center");
+    } else if (target === "productionControl") {
+      setPage("production-jobs");
+    } else if (target === "assetCenter") {
+      setPage("asset-center");
+    } else if (target === "productionStudio") {
+      setPage("studio");
+    } else if (target === "errorCenter") {
+      setPage("monitoring");
+    }
+    setHelpPanelKey(target);
+  }, []);
   const selectedJob = useMemo(
     () => jobs.find((job) => job.id === selectedJobId) ?? null,
     [jobs, selectedJobId]
@@ -3391,6 +3449,10 @@ export function App() {
   useEffect(() => {
     window.localStorage.setItem("fbcm-language", language);
   }, [language]);
+
+  useEffect(() => {
+    window.localStorage.setItem("fbcm.trainingMode", String(trainingMode));
+  }, [trainingMode]);
 
   useEffect(() => {
     if (!autoRefresh) return;
@@ -6489,6 +6551,11 @@ export function App() {
           <h1>{pageTitle}</h1>
         </div>
         <div className="topbarActions">
+          <PageQuickGuideButton onClick={() => setHelpPanelKey(currentHelpPageKey)} />
+          <label className={`trainingToggle ${trainingMode ? "active" : ""}`} title="Bật hướng dẫn chi tiết trong màn hình">
+            <input type="checkbox" checked={trainingMode} onChange={(event) => setTrainingMode(event.target.checked)} />
+            <span>Training Mode</span>
+          </label>
           <div className="statusLine">
             {busy ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
             <span>{status}</span>
@@ -6505,6 +6572,13 @@ export function App() {
           </label>
         </div>
       </header>
+
+      <HelpPanel
+        content={helpContent.pages[helpPanelKey ?? currentHelpPageKey]}
+        open={Boolean(helpPanelKey)}
+        onClose={() => setHelpPanelKey(null)}
+        onNavigate={navigateHelpTarget}
+      />
 
       <nav className="appNav" aria-label="Main navigation">
         <button className={page === "control-center" ? "active" : ""} onClick={() => setPage("control-center")}>
@@ -6532,6 +6606,8 @@ export function App() {
           {t("app.management")}
         </button>
       </nav>
+
+      {trainingMode ? <PageQuickGuide pageKey={currentHelpPageKey} onOpen={setHelpPanelKey} /> : null}
 
       {page === "monitoring" ? (
         <section className="managementJobsPage errorCenterPage">
@@ -6671,9 +6747,19 @@ export function App() {
         <section className="managementContent panel">
           <div className="managementHeader">
             <div>
-              <h2>{t(managementMenuItems.find((item) => item.id === managementSection)?.labelKey ?? "app.management")}</h2>
+              <h2>
+                {t(managementMenuItems.find((item) => item.id === managementSection)?.labelKey ?? "app.management")}
+                {managementSection === "characters" ? <HelpTooltip text={helpContent.tooltips.character} trainingMode={trainingMode} /> : null}
+                {managementSection === "character-groups" ? <HelpTooltip text={helpContent.tooltips.characterGroup} trainingMode={trainingMode} /> : null}
+                {managementSection === "prompt-templates" ? <HelpTooltip text={helpContent.tooltips.promptTemplate} trainingMode={trainingMode} /> : null}
+                {managementSection === "scripts" ? <HelpTooltip text={helpContent.tooltips.script} trainingMode={trainingMode} /> : null}
+                {managementSection === "workflows" ? <HelpTooltip text={helpContent.tooltips.workflow} trainingMode={trainingMode} /> : null}
+                {managementSection === "hosts" ? <HelpTooltip text={helpContent.tooltips.host} trainingMode={trainingMode} /> : null}
+                {managementSection === "instances" || managementSection === "instance-pools" ? <HelpTooltip text={helpContent.tooltips.instance} trainingMode={trainingMode} /> : null}
+              </h2>
               <small>{t("management.subtitle")}</small>
             </div>
+            <PageQuickGuideButton onClick={() => setHelpPanelKey(currentHelpPageKey)} />
             <input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder={t("management.search")} />
             <button className="secondaryButton" onClick={() => refreshQueue()} disabled={busy}>
               <RefreshCcw size={15} />
@@ -6696,7 +6782,7 @@ export function App() {
                 ].map(({ label, value, Icon }) => (
                   <div className="resourceKpiCard" key={label}>
                     <Icon size={17} />
-                    <span>{label}</span>
+                    <span>{label}{label === "Standby Instances" ? <HelpTooltip text={helpContent.tooltips.standby} trainingMode={trainingMode} /> : null}</span>
                     <strong>{value}</strong>
                   </div>
                 ))}
@@ -7449,11 +7535,12 @@ export function App() {
                 ].map(([label, value]) => (
                   <div className="resourceKpiCard" key={label}>
                     <Boxes size={17} />
-                    <span>{label}</span>
+                    <span>{label}{label === "STANDBY" ? <HelpTooltip text={helpContent.tooltips.standby} trainingMode={trainingMode} /> : null}</span>
                     <strong>{value}</strong>
                   </div>
                 ))}
               </div>
+              {trainingMode && !capacityPoolKpis.standby ? <EmptyStateGuide text={helpContent.emptyStates.standbyInstances} /> : null}
 
               <div className="resourceTabs">
                 {([
@@ -7482,7 +7569,7 @@ export function App() {
                 <div className="capacityBoard">
                   {capacityInstanceColumns.map((column) => (
                     <section className="managementJobColumn" key={column.poolType}>
-                      <header><strong>{column.poolType}</strong><span>{column.items.length}</span></header>
+                      <header><strong>{column.poolType}{column.poolType === "STANDBY" ? <HelpTooltip text={helpContent.tooltips.standby} trainingMode={trainingMode} /> : null}</strong><span>{column.items.length}</span></header>
                       <div className="managementJobCards">
                         {column.items.map((instance) => (
                           <article className={`capacityInstanceCard ${capacityDrawerInstanceId === instance.id ? "selected" : ""}`} key={instance.id} onClick={() => selectCapacityInstance(instance)}>
@@ -7770,7 +7857,7 @@ export function App() {
                         </article>
                       );
                     })}
-                    {!filteredScripts.length ? <p className="emptyDetail">No scripts match current filters.</p> : null}
+                    {!filteredScripts.length ? trainingMode ? <EmptyStateGuide text={helpContent.emptyStates.scripts} /> : <p className="emptyDetail">No scripts match current filters.</p> : null}
                   </div>
 
                   <aside className="scriptDetailDrawer">
@@ -8206,7 +8293,12 @@ export function App() {
                                     </select>
                                   </label>
                                   <span className={`stepFlowBadge ${scriptStepFlowLabel(step) === "ACTION" ? "action" : scriptStepFlowLabel(step) === "HOLD" ? "hold" : scriptStepFlowLabel(step) === "SCROLL" ? "scroll" : scriptStepFlowLabel(step).startsWith("IF") ? "condition" : ""}`}>{scriptStepFlowLabel(step)}</span>
+                                  <HelpPopover title={type}>{helpContent.scriptSteps[type]?.what ?? "Custom step type."}</HelpPopover>
+                                  {type === "upload-file" ? <HelpTooltip text={helpContent.tooltips.uploadFile} trainingMode={trainingMode} /> : null}
+                                  {type === "download-latest" ? <HelpTooltip text={helpContent.tooltips.downloadLatest} trainingMode={trainingMode} /> : null}
+                                  {type === "clear-download" ? <HelpTooltip text={helpContent.tooltips.clearDownload} trainingMode={trainingMode} /> : null}
                                 </div>
+                                <ScriptStepHelpPanel help={helpContent.scriptSteps[type]} show={trainingMode} />
                                 <div className="scriptStepFields inspector">
                                   <label>Step Purpose / Description
                                     <input
@@ -8363,7 +8455,7 @@ export function App() {
                       {template.templateThumbnailUrl || template.templateImageUrl ? <img className="templateThumb" src={mediaUrl(template.templateThumbnailUrl || template.templateImageUrl || "")} alt={template.name} /> : null}
                     </button>
                   ))}
-                {!screenTemplates.length ? <p className="emptyDetail">No screen templates yet.</p> : null}
+                {!screenTemplates.length ? trainingMode ? <EmptyStateGuide text={helpContent.emptyStates.screenTemplates} /> : <p className="emptyDetail">No screen templates yet.</p> : null}
               </aside>
               <section className="resourceDetailPanel">
                 <div className="scriptCardHeader">
@@ -8658,7 +8750,7 @@ export function App() {
                     </button>
                   );
                 })}
-                {!filteredCharacters.length ? <p className="emptyDetail">No characters match these filters.</p> : null}
+                  {!filteredCharacters.length ? trainingMode ? <EmptyStateGuide text={helpContent.emptyStates.characters} /> : <p className="emptyDetail">No characters match these filters.</p> : null}
               </section>
 
               {characterDetail ? (
@@ -8896,7 +8988,7 @@ export function App() {
                       </div>
                     </article>
                   ))}
-                  {!filteredGroupCards.length ? <p className="emptyDetail">No groups match the current filters.</p> : null}
+                  {!filteredGroupCards.length ? trainingMode ? <EmptyStateGuide text={helpContent.emptyStates.characterGroups} /> : <p className="emptyDetail">No groups match the current filters.</p> : null}
                 </div>
 
                 {selectedGroupDetail ? (
@@ -9194,12 +9286,12 @@ export function App() {
                           </div>
                         </section>
                       ))}
-                      {!productionResourceGroups.length ? <p className="emptyDetail">No resources match current filters.</p> : null}
+                      {!productionResourceGroups.length ? trainingMode ? <EmptyStateGuide text={helpContent.emptyStates.productionResources} /> : <p className="emptyDetail">No resources match current filters.</p> : null}
                     </div>
                   ) : (
                     <div className="resourceCardGrid">
                       {productionResourceCards.map((batch) => renderProductionResourceCard(batch))}
-                      {!productionResourceCards.length ? <p className="emptyDetail">No resources match current filters.</p> : null}
+                      {!productionResourceCards.length ? trainingMode ? <EmptyStateGuide text={helpContent.emptyStates.productionResources} /> : <p className="emptyDetail">No resources match current filters.</p> : null}
                     </div>
                   )}
                 </section>
@@ -9888,7 +9980,7 @@ export function App() {
 
                       {runtimeDrawerTab === "json" ? <div className="resourceDrawerBody"><pre className="jsonBlock">{compactJson({ runtimeSession: selectedRuntime, checkpoint: selectedRuntime.checkpoint, context: selectedRuntime.context, scriptRun, job: selectedRuntimeJob })}</pre></div> : null}
                     </>
-                  ) : <p className="emptyDetail">Run or execute a job to create a runtime session.</p>}
+                  ) : trainingMode ? <EmptyStateGuide text={helpContent.emptyStates.runtimeSessions} /> : <p className="emptyDetail">Run or execute a job to create a runtime session.</p>}
                 </aside>
               </div>
             </div>
@@ -10371,6 +10463,10 @@ export function App() {
           <span className="statusPill">{selectedWorkflow?.name ?? "No workflow selected"}</span>
           <span className={`readinessBadge ${studioReadinessWarnings.length ? "warning" : "ready"}`}>{studioReadinessWarnings.length ? `${studioReadinessWarnings.length} warnings` : "Ready to launch"}</span>
         </div>
+        <FeatureHint show={trainingMode}>
+          <strong>Luồng nhanh:</strong> Chọn Group đủ ảnh, kiểm tra prompt/script/capacity, rồi launch. Sau khi launch hãy mở Production Control để theo dõi job.
+        </FeatureHint>
+        <ProductionStepGuide steps={helpContent.productionStudioSteps} show={trainingMode} />
 
         <div className="studioGuidedLayout">
           <main className="studioSteps">
@@ -10443,7 +10539,7 @@ export function App() {
                 ))}
               </div>
               <div className="studioPipeline">
-                {["CHARACTER_GROUP", "IMAGE_EDIT", "IMAGE_BATCH", "VIDEO_GENERATE", "VIDEO_BATCH", "MUSIC_TRACK", "VIDEO_COMPOSE", "FINAL_VIDEO", "POST_CONTENT"].map((item, index) => <span key={`${item}-${index}`}>{item}</span>)}
+                {["CHARACTER_GROUP", "IMAGE_EDIT", "IMAGE_BATCH", "VIDEO_GENERATE", "VIDEO_BATCH", "MUSIC_TRACK", "VIDEO_COMPOSE", "FINAL_VIDEO", "POST_CONTENT"].map((item, index) => <span key={`${item}-${index}`}>{item}{item === "IMAGE_EDIT" ? <HelpTooltip text={helpContent.tooltips.imageEdit} trainingMode={trainingMode} /> : null}</span>)}
               </div>
             </section>
 
@@ -10472,7 +10568,7 @@ export function App() {
 
             <section className="studioStep panel">
               <header><span>6</span><div><strong>Review Capacity & Readiness</strong><small>Warnings are shown before Launch Production.</small></div></header>
-              <div className="capacityStageRows">{studioCapacityRows.map((row) => <div className={`capacityStageRow ${row.shortage ? "warning" : ""}`} key={row.stageType}><strong>{row.stageType}</strong><span>Required {row.required}</span><span>Standby capable {row.available}</span><b>{row.shortage ? `Shortage ${row.shortage}` : "OK"}</b></div>)}</div>
+              <div className="capacityStageRows">{studioCapacityRows.map((row) => <div className={`capacityStageRow ${row.shortage ? "warning" : ""}`} key={row.stageType}><strong>{row.stageType}{row.stageType === "IMAGE_EDIT" ? <HelpTooltip text={helpContent.tooltips.imageEdit} trainingMode={trainingMode} /> : null}</strong><span>Required {row.required}</span><span>Standby capable {row.available}</span><b>{row.shortage ? `Shortage ${row.shortage}` : "OK"}</b></div>)}</div>
               <div className="capacityHints">{studioReadinessWarnings.map((warning) => <span key={warning}>{warning}</span>)}{!studioReadinessWarnings.length ? <span>All launch checks look good.</span> : null}</div>
             </section>
 
@@ -10551,7 +10647,7 @@ export function App() {
           <div className="productionPipelineFlow">
             {productionPipelineStats.map((stage, index) => (
               <article key={stage.stage}>
-                <strong>{stage.stage}</strong>
+                <strong>{stage.stage}{stage.stage === "IMAGE_EDIT" ? <HelpTooltip text={helpContent.tooltips.imageEdit} trainingMode={trainingMode} /> : null}</strong>
                 <span>Pending: {stage.pending}</span>
                 <span>Running: {stage.running}</span>
                 <span>Completed: {stage.completed}</span>
@@ -10566,6 +10662,9 @@ export function App() {
           <button className={productionControlView === "group" ? "active" : ""} onClick={() => setProductionControlView("group")}>View By Character Group</button>
           <button className={productionControlView === "job" ? "active" : ""} onClick={() => setProductionControlView("job")}>View By Job</button>
         </div>
+        {trainingMode && !jobs.some((job) => job.targetStageType === "IMAGE_EDIT")
+          ? <EmptyStateGuide text={helpContent.emptyStates.imageEditJobs} />
+          : null}
 
         {productionControlView === "group" ? (
           <section className="productionGroupBoard">

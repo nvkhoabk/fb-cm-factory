@@ -5667,6 +5667,266 @@ h2 {
   animation: spin 0.9s linear infinite;
 }
 
+.quickGuideButton,
+.trainingToggle,
+.helpIconButton {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--green-ink);
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 800;
+  gap: 7px;
+  min-height: 38px;
+  padding: 7px 10px;
+}
+
+.quickGuideButton span,
+.helpIcon,
+.helpIconButton {
+  align-items: center;
+  background: var(--green-soft);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--green-ink);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 900;
+  height: 20px;
+  justify-content: center;
+  line-height: 1;
+  width: 20px;
+}
+
+.trainingToggle input {
+  accent-color: var(--green);
+}
+
+.trainingToggle.active {
+  background: var(--green-soft);
+  border-color: var(--border-strong);
+}
+
+.pageQuickGuide,
+.featureHint,
+.emptyStateGuide,
+.scriptStepHelpPanel {
+  background: #f7fcf9;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--green-ink);
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+}
+
+.pageQuickGuide {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.pageQuickGuide > span,
+.featureHint,
+.emptyStateGuide span,
+.scriptStepHelpPanel p,
+.scriptStepHelpPanel span,
+.scriptStepHelpPanel li {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.emptyStateGuide strong,
+.scriptStepHelpPanel strong {
+  color: var(--green-ink);
+  font-size: 13px;
+}
+
+.helpTooltip {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 6px;
+  position: relative;
+  vertical-align: middle;
+}
+
+.helpTooltip.expanded {
+  background: var(--green-panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 8px 3px 3px;
+}
+
+.helpInlineText {
+  color: var(--green-ink);
+  font-size: 12px;
+  font-weight: 700;
+  max-width: 440px;
+}
+
+.helpTooltipBubble,
+.helpPopoverCard {
+  background: #173124;
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(23, 49, 36, 0.22);
+  color: #ffffff;
+  display: none;
+  font-size: 12px;
+  font-weight: 600;
+  left: 0;
+  line-height: 1.45;
+  padding: 9px 10px;
+  position: absolute;
+  top: calc(100% + 8px);
+  width: min(320px, 80vw);
+  z-index: 40;
+}
+
+.helpTooltip:hover .helpTooltipBubble,
+.helpTooltip:focus .helpTooltipBubble,
+.helpPopover:focus-within .helpPopoverCard {
+  display: grid;
+}
+
+.helpPopover {
+  display: inline-flex;
+  position: relative;
+}
+
+.helpPopoverCard {
+  gap: 4px;
+}
+
+.helpDrawerOverlay {
+  background: rgba(15, 44, 30, 0.22);
+  inset: 0;
+  position: fixed;
+  z-index: 60;
+}
+
+.helpDrawer {
+  background: var(--surface);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: -18px 0 40px rgba(23, 49, 36, 0.18);
+  display: grid;
+  gap: 14px;
+  height: 100vh;
+  margin-left: auto;
+  max-width: 460px;
+  overflow: auto;
+  padding: 18px;
+  width: min(460px, 100vw);
+}
+
+.helpDrawer header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.helpDrawer header strong {
+  color: var(--green-ink);
+  display: block;
+  font-size: 20px;
+}
+
+.helpDrawer section {
+  display: grid;
+  gap: 7px;
+}
+
+.helpDrawer h2 {
+  color: var(--green-ink);
+  font-size: 14px;
+}
+
+.helpDrawer p,
+.helpDrawer li {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.helpDrawer ul,
+.helpDrawer ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.helpLinkList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.helpLinkList button {
+  background: var(--green-soft);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  color: var(--green-ink);
+  font-weight: 800;
+  min-height: 32px;
+  padding: 6px 10px;
+}
+
+.productionStepGuide {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.productionStepGuide article {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 28px minmax(0, 1fr);
+  padding: 10px;
+}
+
+.productionStepGuide article > span {
+  align-items: center;
+  background: var(--green);
+  border-radius: 999px;
+  color: #ffffff;
+  display: flex;
+  font-weight: 900;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.productionStepGuide strong,
+.productionStepGuide p,
+.productionStepGuide small {
+  display: block;
+}
+
+.productionStepGuide p,
+.productionStepGuide small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.scriptStepHelpPanel {
+  margin: 0;
+}
+
+.scriptStepHelpPanel ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
